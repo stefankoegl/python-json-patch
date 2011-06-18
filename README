@@ -1,0 +1,11 @@
+
+python-json-patch: Applying JSON Patches
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Library to apply JSON Patches according to
+http://tools.ietf.org/html/draft-pbryan-json-patch-01
+
+See Sourcecode for Examples
+
+Website: https://github.com/stefankoegl/python-json-patch
+Repository: https://github.com/stefankoegl/python-json-patch.git
