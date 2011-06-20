@@ -47,6 +47,18 @@ class JsonPatchException(Exception):
     pass
 
 
+def apply_patch(doc, patch):
+    """
+    >>> obj = { 'baz': 'qux', 'foo': 'bar' }
+    >>> patch = [ { 'remove': '/baz' } ]
+    >>> apply_patch(obj, patch)
+    {'foo': 'bar'}
+    """
+
+    p = JsonPatch(patch)
+    return p.apply(doc)
+
+
 class JsonPatch(object):
     """ A JSON Patch is a list of Patch Operations """
 
