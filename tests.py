@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+from __future__ import print_function
 import doctest
 import unittest
 import sys
@@ -37,7 +38,7 @@ if coverage is not None:
     coverage.erase()
 
 if coverage is None:
-    print >>sys.stderr, """
+    print("""
     No coverage reporting done (Python module "coverage" is missing)
     Please install the python-coverage package to get coverage reporting.
-    """
+    """, file=sys.stderr)
