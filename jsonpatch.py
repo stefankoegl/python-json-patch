@@ -47,6 +47,10 @@ class JsonPatchException(Exception):
     pass
 
 
+class JsonPatchConflict(JsonPatchException):
+    pass
+
+
 def apply_patch(doc, patch):
     """
     >>> obj = { 'baz': 'qux', 'foo': 'bar' }
@@ -139,7 +143,7 @@ class PatchOperation(object):
                 continue
 
         if must_exist:
-            raise JsonPatchException('key %s not found' % loc_part)
+            raise JsonPatchConflict('key %s not found' % loc_part)
         else:
             return obj, part_variants[0]
 
@@ -191,18 +195,18 @@ class AddOperation(PatchOperation):
 
         if isinstance(subobj, list):
             if part > len(subobj) or part < 0:
-                raise JsonPatchException("can't insert outside of list")
+                raise JsonPatchConflict("can't insert outside of list")
 
             subobj.insert(part, value)
 
         elif isinstance(subobj, dict):
             if part in subobj:
-                raise JsonPatchException("object '%s' already exists" % part)
+                raise JsonPatchConflict("object '%s' already exists" % part)
 
             subobj[part] = value
 
         else:
-            raise JsonPatchException("can't add to type '%s'" % subobj.__class__.__name__)
+            raise JsonPatchConflict("can't add to type '%s'" % subobj.__class__.__name__)
 
 
 class ReplaceOperation(PatchOperation):
@@ -221,13 +225,13 @@ class ReplaceOperation(PatchOperation):
 
         if isinstance(subobj, list):
             if part > len(subobj) or part < 0:
-                raise JsonPatchException("can't replace outside of list")
+                raise JsonPatchConflict("can't replace outside of list")
 
         elif isinstance(subobj, dict):
             if not part in subobj:
-                raise JsonPatchException("can't replace non-existant object '%s'" % part)
+                raise JsonPatchConflict("can't replace non-existant object '%s'" % part)
 
         else:
-            raise JsonPatchException("can't replace in type '%s'" % subobj.__class__.__name__)
+            raise JsonPatchConflict("can't replace in type '%s'" % subobj.__class__.__name__)
 
         subobj[part] = value
