@@ -219,7 +219,6 @@ class ReplaceOperation(PatchOperation):
     """
 
     def apply(self, obj):
-        location = self. operation["replace"]
         value = self.operation["value"]
         subobj, part = self.locate(obj, self.location)
 
