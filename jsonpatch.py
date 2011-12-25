@@ -30,7 +30,7 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-"""Apply JSON-Patches according to http://tools.ietf.org/html/draft-pbryan-json-patch-01"""
+"""Apply JSON-Patches according to http://tools.ietf.org/html/draft-pbryan-json-patch-04"""
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
