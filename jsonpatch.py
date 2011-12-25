@@ -131,28 +131,25 @@ class PatchOperation(object):
     def _step(self, obj, loc_part, must_exist=True):
         """ Goes one step in a locate() call """
 
-        # Its not clear if a location "1" should be considered as 1 or "1"
-        # We prefer the integer-variant if possible
-        part_variants = self._try_parse(loc_part) + [loc_part]
-
-        for variant in part_variants:
-            try:
+        if isinstance(obj, dict):
+            part_variants = [loc_part]
+            for variant in part_variants:
+                if variant not in obj:
+                    continue
                 return obj[variant], variant
-            except:
-                continue
+        elif isinstance(obj, list):
+            part_variants = [int(loc_part)]
+            for variant in part_variants:
+                if variant >= len(obj):
+                    continue
+                return obj[variant], variant
+        else:
+            raise ValueError('list or dict expected, got %r' % type(obj))
 
         if must_exist:
             raise JsonPatchConflict('key %s not found' % loc_part)
         else:
             return obj, part_variants[0]
-
-
-    @staticmethod
-    def _try_parse(val, cls=int):
-        try:
-            return [cls(val)]
-        except:
-            return []
 
 
 class RemoveOperation(PatchOperation):
