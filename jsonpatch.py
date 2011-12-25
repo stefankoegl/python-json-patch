@@ -51,11 +51,14 @@ class JsonPatchConflict(JsonPatchException):
 
 
 def apply_patch(doc, patch):
-    """
-    >>> obj = { 'baz': 'qux', 'foo': 'bar' }
-    >>> patch = [ { 'remove': '/baz' } ]
-    >>> apply_patch(obj, patch)
-    {'foo': 'bar'}
+    """ Apply list of patches to specified json document.
+
+    >>> doc = {'foo': 'bar'}
+    >>> other = apply_patch(doc, [{'add': '/baz', 'value': 'qux'}])
+    >>> doc is other
+    True
+    >>> doc
+    {'foo': 'bar', 'baz': 'qux'}
     """
 
     p = JsonPatch(patch)
@@ -63,7 +66,20 @@ def apply_patch(doc, patch):
 
 
 class JsonPatch(object):
-    """ A JSON Patch is a list of Patch Operations """
+    """ A JSON Patch is a list of Patch Operations.
+
+    >>> patch = JsonPatch([
+    ...     {'add': '/foo', 'value': 'bar'},
+    ...     {'add': '/baz', 'value': [1, 2, 3]},
+    ...     {'remove': '/baz/1'},
+    ...     {'test': '/baz', 'value': [1, 3]},
+    ...     {'replace': '/baz/0', 'value': 42},
+    ...     {'remove': '/baz/1'},
+    ... ])
+    >>> doc = {}
+    >>> patch.apply(doc)
+    {'foo': 'bar', 'baz': [42]}
+    """
 
     def __init__(self, patch):
         self.patch = patch
@@ -105,7 +121,7 @@ class JsonPatch(object):
 
 
 class PatchOperation(object):
-    """ A single operation inside a JSON Patch """
+    """ A single operation inside a JSON Patch. """
 
     def __init__(self, location, operation):
         self.location = location
@@ -153,18 +169,7 @@ class PatchOperation(object):
 
 
 class RemoveOperation(PatchOperation):
-    """ Removes an object property or an array element
-
-    >>> obj = { 'baz': 'qux', 'foo': 'bar' }
-    >>> patch = JsonPatch( [ { 'remove': '/baz' } ] )
-    >>> patch.apply(obj)
-    {'foo': 'bar'}
-
-    >>> obj = { 'foo': [ 'bar', 'qux', 'baz' ] }
-    >>> patch = JsonPatch( [ { "remove": "/foo/1" } ] )
-    >>> patch.apply(obj)
-    {'foo': ['bar', 'baz']}
-    """
+    """ Removes an object property or an array element. """
 
     def apply(self, obj):
         subobj, part = self.locate(obj, self.location)
@@ -172,18 +177,7 @@ class RemoveOperation(PatchOperation):
 
 
 class AddOperation(PatchOperation):
-    """ Adds an object property or an array element
-
-    >>> obj = { "foo": "bar" }
-    >>> patch = JsonPatch([ { "add": "/baz", "value": "qux" } ])
-    >>> patch.apply(obj)
-    {'foo': 'bar', 'baz': 'qux'}
-
-    >>> obj = { "foo": [ "bar", "baz" ] }
-    >>> patch = JsonPatch([ { "add": "/foo/1", "value": "qux" } ])
-    >>> patch.apply(obj)
-    {'foo': ['bar', 'qux', 'baz']}
-    """
+    """ Adds an object property or an array element. """
 
     def apply(self, obj):
         value = self.operation["value"]
@@ -206,13 +200,7 @@ class AddOperation(PatchOperation):
 
 
 class ReplaceOperation(PatchOperation):
-    """ Replaces a value
-
-    >>> obj = { "baz": "qux", "foo": "bar" }
-    >>> patch = JsonPatch([ { "replace": "/baz", "value": "boo" } ])
-    >>> patch.apply(obj)
-    {'foo': 'bar', 'baz': 'boo'}
-    """
+    """ Replaces an object property or an array element by new value. """
 
     def apply(self, obj):
         value = self.operation["value"]
@@ -233,18 +221,7 @@ class ReplaceOperation(PatchOperation):
 
 
 class MoveOperation(PatchOperation):
-    """ Moves a value
-
-    >>> obj = {'foo': {'bar': 'baz', 'waldo': 'fred'}, 'qux': {'corge': 'grault'}}
-    >>> patch = JsonPatch([{'move': '/foo/waldo', 'to': '/qux/thud'}])
-    >>> patch.apply(obj)
-    {'qux': {'thud': 'fred', 'corge': 'grault'}, 'foo': {'bar': 'baz'}}
-
-    >>> obj =  {'foo': ['all', 'grass', 'cows', 'eat']}
-    >>> patch = JsonPatch([{'move': '/foo/1', 'to': '/foo/3'}])
-    >>> patch.apply(obj)
-    {'foo': ['all', 'cows', 'eat', 'grass']}
-    """
+    """ Moves an object property or an array element to new location. """
 
     def apply(self, obj):
         subobj, part = self.locate(obj, self.location)
@@ -254,26 +231,7 @@ class MoveOperation(PatchOperation):
 
 
 class TestOperation(PatchOperation):
-    """ Test value by specified location
-
-    >>> obj = {'baz': 'qux', 'foo': ['a', 2, 'c']}
-    >>> patch = JsonPatch([
-    ...    {'test': '/baz', 'value': 'qux'},
-    ...    {'test': '/foo/1', 'value': 2}
-    ... ])
-    >>> patch.apply(obj)
-    {'foo': ['a', 2, 'c'], 'baz': 'qux'}
-
-    >>> patch = JsonPatch([
-    ...    {'test': '/foo/1', 'value': 'BOOM!'}
-    ... ])
-    >>> try:
-    ...     patch.apply(obj)
-    ... except AssertionError:
-    ...     pass
-    ... else:
-    ...     assert False, 'test should fall'
-    """
+    """ Test value by specified location. """
 
     def apply(self, obj):
         value = self.operation['value']
