@@ -146,11 +146,19 @@ class JsonPatch(object):
             'test': TestOperation
         }
 
+    def __str__(self):
+        """str(self) -> self.to_string()"""
+        return self.to_string()
+
     @classmethod
     def from_string(cls, patch_str):
         """Creates JsonPatch instance from string source."""
         patch = json.loads(patch_str)
         return cls(patch)
+
+    def to_string(self):
+        """Returns patch set as JSON string."""
+        return json.dumps(self.patch)
 
     def apply(self, obj):
         """Applies the patch to given object."""
