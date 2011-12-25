@@ -63,10 +63,39 @@ class ApplyPatchTestCase(unittest.TestCase):
                           obj, [{'test': '/bar', 'value': 'bar'}])
 
 
+class MakePatchTestCase(unittest.TestCase):
+
+    def test_objects(self):
+        src = {'foo': 'bar', 'boo': 'qux'}
+        dst = {'baz': 'qux', 'foo': 'boo'}
+        patch = jsonpatch.make_patch(src, dst)
+        patch.apply(src)
+        self.assertEqual(src, dst)
+
+    def test_arrays(self):
+        src = {'numbers': [1, 2, 3], 'other': [1, 3, 4, 5]}
+        dst = {'numbers': [1, 3, 4, 5], 'other': [1, 3, 4]}
+        patch = jsonpatch.make_patch(src, dst)
+        patch.apply(src)
+        self.assertEqual(src, dst)
+
+    def test_complex_object(self):
+        src = {'data': [
+            {'foo': 1}, {'bar': [1, 2, 3]}, {'baz': {'1': 1, '2': 2}}
+        ]}
+        dst = {'data': [
+            {'foo': [42]}, {'bar': []}, {'baz': {'boo': 'oom!'}}
+        ]}
+        patch = jsonpatch.make_patch(src, dst)
+        patch.apply(src)
+        self.assertEqual(src, dst)
+
+
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(doctest.DocTestSuite(jsonpatch))
     suite.addTest(unittest.makeSuite(ApplyPatchTestCase))
+    suite.addTest(unittest.makeSuite(MakePatchTestCase))
     return suite
 
 if __name__ == '__main__':

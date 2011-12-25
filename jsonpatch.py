@@ -70,6 +70,54 @@ def apply_patch(doc, patch):
     patch = JsonPatch(patch)
     return patch.apply(doc)
 
+def make_patch(src, dst):
+    """Generates patch by comparing of two objects.
+
+    >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
+    >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
+    >>> patch = make_patch(src, dst)
+    >>> patch.apply(src)    #doctest: +ELLIPSIS
+    {...}
+    >>> src == dst
+    True
+    """
+    def compare_values(path, value, other):
+        if isinstance(value, dict) and isinstance(other, dict):
+            for operation in compare_dict(path, value, other):
+                yield operation
+        elif isinstance(value, list) and isinstance(other, list):
+            for operation in compare_list(path, value, other):
+                yield operation
+        else:
+            yield {'replace': '/'.join(path), 'value': other}
+
+    def compare_dict(path, src, dst):
+        for key in src:
+            if key not in dst:
+                yield {'remove': '/'.join(path + [key])}
+            elif src[key] != dst[key]:
+                current = path + [key]
+                for operation in compare_values(current, src[key], dst[key]):
+                    yield operation
+        for key in dst:
+            if key not in src:
+                yield {'add': '/'.join(path + [key]), 'value': dst[key]}
+
+    def compare_list(path, src, dst):
+        lsrc, ldst = len(src), len(dst)
+        for idx in reversed(xrange(max(lsrc, ldst))):
+            if idx < lsrc and idx < ldst:
+                current = path + [str(idx)]
+                for operation in compare_values(current, src[idx], dst[idx]):
+                    yield operation
+            elif idx < ldst:
+                yield {'add': '/'.join(path + [str(idx)]),
+                       'value': dst[idx]}
+            elif idx < lsrc:
+                yield {'remove': '/'.join(path + [str(idx)])}
+
+    return JsonPatch(list(compare_dict([''], src, dst)))
+
 
 class JsonPatch(object):
     """A JSON Patch is a list of Patch Operations.
