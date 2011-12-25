@@ -73,6 +73,7 @@ class JsonPatch(object):
             'remove': RemoveOperation,
             'add': AddOperation,
             'replace': ReplaceOperation,
+            'move': MoveOperation
         }
 
 
@@ -234,3 +235,24 @@ class ReplaceOperation(PatchOperation):
             raise JsonPatchConflict("can't replace in type '%s'" % subobj.__class__.__name__)
 
         subobj[part] = value
+
+
+class MoveOperation(PatchOperation):
+    """ Moves a value
+
+    >>> obj = {'foo': {'bar': 'baz', 'waldo': 'fred'}, 'qux': {'corge': 'grault'}}
+    >>> patch = JsonPatch([{'move': '/foo/waldo', 'to': '/qux/thud'}])
+    >>> patch.apply(obj)
+    {'qux': {'thud': 'fred', 'corge': 'grault'}, 'foo': {'bar': 'baz'}}
+
+    >>> obj =  {'foo': ['all', 'grass', 'cows', 'eat']}
+    >>> patch = JsonPatch([{'move': '/foo/1', 'to': '/foo/3'}])
+    >>> patch.apply(obj)
+    {'foo': ['all', 'cows', 'eat', 'grass']}
+    """
+
+    def apply(self, obj):
+        subobj, part = self.locate(obj, self.location)
+        value = subobj[part]
+        RemoveOperation(self.location, self.operation).apply(obj)
+        AddOperation(self.operation['to'], {'value': value}).apply(obj)
