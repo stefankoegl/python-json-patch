@@ -30,7 +30,8 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-"""Apply JSON-Patches according to http://tools.ietf.org/html/draft-pbryan-json-patch-04"""
+"""Apply JSON-Patches according to
+http://tools.ietf.org/html/draft-pbryan-json-patch-04"""
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
@@ -43,15 +44,20 @@ import json
 
 
 class JsonPatchException(Exception):
-    pass
+    """Base Json Patch exception"""
 
 
 class JsonPatchConflict(JsonPatchException):
-    pass
+    """Raises if patch could be applied due to conflict situations such as:
+    - attempt to add object key then it already exists;
+    - attempt to operate with nonexistence object key;
+    - attempt to insert value to array at position beyond of it size;
+    - etc.
+    """
 
 
 def apply_patch(doc, patch):
-    """ Apply list of patches to specified json document.
+    """Apply list of patches to specified json document.
 
     >>> doc = {'foo': 'bar'}
     >>> other = apply_patch(doc, [{'add': '/baz', 'value': 'qux'}])
@@ -61,12 +67,12 @@ def apply_patch(doc, patch):
     {'foo': 'bar', 'baz': 'qux'}
     """
 
-    p = JsonPatch(patch)
-    return p.apply(doc)
+    patch = JsonPatch(patch)
+    return patch.apply(doc)
 
 
 class JsonPatch(object):
-    """ A JSON Patch is a list of Patch Operations.
+    """A JSON Patch is a list of Patch Operations.
 
     >>> patch = JsonPatch([
     ...     {'add': '/foo', 'value': 'bar'},
@@ -84,7 +90,7 @@ class JsonPatch(object):
     def __init__(self, patch):
         self.patch = patch
 
-        self.OPERATIONS = {
+        self.operations = {
             'remove': RemoveOperation,
             'add': AddOperation,
             'replace': ReplaceOperation,
@@ -92,60 +98,58 @@ class JsonPatch(object):
             'test': TestOperation
         }
 
-
     @classmethod
     def from_string(cls, patch_str):
+        """Creates JsonPatch instance from string source."""
         patch = json.loads(patch_str)
         return cls(patch)
 
-
     def apply(self, obj):
-        """ Applies the patch to given object """
+        """Applies the patch to given object."""
 
         for operation in self.patch:
-            op = self._get_operation(operation)
-            op.apply(obj)
+            operation = self._get_operation(operation)
+            operation.apply(obj)
 
         return obj
 
-
     def _get_operation(self, operation):
-        for action, op_cls in self.OPERATIONS.items():
+        for action, op_cls in self.operations.items():
             if action in operation:
                 location = operation[action]
-                op = op_cls(location, operation)
-                return op
+                return op_cls(location, operation)
 
         raise JsonPatchException("invalid operation '%s'" % operation)
 
 
-
 class PatchOperation(object):
-    """ A single operation inside a JSON Patch. """
+    """A single operation inside a JSON Patch."""
 
     def __init__(self, location, operation):
         self.location = location
         self.operation = operation
 
+    def apply(self, obj):
+        """Abstract method that applies patch operation to specified object."""
+        raise NotImplementedError('should implement patch operation.')
 
     def locate(self, obj, location, last_must_exist=True):
-        """ Walks through the object according to location
+        """Walks through the object according to location.
 
-        Returns the last step as (sub-object, last location-step) """
+        Returns the last step as (sub-object, last location-step)."""
 
         parts = location.split('/')
         if parts.pop(0) != '':
             raise JsonPatchException('location must starts with /')
 
         for part in parts[:-1]:
-            obj, loc_part = self._step(obj, part)
+            obj, _ = self._step(obj, part)
 
         _, last_loc = self._step(obj, parts[-1], must_exist=last_must_exist)
         return obj, last_loc
 
-
     def _step(self, obj, loc_part, must_exist=True):
-        """ Goes one step in a locate() call """
+        """Goes one step in a locate() call."""
 
         if isinstance(obj, dict):
             part_variants = [loc_part]
@@ -169,7 +173,7 @@ class PatchOperation(object):
 
 
 class RemoveOperation(PatchOperation):
-    """ Removes an object property or an array element. """
+    """Removes an object property or an array element."""
 
     def apply(self, obj):
         subobj, part = self.locate(obj, self.location)
@@ -177,7 +181,7 @@ class RemoveOperation(PatchOperation):
 
 
 class AddOperation(PatchOperation):
-    """ Adds an object property or an array element. """
+    """Adds an object property or an array element."""
 
     def apply(self, obj):
         value = self.operation["value"]
@@ -196,11 +200,12 @@ class AddOperation(PatchOperation):
             subobj[part] = value
 
         else:
-            raise JsonPatchConflict("can't add to type '%s'" % subobj.__class__.__name__)
+            raise JsonPatchConflict("can't add to type '%s'"
+                                    "" % subobj.__class__.__name__)
 
 
 class ReplaceOperation(PatchOperation):
-    """ Replaces an object property or an array element by new value. """
+    """Replaces an object property or an array element by new value."""
 
     def apply(self, obj):
         value = self.operation["value"]
@@ -212,16 +217,18 @@ class ReplaceOperation(PatchOperation):
 
         elif isinstance(subobj, dict):
             if not part in subobj:
-                raise JsonPatchConflict("can't replace non-existant object '%s'" % part)
+                raise JsonPatchConflict("can't replace non-existant object '%s'"
+                                        "" % part)
 
         else:
-            raise JsonPatchConflict("can't replace in type '%s'" % subobj.__class__.__name__)
+            raise JsonPatchConflict("can't replace in type '%s'"
+                                    "" % subobj.__class__.__name__)
 
         subobj[part] = value
 
 
 class MoveOperation(PatchOperation):
-    """ Moves an object property or an array element to new location. """
+    """Moves an object property or an array element to new location."""
 
     def apply(self, obj):
         subobj, part = self.locate(obj, self.location)
@@ -231,7 +238,7 @@ class MoveOperation(PatchOperation):
 
 
 class TestOperation(PatchOperation):
-    """ Test value by specified location. """
+    """Test value by specified location."""
 
     def apply(self, obj):
         value = self.operation['value']
