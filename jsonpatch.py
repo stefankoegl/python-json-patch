@@ -105,7 +105,7 @@ def make_patch(src, dst):
 
     def compare_list(path, src, dst):
         lsrc, ldst = len(src), len(dst)
-        for idx in reversed(xrange(max(lsrc, ldst))):
+        for idx in reversed(range(max(lsrc, ldst))):
             if idx < lsrc and idx < ldst:
                 current = path + [str(idx)]
                 for operation in compare_values(current, src[idx], dst[idx]):
