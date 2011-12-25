@@ -39,8 +39,12 @@ __version__ = '0.1'
 __website__ = 'https://github.com/stefankoegl/python-json-patch'
 __license__ = 'Modified BSD License'
 
+import sys
 
-import json
+if sys.version_info < (2, 6):
+    import simplejson as json
+else:
+    import json
 
 
 class JsonPatchException(Exception):
