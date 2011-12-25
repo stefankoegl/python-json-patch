@@ -39,7 +39,6 @@ __website__ = 'https://github.com/stefankoegl/python-json-patch'
 __license__ = 'Modified BSD License'
 
 
-import copy
 import json
 
 
@@ -85,9 +84,7 @@ class JsonPatch(object):
 
 
     def apply(self, obj):
-        """ Applies the patch to a copy of the given object """
-
-        obj = copy.deepcopy(obj)
+        """ Applies the patch to given object """
 
         for operation in self.patch:
             op = self._get_operation(operation)
