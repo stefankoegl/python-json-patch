@@ -73,7 +73,8 @@ class JsonPatch(object):
             'remove': RemoveOperation,
             'add': AddOperation,
             'replace': ReplaceOperation,
-            'move': MoveOperation
+            'move': MoveOperation,
+            'test': TestOperation
         }
 
 
@@ -256,3 +257,31 @@ class MoveOperation(PatchOperation):
         value = subobj[part]
         RemoveOperation(self.location, self.operation).apply(obj)
         AddOperation(self.operation['to'], {'value': value}).apply(obj)
+
+
+class TestOperation(PatchOperation):
+    """ Test value by specified location
+
+    >>> obj = {'baz': 'qux', 'foo': ['a', 2, 'c']}
+    >>> patch = JsonPatch([
+    ...    {'test': '/baz', 'value': 'qux'},
+    ...    {'test': '/foo/1', 'value': 2}
+    ... ])
+    >>> patch.apply(obj)
+    {'foo': ['a', 2, 'c'], 'baz': 'qux'}
+
+    >>> patch = JsonPatch([
+    ...    {'test': '/foo/1', 'value': 'BOOM!'}
+    ... ])
+    >>> try:
+    ...     patch.apply(obj)
+    ... except AssertionError:
+    ...     pass
+    ... else:
+    ...     assert False, 'test should fall'
+    """
+
+    def apply(self, obj):
+        value = self.operation['value']
+        subobj, part = self.locate(obj, self.location)
+        assert subobj[part] == value
