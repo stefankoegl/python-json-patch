@@ -39,6 +39,7 @@ __version__ = '0.1'
 __website__ = 'https://github.com/stefankoegl/python-json-patch'
 __license__ = 'Modified BSD License'
 
+import copy
 import sys
 
 if sys.version_info < (2, 6):
@@ -60,19 +61,19 @@ class JsonPatchConflict(JsonPatchException):
     """
 
 
-def apply_patch(doc, patch):
+def apply_patch(doc, patch, in_place=False):
     """Apply list of patches to specified json document.
 
     >>> doc = {'foo': 'bar'}
     >>> other = apply_patch(doc, [{'add': '/baz', 'value': 'qux'}])
-    >>> doc is other
+    >>> doc is not other
     True
-    >>> doc
+    >>> other
     {'foo': 'bar', 'baz': 'qux'}
     """
 
     patch = JsonPatch(patch)
-    return patch.apply(doc)
+    return patch.apply(doc, in_place)
 
 def make_patch(src, dst):
     """Generates patch by comparing of two objects.
@@ -80,9 +81,8 @@ def make_patch(src, dst):
     >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
     >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
     >>> patch = make_patch(src, dst)
-    >>> patch.apply(src)    #doctest: +ELLIPSIS
-    {...}
-    >>> src == dst
+    >>> new = patch.apply(src)
+    >>> new == dst
     True
     """
     def compare_values(path, value, other):
@@ -164,8 +164,11 @@ class JsonPatch(object):
         """Returns patch set as JSON string."""
         return json.dumps(self.patch)
 
-    def apply(self, obj):
+    def apply(self, obj, in_place=False):
         """Applies the patch to given object."""
+
+        if not in_place:
+            obj = copy.deepcopy(obj)
 
         for operation in self.patch:
             operation = self._get_operation(operation)
