@@ -8,6 +8,14 @@ import jsonpatch
 
 class ApplyPatchTestCase(unittest.TestCase):
 
+    def test_apply_patch_from_string(self):
+        obj = {'foo': 'bar'}
+        patch = '[{"add": "/baz", "value": "qux"}]'
+        res = jsonpatch.apply_patch(obj, patch)
+        self.assertTrue(obj is not res)
+        self.assertTrue('baz' in res)
+        self.assertEqual(res['baz'], 'qux')
+
     def test_apply_patch_to_copy(self):
         obj = {'foo': 'bar'}
         res = jsonpatch.apply_patch(obj, [{'add': '/baz', 'value': 'qux'}])

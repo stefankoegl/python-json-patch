@@ -47,6 +47,9 @@ if sys.version_info < (2, 6):
 else:
     import json
 
+if sys.version_info >= (3, 0):
+    basestring = (bytes, str)
+
 
 class JsonPatchException(Exception):
     """Base Json Patch exception"""
@@ -67,7 +70,7 @@ def apply_patch(doc, patch, in_place=False):
     :param doc: Document object.
     :type doc: dict
 
-    :param patch: JSON patch as list of dicts.
+    :param patch: JSON patch as list of dicts or raw JSON-encoded string.
     :type patch: list
 
     :param in_place: While :const:`True` patch will modify target document.
@@ -89,7 +92,10 @@ def apply_patch(doc, patch, in_place=False):
     True
     """
 
-    patch = JsonPatch(patch)
+    if isinstance(patch, basestring):
+        patch = JsonPatch.from_string(patch)
+    else:
+        patch = JsonPatch(patch)
     return patch.apply(doc, in_place)
 
 def make_patch(src, dst):
