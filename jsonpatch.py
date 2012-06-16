@@ -64,19 +64,42 @@ class JsonPatchConflict(JsonPatchException):
 def apply_patch(doc, patch, in_place=False):
     """Apply list of patches to specified json document.
 
+    :param doc: Document object.
+    :type doc: dict
+
+    :param patch: JSON patch as list of dicts.
+    :type patch: list
+
+    :param in_place: While :const:`True` patch will modify target document.
+                     By default patch will be applied to document copy.
+    :type in_place: bool
+
+    :return: Patched document object.
+    :rtype: dict
+
     >>> doc = {'foo': 'bar'}
     >>> other = apply_patch(doc, [{'add': '/baz', 'value': 'qux'}])
     >>> doc is not other
     True
     >>> other
     {'foo': 'bar', 'baz': 'qux'}
+    >>> apply_patch(doc, [{'add': '/baz', 'value': 'qux'}], in_place=True)
+    {'foo': 'bar', 'baz': 'qux'}
+    >>> doc == other
+    True
     """
 
     patch = JsonPatch(patch)
     return patch.apply(doc, in_place)
 
 def make_patch(src, dst):
-    """Generates patch by comparing of two objects.
+    """Generates patch by comparing of two document objects.
+
+    :param src: Data source document object.
+    :type src: dict
+
+    :param dst: Data source document object.
+    :type dst: dict
 
     >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
     >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
