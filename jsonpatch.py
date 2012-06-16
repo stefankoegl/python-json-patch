@@ -166,6 +166,33 @@ class JsonPatch(object):
     >>> doc = {}
     >>> patch.apply(doc)
     {'foo': 'bar', 'baz': [42]}
+
+    JsonPatch object is iterable, so you could easily access to each patch
+    statement in loop:
+
+    >>> lpatch = list(patch)
+    >>> lpatch[0]
+    {'add': '/foo', 'value': 'bar'}
+
+    Also JsonPatch could be converted directly to bool if it contains any
+    statements:
+    >>> bool(patch)
+    True
+    >>> bool(JsonPatch([]))
+    False
+
+    This behavior is very handy with :func:`make_patch` to write more readable
+    code:
+    >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
+    >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
+    >>> patch = make_patch(src, dst)
+    >>> if patch:
+    ...     # document have changed, do something useful
+    ...     pass
+
+    Instead of:
+    >>> if patch.patch:
+    ...     pass
     """
 
     def __init__(self, patch):
@@ -182,6 +209,14 @@ class JsonPatch(object):
     def __str__(self):
         """str(self) -> self.to_string()"""
         return self.to_string()
+
+    def __bool__(self):
+        return bool(self.patch)
+
+    __nonzero__ = __bool__
+
+    def __iter__(self):
+        return iter(self.patch)
 
     @classmethod
     def from_string(cls, patch_str):
