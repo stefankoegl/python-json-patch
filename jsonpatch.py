@@ -99,7 +99,8 @@ def apply_patch(doc, patch, in_place=False):
     return patch.apply(doc, in_place)
 
 def make_patch(src, dst):
-    """Generates patch by comparing of two document objects.
+    """Generates patch by comparing of two document objects. Actually is
+    a proxy to :meth:`JsonPatch.from_diff` method.
 
     :param src: Data source document object.
     :type src: dict
@@ -114,42 +115,7 @@ def make_patch(src, dst):
     >>> new == dst
     True
     """
-    def compare_values(path, value, other):
-        if isinstance(value, dict) and isinstance(other, dict):
-            for operation in compare_dict(path, value, other):
-                yield operation
-        elif isinstance(value, list) and isinstance(other, list):
-            for operation in compare_list(path, value, other):
-                yield operation
-        else:
-            yield {'replace': '/'.join(path), 'value': other}
-
-    def compare_dict(path, src, dst):
-        for key in src:
-            if key not in dst:
-                yield {'remove': '/'.join(path + [key])}
-            elif src[key] != dst[key]:
-                current = path + [key]
-                for operation in compare_values(current, src[key], dst[key]):
-                    yield operation
-        for key in dst:
-            if key not in src:
-                yield {'add': '/'.join(path + [key]), 'value': dst[key]}
-
-    def compare_list(path, src, dst):
-        lsrc, ldst = len(src), len(dst)
-        for idx in reversed(range(max(lsrc, ldst))):
-            if idx < lsrc and idx < ldst:
-                current = path + [str(idx)]
-                for operation in compare_values(current, src[idx], dst[idx]):
-                    yield operation
-            elif idx < ldst:
-                yield {'add': '/'.join(path + [str(idx)]),
-                       'value': dst[idx]}
-            elif idx < lsrc:
-                yield {'remove': '/'.join(path + [str(idx)])}
-
-    return JsonPatch(list(compare_dict([''], src, dst)))
+    return JsonPatch.from_diff(src, dst)
 
 
 class JsonPatch(object):
@@ -173,9 +139,11 @@ class JsonPatch(object):
     >>> lpatch = list(patch)
     >>> lpatch[0]
     {'add': '/foo', 'value': 'bar'}
+    >>> lpatch == patch.patch
+    True
 
     Also JsonPatch could be converted directly to bool if it contains any
-    statements:
+    operation statements:
     >>> bool(patch)
     True
     >>> bool(JsonPatch([]))
@@ -183,18 +151,14 @@ class JsonPatch(object):
 
     This behavior is very handy with :func:`make_patch` to write more readable
     code:
-    >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
-    >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
-    >>> patch = make_patch(src, dst)
+    >>> old = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
+    >>> new = {'baz': 'qux', 'numbers': [1, 4, 7]}
+    >>> patch = make_patch(old, new)
     >>> if patch:
     ...     # document have changed, do something useful
-    ...     pass
-
-    Instead of:
-    >>> if patch.patch:
-    ...     pass
+    ...     patch.apply(old)    #doctest: +ELLIPSIS
+    {...}
     """
-
     def __init__(self, patch):
         self.patch = patch
 
@@ -223,6 +187,64 @@ class JsonPatch(object):
         """Creates JsonPatch instance from string source."""
         patch = json.loads(patch_str)
         return cls(patch)
+
+    @classmethod
+    def from_diff(cls, src, dst):
+        """Creates JsonPatch instance based on comparing of two document
+        objects. Json patch would be created for `src` argument against `dst`
+        one.
+
+        :param src: Data source document object.
+        :type src: dict
+
+        :param dst: Data source document object.
+        :type dst: dict
+
+        :return: :class:`JsonPatch` instance.
+
+        >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
+        >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
+        >>> patch = JsonPatch.from_diff(src, dst)
+        >>> new = patch.apply(src)
+        >>> new == dst
+        True
+        """
+        def compare_values(path, value, other):
+            if isinstance(value, dict) and isinstance(other, dict):
+                for operation in compare_dict(path, value, other):
+                    yield operation
+            elif isinstance(value, list) and isinstance(other, list):
+                for operation in compare_list(path, value, other):
+                    yield operation
+            else:
+                yield {'replace': '/'.join(path), 'value': other}
+
+        def compare_dict(path, src, dst):
+            for key in src:
+                if key not in dst:
+                    yield {'remove': '/'.join(path + [key])}
+                elif src[key] != dst[key]:
+                    current = path + [key]
+                    for operation in compare_values(current, src[key], dst[key]):
+                        yield operation
+            for key in dst:
+                if key not in src:
+                    yield {'add': '/'.join(path + [key]), 'value': dst[key]}
+
+        def compare_list(path, src, dst):
+            lsrc, ldst = len(src), len(dst)
+            for idx in reversed(range(max(lsrc, ldst))):
+                if idx < lsrc and idx < ldst:
+                    current = path + [str(idx)]
+                    for operation in compare_values(current, src[idx], dst[idx]):
+                        yield operation
+                elif idx < ldst:
+                    yield {'add': '/'.join(path + [str(idx)]),
+                           'value': dst[idx]}
+                elif idx < lsrc:
+                    yield {'remove': '/'.join(path + [str(idx)])}
+
+        return cls(list(compare_dict([''], src, dst)))
 
     def to_string(self):
         """Returns patch set as JSON string."""
