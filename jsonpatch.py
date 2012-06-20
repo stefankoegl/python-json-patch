@@ -71,7 +71,7 @@ def apply_patch(doc, patch, in_place=False):
     :type doc: dict
 
     :param patch: JSON patch as list of dicts or raw JSON-encoded string.
-    :type patch: list
+    :type patch: list or str
 
     :param in_place: While :const:`True` patch will modify target document.
                      By default patch will be applied to document copy.
@@ -142,8 +142,9 @@ class JsonPatch(object):
     >>> lpatch == patch.patch
     True
 
-    Also JsonPatch could be converted directly to bool if it contains any
-    operation statements:
+    Also JsonPatch could be converted directly to :class:`bool` if it contains
+    any operation statements:
+
     >>> bool(patch)
     True
     >>> bool(JsonPatch([]))
@@ -151,6 +152,7 @@ class JsonPatch(object):
 
     This behavior is very handy with :func:`make_patch` to write more readable
     code:
+
     >>> old = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
     >>> new = {'baz': 'qux', 'numbers': [1, 4, 7]}
     >>> patch = make_patch(old, new)
@@ -184,7 +186,13 @@ class JsonPatch(object):
 
     @classmethod
     def from_string(cls, patch_str):
-        """Creates JsonPatch instance from string source."""
+        """Creates JsonPatch instance from string source.
+
+        :param patch_str: JSON patch as raw string.
+        :type patch_str: str
+
+        :return: :class:`JsonPatch` instance.
+        """
         patch = json.loads(patch_str)
         return cls(patch)
 
@@ -251,7 +259,17 @@ class JsonPatch(object):
         return json.dumps(self.patch)
 
     def apply(self, obj, in_place=False):
-        """Applies the patch to given object."""
+        """Applies the patch to given object.
+
+        :param obj: Document object.
+        :type obj: dict
+
+        :param in_place: Tweaks way how patch would be applied - directly to
+                         specified `obj` or to his copy.
+        :type in_place: bool
+
+        :return: Modified `obj`.
+        """
 
         if not in_place:
             obj = copy.deepcopy(obj)
