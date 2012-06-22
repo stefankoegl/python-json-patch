@@ -1,7 +1,14 @@
 #!/usr/bin/env python
 
-from distutils.core import setup
+import sys
 import re
+import warnings
+try:
+    from setuptools import setup
+    has_setuptools = True
+except ImportError:
+    from distutils.core import setup
+    has_setuptools = False
 
 src = open('jsonpatch.py').read()
 metadata = dict(re.findall("__([a-z]+)__ = '([^']+)'", src))
@@ -12,6 +19,20 @@ PACKAGE = 'jsonpatch'
 MODULES = (
         'jsonpatch',
 )
+
+REQUIREMENTS = []
+if sys.version_info < (2, 6):
+    REQUIREMENTS += ['simplejson']
+
+if has_setuptools:
+    OPTIONS = {
+        'install_requires': REQUIREMENTS
+    }
+else:
+    if sys.version_info < (2, 6):
+        warnings.warn('No setuptools installed. Be sure that you have '
+                      'json or simplejson package installed')
+    OPTIONS = {}
 
 AUTHOR_EMAIL = metadata['author']
 VERSION = metadata['version']
@@ -30,4 +51,5 @@ setup(name=PACKAGE,
       license=LICENSE,
       url=WEBSITE,
       py_modules=MODULES,
+      **OPTIONS
 )
