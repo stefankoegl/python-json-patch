@@ -12,7 +12,7 @@ except ImportError:
 
 src = open('jsonpatch.py').read()
 metadata = dict(re.findall("__([a-z]+)__ = '([^']+)'", src))
-docstrings = re.findall('"""(.*)"""', src)
+docstrings = re.findall('"""(.*)"""', src, re.MULTILINE | re.DOTALL)
 
 PACKAGE = 'jsonpatch'
 
