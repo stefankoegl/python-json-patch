@@ -56,7 +56,7 @@ class JsonPatchException(Exception):
 
 
 class JsonPatchConflict(JsonPatchException):
-    """Raises if patch could be applied due to conflict situations such as:
+    """Raised if patch could not be applied due to conflict situation such as:
     - attempt to add object key then it already exists;
     - attempt to operate with nonexistence object key;
     - attempt to insert value to array at position beyond of it size;
