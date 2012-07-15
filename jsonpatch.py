@@ -218,6 +218,8 @@ class JsonPatch(object):
         True
         """
         def compare_values(path, value, other):
+            if value == other:
+                return
             if isinstance(value, dict) and isinstance(other, dict):
                 for operation in compare_dict(path, value, other):
                     yield operation
@@ -231,25 +233,26 @@ class JsonPatch(object):
             for key in src:
                 if key not in dst:
                     yield {'remove': '/'.join(path + [key])}
-                elif src[key] != dst[key]:
-                    current = path + [key]
-                    for operation in compare_values(current, src[key], dst[key]):
-                        yield operation
+                    continue
+                current = path + [key]
+                for operation in compare_values(current, src[key], dst[key]):
+                    yield operation
             for key in dst:
                 if key not in src:
                     yield {'add': '/'.join(path + [key]), 'value': dst[key]}
 
         def compare_list(path, src, dst):
             lsrc, ldst = len(src), len(dst)
-            for idx in reversed(range(max(lsrc, ldst))):
-                if idx < lsrc and idx < ldst:
+            for idx in range(min(lsrc, ldst)):
+                current = path + [str(idx)]
+                for operation in compare_values(current, src[idx], dst[idx]):
+                    yield operation
+            if lsrc < ldst:
+                for idx in range(lsrc, ldst):
                     current = path + [str(idx)]
-                    for operation in compare_values(current, src[idx], dst[idx]):
-                        yield operation
-                elif idx < ldst:
-                    yield {'add': '/'.join(path + [str(idx)]),
-                           'value': dst[idx]}
-                elif idx < lsrc:
+                    yield {'add': '/'.join(current), 'value': dst[idx]}
+            elif lsrc > ldst:
+                for idx in reversed(range(ldst, lsrc)):
                     yield {'remove': '/'.join(path + [str(idx)])}
 
         return cls(list(compare_dict([''], src, dst)))

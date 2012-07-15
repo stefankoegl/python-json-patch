@@ -125,6 +125,13 @@ class MakePatchTestCase(unittest.TestCase):
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
+    def test_array_add_remove(self):
+        # see https://github.com/stefankoegl/python-json-patch/issues/4
+        src = {'numbers': [], 'other': [1, 5, 3, 4]}
+        dst = {'numbers': [1, 3, 4, 5], 'other': []}
+        patch = jsonpatch.make_patch(src, dst)
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
 
 def suite():
     suite = unittest.TestSuite()
