@@ -133,6 +133,16 @@ class MakePatchTestCase(unittest.TestCase):
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
+    def test_add_nested(self):
+        # see http://tools.ietf.org/html/draft-ietf-appsawg-json-patch-03#appendix-A.10
+        src = {"foo": "bar"}
+        patch_obj = [ { "add": "/child", "value": { "grandchild": { } } } ]
+        res = jsonpatch.apply_patch(src, patch_obj)
+        expected = { "foo": "bar",
+                      "child": { "grandchild": { } }
+                   }
+        self.assertEqual(expected, res)
+
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(doctest.DocTestSuite(jsonpatch))

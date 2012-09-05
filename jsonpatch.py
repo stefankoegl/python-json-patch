@@ -31,7 +31,7 @@
 #
 
 """Apply JSON-Patches according to
-http://tools.ietf.org/html/draft-pbryan-json-patch-04"""
+http://tools.ietf.org/html/draft-ietf-appsawg-json-patch-03"""
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
