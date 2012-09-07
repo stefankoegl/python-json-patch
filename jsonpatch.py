@@ -4,6 +4,7 @@
 # https://github.com/stefankoegl/python-json-patch
 #
 # Copyright (c) 2011 Stefan Kögl <stefan@skoegl.net>
+# Copyright (c) 2012 Brian Waldon <bcwaldon@gmail.com>
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -63,6 +64,9 @@ class JsonPatchConflict(JsonPatchException):
     - etc.
     """
 
+class JsonPatchInvalid(JsonPatchException):
+    """Raised if patch does not conform to specfication"""
+
 
 def apply_patch(doc, patch, in_place=False):
     """Apply list of patches to specified json document.
@@ -97,6 +101,7 @@ def apply_patch(doc, patch, in_place=False):
     else:
         patch = JsonPatch(patch)
     return patch.apply(doc, in_place)
+
 
 def make_patch(src, dst):
     """Generates patch by comparing of two document objects. Actually is
@@ -162,8 +167,8 @@ class JsonPatch(object):
     {...}
     """
     def __init__(self, patch):
-        self.patch = patch
         self.operations = self.parse_patch(patch)
+        self.patch = patch
 
     def __str__(self):
         """str(self) -> self.to_string()"""
@@ -284,6 +289,9 @@ class JsonPatch(object):
         :return: list of PatchOperation objects
         :rtype: list
         """
+        if not isinstance(patch, list):
+            raise JsonPatchInvalid('JSON patch document must be a list')
+
         return [self._get_operation(op) for op in patch]
 
     def _get_operation(self, operation):
@@ -298,30 +306,37 @@ class JsonPatch(object):
             except KeyError:
                 continue
             else:
-                return op_cls(operation[key], operation)
+                return op_cls(operation)
         else:
-            raise JsonPatchException("invalid operation '%s'" % operation)
+            raise JsonPatchInvalid("invalid operation '%s'" % operation)
 
 
 class PatchOperation(object):
     """A single operation inside a JSON Patch."""
 
-    def __init__(self, location, operation):
-        self.location = location
+    def __init__(self, operation):
+        self.validate(operation)
         self.operation = operation
+
+    def validate(self, obj):
+        raise NotImplementedError('should implement operation validate method')
+
+    def validate_pointer(self, ptr):
+        if not isinstance(ptr, basestring) or \
+                not ptr.startswith('/') or \
+                not len(ptr) >= 2:
+            raise JsonPatchInvalid('Invalid JSON Pointer')
 
     def apply(self, obj):
         """Abstract method that applies patch operation to specified object."""
-        raise NotImplementedError('should implement patch operation.')
+        raise NotImplementedError('should implement operation apply method')
 
     def locate(self, obj, location, last_must_exist=True):
         """Walks through the object according to location.
 
         Returns the last step as (sub-object, last location-step)."""
 
-        parts = location.split('/')
-        if parts.pop(0) != '':
-            raise JsonPatchException('location must starts with /')
+        parts = location.split('/')[1:]
 
         for part in parts[:-1]:
             obj, _ = self._step(obj, part)
@@ -356,17 +371,27 @@ class PatchOperation(object):
 class RemoveOperation(PatchOperation):
     """Removes an object property or an array element."""
 
+    def validate(self, op):
+        if op.keys() != ['remove']:
+            raise JsonPatchInvalid('Invalid remove operation')
+        self.validate_pointer(op['remove'])
+
     def apply(self, obj):
-        subobj, part = self.locate(obj, self.location)
+        subobj, part = self.locate(obj, self.operation['remove'])
         del subobj[part]
 
 
 class AddOperation(PatchOperation):
     """Adds an object property or an array element."""
+    def validate(self, op):
+        if set(op.keys()) != set(['add', 'value']):
+            raise JsonPatchInvalid('Invalid add operation')
+        self.validate_pointer(op['add'])
 
     def apply(self, obj):
         value = self.operation["value"]
-        subobj, part = self.locate(obj, self.location, last_must_exist=False)
+        pointer = self.operation['add']
+        subobj, part = self.locate(obj, pointer, last_must_exist=False)
 
         if isinstance(subobj, list):
             if part > len(subobj) or part < 0:
@@ -388,9 +413,14 @@ class AddOperation(PatchOperation):
 class ReplaceOperation(PatchOperation):
     """Replaces an object property or an array element by new value."""
 
+    def validate(self, op):
+        if set(op.keys()) != set(['replace', 'value']):
+            raise JsonPatchInvalid('Invalid replace operation')
+        self.validate_pointer(op['replace'])
+
     def apply(self, obj):
         value = self.operation["value"]
-        subobj, part = self.locate(obj, self.location)
+        subobj, part = self.locate(obj, self.operation['replace'])
 
         if isinstance(subobj, list):
             if part > len(subobj) or part < 0:
@@ -411,20 +441,33 @@ class ReplaceOperation(PatchOperation):
 class MoveOperation(PatchOperation):
     """Moves an object property or an array element to new location."""
 
+    def validate(self, op):
+        if set(op.keys()) != set(['move', 'to']):
+            raise JsonPatchInvalid('Invalid move operation')
+        self.validate_pointer(op['move'])
+        self.validate_pointer(op['to'])
+
     def apply(self, obj):
-        subobj, part = self.locate(obj, self.location)
+        pointer = self.operation['move']
+        subobj, part = self.locate(obj, pointer)
         value = subobj[part]
-        RemoveOperation(self.location, self.operation).apply(obj)
-        AddOperation(self.operation['to'], {'value': value}).apply(obj)
+        RemoveOperation({'remove': pointer}).apply(obj)
+        AddOperation({'add': self.operation['to'], 'value': value}).apply(obj)
 
 
 class TestOperation(PatchOperation):
     """Test value by specified location."""
 
+    def validate(self, op):
+        if set(op.keys()) != set(['test', 'value']):
+            raise JsonPatchInvalid('Invalid test operation')
+        self.validate_pointer(op['test'])
+
     def apply(self, obj):
         value = self.operation['value']
-        subobj, part = self.locate(obj, self.location)
+        subobj, part = self.locate(obj, self.operation['test'])
         assert subobj[part] == value
+
 
 
 OP_CLS_MAP = {

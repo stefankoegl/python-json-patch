@@ -6,6 +6,112 @@ import unittest
 import jsonpatch
 
 
+class ValidatePatchTestCase(unittest.TestCase):
+
+    def test_json_not_list(self):
+        patch = '{"add": "/baz", "value": "qux"}'
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.JsonPatch, patch)
+
+    def test_patch_invalid_type(self):
+        patch = object()
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.JsonPatch, patch)
+
+    def test_patch_invalid_json(self):
+        patch = 'XXX'
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.JsonPatch, patch)
+
+    def test_patch_invalid_operation(self):
+        patch = [
+            {"remove": "/ping"},
+            {"destroy": "/ping"},  # Invalid!
+        ]
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.JsonPatch, patch)
+
+    def test_unknown_operation(self):
+        operation = [{"destroy": "/baz"}]
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.JsonPatch, operation)
+
+    def test_valid_add_operation(self):
+        operation = {"add": "/ping", "value": "pong"}
+        jsonpatch.AddOperation(operation)
+
+    def test_invalid_add_operation_no_value(self):
+        operation = {"add": "/ping"}
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.AddOperation, operation)
+
+    def test_invalid_add_operation_bad_pointer(self):
+        operation = {"add": "ping", "value": "pong"}
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.AddOperation, operation)
+
+    def test_valid_remove_operation(self):
+        operation = {"remove": "/ping"}
+        jsonpatch.RemoveOperation(operation)
+
+    def test_invalid_remove_operation_extra_key(self):
+        operation = {"remove": "/ping", "value": "pong"}
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.RemoveOperation, operation)
+
+    def test_invalid_remove_operation_bad_pointer(self):
+        operation = {"remove": "ping"}
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.RemoveOperation, operation)
+
+    def test_valid_replace_operation(self):
+        operation = {"replace": "/ping", "value": "pong"}
+        jsonpatch.ReplaceOperation(operation)
+
+    def test_invalid_replace_operation_no_value(self):
+        operation = {"replace": "/ping"}
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.ReplaceOperation, operation)
+
+    def test_invalid_replace_operation_bad_pointer(self):
+        operation = {"replace": "ping", "value": "pong"}
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.ReplaceOperation, operation)
+
+    def test_valid_move_operation(self):
+        operation = {"move": "/ping", "to": "/pong"}
+        jsonpatch.MoveOperation(operation)
+
+    def test_invalid_move_operation_no_to(self):
+        operation = {"move": "/ping"}
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.MoveOperation, operation)
+
+    def test_invalid_move_operation_bad_pointer(self):
+        operation = {"move": "ping", "to": "/pong"}
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.MoveOperation, operation)
+
+    def test_invalid_move_operation_bad_to_pointer(self):
+        operation = {"move": "/ping", "to": "pong"}
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.MoveOperation, operation)
+
+    def test_valid_test_operation(self):
+        operation = {"test": "/ping", "value": "pong"}
+        jsonpatch.TestOperation(operation)
+
+    def test_invalid_test_operation_no_value(self):
+        operation = {"test": "/ping"}
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.TestOperation, operation)
+
+    def test_invalid_test_operation_bad_pointer(self):
+        operation = {"test": "ping", "value": "pong"}
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.TestOperation, operation)
+
+
 class ApplyPatchTestCase(unittest.TestCase):
 
     def test_apply_patch_from_string(self):
@@ -83,6 +189,12 @@ class ApplyPatchTestCase(unittest.TestCase):
                           jsonpatch.apply_patch,
                           obj, [{'test': '/bar', 'value': 'bar'}])
 
+    def test_apply_invalid_patch(self):
+        obj = {'foo': 'bar'}
+        patch = {'destroy': '/foo'}
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.apply_patch, obj, patch)
+
 
 class MakePatchTestCase(unittest.TestCase):
 
@@ -143,9 +255,11 @@ class MakePatchTestCase(unittest.TestCase):
                    }
         self.assertEqual(expected, res)
 
+
 def suite():
     suite = unittest.TestSuite()
     suite.addTest(doctest.DocTestSuite(jsonpatch))
+    suite.addTest(unittest.makeSuite(ValidatePatchTestCase))
     suite.addTest(unittest.makeSuite(ApplyPatchTestCase))
     suite.addTest(unittest.makeSuite(MakePatchTestCase))
     return suite
