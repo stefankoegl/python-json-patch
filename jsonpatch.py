@@ -163,14 +163,7 @@ class JsonPatch(object):
     """
     def __init__(self, patch):
         self.patch = patch
-
-        self.operations = {
-            'remove': RemoveOperation,
-            'add': AddOperation,
-            'replace': ReplaceOperation,
-            'move': MoveOperation,
-            'test': TestOperation
-        }
+        self.operations = self.parse_patch(patch)
 
     def __str__(self):
         """str(self) -> self.to_string()"""
@@ -277,19 +270,37 @@ class JsonPatch(object):
         if not in_place:
             obj = copy.deepcopy(obj)
 
-        for operation in self.patch:
-            operation = self._get_operation(operation)
+        for operation in self.operations:
             operation.apply(obj)
 
         return obj
 
-    def _get_operation(self, operation):
-        for action, op_cls in self.operations.items():
-            if action in operation:
-                location = operation[action]
-                return op_cls(location, operation)
+    def parse_patch(self, patch):
+        """Convert a json-parsed JSON Patch document into a list of operations
 
-        raise JsonPatchException("invalid operation '%s'" % operation)
+        :param patch: JSON Patch document
+        :type patch: list of dicts
+
+        :return: list of PatchOperation objects
+        :rtype: list
+        """
+        return [self._get_operation(op) for op in patch]
+
+    def _get_operation(self, operation):
+        """Return a PatchOperation corresponding to the given operation
+
+        :param operation: a single JSON Patch operation
+        :type operation: dict
+        """
+        for key in operation.keys():
+            try:
+                op_cls = OP_CLS_MAP[key]
+            except KeyError:
+                continue
+            else:
+                return op_cls(operation[key], operation)
+        else:
+            raise JsonPatchException("invalid operation '%s'" % operation)
 
 
 class PatchOperation(object):
@@ -414,3 +425,12 @@ class TestOperation(PatchOperation):
         value = self.operation['value']
         subobj, part = self.locate(obj, self.location)
         assert subobj[part] == value
+
+
+OP_CLS_MAP = {
+    'remove': RemoveOperation,
+    'add': AddOperation,
+    'replace': ReplaceOperation,
+    'move': MoveOperation,
+    'test': TestOperation
+}
