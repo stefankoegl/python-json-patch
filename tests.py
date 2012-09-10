@@ -23,10 +23,17 @@ class ValidatePatchTestCase(unittest.TestCase):
         self.assertRaises(jsonpatch.JsonPatchInvalid,
                 jsonpatch.JsonPatch, patch)
 
-    def test_patch_invalid_operation(self):
+    def test_patch_buried_invalid_operation(self):
         patch = [
             {"remove": "/ping"},
             {"destroy": "/ping"},  # Invalid!
+        ]
+        self.assertRaises(jsonpatch.JsonPatchInvalid,
+                jsonpatch.JsonPatch, patch)
+
+    def test_patch_invalid_operation_name_conflict(self):
+        patch = [
+            {"add": "/ping", "value": "pong", "remove": "/pink"},
         ]
         self.assertRaises(jsonpatch.JsonPatchInvalid,
                 jsonpatch.JsonPatch, patch)
