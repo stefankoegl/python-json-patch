@@ -4,7 +4,6 @@
 # https://github.com/stefankoegl/python-json-patch
 #
 # Copyright (c) 2011 Stefan Kögl <stefan@skoegl.net>
-# Copyright (c) 2012 Brian Waldon <bcwaldon@gmail.com>
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
