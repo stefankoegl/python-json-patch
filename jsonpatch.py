@@ -63,6 +63,13 @@ class JsonPatchConflict(JsonPatchException):
     - etc.
     """
 
+class JsonPatchInvalid(JsonPatchException):
+    """Raised if patch does not conform to specfication"""
+
+
+class JsonPointerInvalid(JsonPatchException):
+    """Raised if Json Pointer does not conform to specification"""
+
 
 def apply_patch(doc, patch, in_place=False):
     """Apply list of patches to specified json document.
@@ -97,6 +104,7 @@ def apply_patch(doc, patch, in_place=False):
     else:
         patch = JsonPatch(patch)
     return patch.apply(doc, in_place)
+
 
 def make_patch(src, dst):
     """Generates patch by comparing of two document objects. Actually is
@@ -162,15 +170,8 @@ class JsonPatch(object):
     {...}
     """
     def __init__(self, patch):
+        self.operations = self.parse_patch(patch)
         self.patch = patch
-
-        self.operations = {
-            'remove': RemoveOperation,
-            'add': AddOperation,
-            'replace': ReplaceOperation,
-            'move': MoveOperation,
-            'test': TestOperation
-        }
 
     def __str__(self):
         """str(self) -> self.to_string()"""
@@ -277,140 +278,207 @@ class JsonPatch(object):
         if not in_place:
             obj = copy.deepcopy(obj)
 
-        for operation in self.patch:
-            operation = self._get_operation(operation)
+        for operation in self.operations:
             operation.apply(obj)
 
         return obj
 
-    def _get_operation(self, operation):
-        for action, op_cls in self.operations.items():
-            if action in operation:
-                location = operation[action]
-                return op_cls(location, operation)
+    def parse_patch(self, patch):
+        """Convert a json-parsed JSON Patch document into a list of operations
 
-        raise JsonPatchException("invalid operation '%s'" % operation)
+        :param patch: JSON Patch document
+        :type patch: list of dicts
+
+        :return: list of PatchOperation objects
+        :rtype: list
+        """
+        if not isinstance(patch, list):
+            raise JsonPatchInvalid('JSON patch document must be a list')
+
+        return [self._get_operation(op) for op in patch]
+
+    def _get_operation(self, operation):
+        """Return a PatchOperation corresponding to the given operation
+
+        :param operation: a single JSON Patch operation
+        :type operation: dict
+        """
+        for key in operation.keys():
+            try:
+                op_cls = OP_CLS_MAP[key]
+            except KeyError:
+                continue
+            else:
+                return op_cls(operation)
+        else:
+            raise JsonPatchInvalid("invalid operation '%s'" % operation)
 
 
 class PatchOperation(object):
     """A single operation inside a JSON Patch."""
 
-    def __init__(self, location, operation):
-        self.location = location
-        self.operation = operation
+    def __init__(self, operation):
+        self.operation = self.parse(operation)
+
+    def parse(self, obj):
+        raise NotImplementedError('should implement operation parse method')
 
     def apply(self, obj):
         """Abstract method that applies patch operation to specified object."""
-        raise NotImplementedError('should implement patch operation.')
-
-    def locate(self, obj, location, last_must_exist=True):
-        """Walks through the object according to location.
-
-        Returns the last step as (sub-object, last location-step)."""
-
-        parts = location.split('/')
-        if parts.pop(0) != '':
-            raise JsonPatchException('location must starts with /')
-
-        for part in parts[:-1]:
-            obj, _ = self._step(obj, part)
-
-        _, last_loc = self._step(obj, parts[-1], must_exist=last_must_exist)
-        return obj, last_loc
-
-    def _step(self, obj, loc_part, must_exist=True):
-        """Goes one step in a locate() call."""
-
-        if isinstance(obj, dict):
-            part_variants = [loc_part]
-            for variant in part_variants:
-                if variant not in obj:
-                    continue
-                return obj[variant], variant
-        elif isinstance(obj, list):
-            part_variants = [int(loc_part)]
-            for variant in part_variants:
-                if variant >= len(obj):
-                    continue
-                return obj[variant], variant
-        else:
-            raise ValueError('list or dict expected, got %r' % type(obj))
-
-        if must_exist:
-            raise JsonPatchConflict('key %s not found' % loc_part)
-        else:
-            return obj, part_variants[0]
+        raise NotImplementedError('should implement operation apply method')
 
 
 class RemoveOperation(PatchOperation):
     """Removes an object property or an array element."""
 
+    def parse(self, op):
+        if op.keys() != ['remove']:
+            raise JsonPatchInvalid('Invalid remove operation')
+        return {'remove': JsonPointer(op['remove'])}
+
     def apply(self, obj):
-        subobj, part = self.locate(obj, self.location)
-        del subobj[part]
+        ptr = self.operation['remove']
+        token = ptr.token
+        parent_container = ptr.parent.find_value(obj)
+        if isinstance(parent_container, list):
+            token = int(token)
+        del parent_container[token]
 
 
 class AddOperation(PatchOperation):
     """Adds an object property or an array element."""
+    def parse(self, op):
+        if set(op.keys()) != set(['add', 'value']):
+            raise JsonPatchInvalid('Invalid add operation')
+        return {'add': JsonPointer(op['add']), 'value': op['value']}
 
     def apply(self, obj):
-        value = self.operation["value"]
-        subobj, part = self.locate(obj, self.location, last_must_exist=False)
+        pointer = self.operation['add']
+        parent = pointer.parent.find_value(obj)
+        child = pointer.token
+        value = self.operation['value']
 
-        if isinstance(subobj, list):
-            if part > len(subobj) or part < 0:
-                raise JsonPatchConflict("can't insert outside of list")
-
-            subobj.insert(part, value)
-
-        elif isinstance(subobj, dict):
-            if part in subobj:
-                raise JsonPatchConflict("object '%s' already exists" % part)
-
-            subobj[part] = value
-
-        else:
-            raise JsonPatchConflict("can't add to type '%s'"
-                                    "" % subobj.__class__.__name__)
+        if isinstance(parent, list):
+            try:
+                child = int(child)
+            except (ValueError, TypeError):
+                raise JsonPointerInvalid('trailing token must be integer')
+            if child > len(parent) or child < 0:
+                raise JsonPatchConflict("can't replace outside of list")
+            else:
+                parent.insert(child, value)
+        elif isinstance(parent, dict):
+            if child in parent:
+                raise JsonPatchConflict("object '%s' already exists" % child)
+            else:
+                parent[child] = value
 
 
 class ReplaceOperation(PatchOperation):
     """Replaces an object property or an array element by new value."""
 
+    def parse(self, op):
+        if set(op.keys()) != set(['replace', 'value']):
+            raise JsonPatchInvalid('Invalid replace operation')
+        return {'replace': JsonPointer(op['replace']), 'value': op['value']}
+
     def apply(self, obj):
-        value = self.operation["value"]
-        subobj, part = self.locate(obj, self.location)
+        pointer = self.operation['replace']
+        parent = pointer.parent.find_value(obj)
+        child = pointer.token
+        value = self.operation['value']
 
-        if isinstance(subobj, list):
-            if part > len(subobj) or part < 0:
+        if isinstance(parent, list):
+            try:
+                child = int(child)
+            except (TypeError, ValueError):
+                raise JsonPointerInvalid('trailing token must be integer')
+            if child > len(parent) or child < 0:
                 raise JsonPatchConflict("can't replace outside of list")
-
-        elif isinstance(subobj, dict):
-            if not part in subobj:
+        elif isinstance(parent, dict):
+            if not child in parent:
                 raise JsonPatchConflict("can't replace non-existant object '%s'"
-                                        "" % part)
+                                        "" % child)
 
-        else:
-            raise JsonPatchConflict("can't replace in type '%s'"
-                                    "" % subobj.__class__.__name__)
-
-        subobj[part] = value
+        parent[child] = value
 
 
 class MoveOperation(PatchOperation):
     """Moves an object property or an array element to new location."""
 
+    def parse(self, op):
+        if set(op.keys()) != set(['move', 'to']):
+            raise JsonPatchInvalid('Invalid move operation')
+        return {'move': JsonPointer(op['move']), 'to': JsonPointer(op['to'])}
+
     def apply(self, obj):
-        subobj, part = self.locate(obj, self.location)
-        value = subobj[part]
-        RemoveOperation(self.location, self.operation).apply(obj)
-        AddOperation(self.operation['to'], {'value': value}).apply(obj)
+        move = self.operation['move']
+        to = self.operation['to']
+        value = move.find_value(obj)
+        RemoveOperation({'remove': move.to_string()}).apply(obj)
+        try:
+            AddOperation({'add': to.to_string(), 'value': value}).apply(obj)
+        except JsonPatchException:
+            AddOperation({'add': move.to_string(), 'value': value}).apply(obj)
 
 
 class TestOperation(PatchOperation):
     """Test value by specified location."""
 
+    def parse(self, op):
+        if set(op.keys()) != set(['test', 'value']):
+            raise JsonPatchInvalid('Invalid test operation')
+        return {'test': JsonPointer(op['test']), 'value': op['value']}
+
     def apply(self, obj):
-        value = self.operation['value']
-        subobj, part = self.locate(obj, self.location)
-        assert subobj[part] == value
+        assert self.operation['test'].find_value(obj) == self.operation['value']
+
+
+OP_CLS_MAP = {
+    'remove': RemoveOperation,
+    'add': AddOperation,
+    'replace': ReplaceOperation,
+    'move': MoveOperation,
+    'test': TestOperation
+}
+
+
+class JsonPointer(object):
+
+    def __init__(self, ptr):
+        self.tokens = self.parse_pointer(ptr)
+
+    @staticmethod
+    def parse_pointer(ptr):
+        if len(ptr) and not ptr.startswith('/'):
+            raise JsonPointerInvalid(ptr)
+        tokens = ptr.split('/')[1:]
+        tokens = [token.replace('~0', '~') for token in tokens]
+        tokens = [token.replace('~1', '/') for token in tokens]
+        return tokens
+
+    @staticmethod
+    def _lookup(obj, tokens):
+        for token in tokens:
+            if isinstance(obj, list):
+                token = int(token)
+            obj = obj[token]
+        return obj
+
+    def find_value(self, obj):
+        return self._lookup(obj, self.tokens)
+
+    @property
+    def token(self):
+        return self.tokens[-1]
+
+    def to_string(self):
+        tokens = [token.replace('/', '~1') for token in self.tokens]
+        tokens = [token.replace('~', '~0') for token in tokens]
+        return '/%s' % '/'.join(tokens)
+
+    @property
+    def parent(self):
+        self_str = self.to_string()
+        parent_str = self_str.rsplit('/', 1)[0]
+        return JsonPointer(parent_str)
