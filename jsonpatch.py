@@ -361,7 +361,7 @@ class AddOperation(PatchOperation):
         if isinstance(parent, list):
             try:
                 child = int(child)
-            except Exception:
+            except (ValueError, TypeError):
                 raise JsonPointerInvalid('trailing token must be integer')
             if child > len(parent) or child < 0:
                 raise JsonPatchConflict("can't replace outside of list")
@@ -391,7 +391,7 @@ class ReplaceOperation(PatchOperation):
         if isinstance(parent, list):
             try:
                 child = int(child)
-            except Exception:
+            except (TypeError, ValueError):
                 raise JsonPointerInvalid('trailing token must be integer')
             if child > len(parent) or child < 0:
                 raise JsonPatchConflict("can't replace outside of list")
@@ -418,7 +418,7 @@ class MoveOperation(PatchOperation):
         RemoveOperation({'remove': move.to_string()}).apply(obj)
         try:
             AddOperation({'add': to.to_string(), 'value': value}).apply(obj)
-        except Exception:
+        except JsonPatchException:
             AddOperation({'add': move.to_string(), 'value': value}).apply(obj)
 
 
