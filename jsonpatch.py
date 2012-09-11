@@ -169,7 +169,8 @@ class JsonPatch(object):
             'add': AddOperation,
             'replace': ReplaceOperation,
             'move': MoveOperation,
-            'test': TestOperation
+            'test': TestOperation,
+            'copy': CopyOperation,
         }
 
     def __str__(self):
@@ -414,3 +415,12 @@ class TestOperation(PatchOperation):
         value = self.operation['value']
         subobj, part = self.locate(obj, self.location)
         assert subobj[part] == value
+
+
+class CopyOperation(PatchOperation):
+    """ Copies an object property or an array element to a new location """
+
+    def apply(self, obj):
+        subobj, part = self.locate(obj, self.location)
+        value = subobj[part]
+        AddOperation(self.operation['to'], {'value': value}).apply(obj)

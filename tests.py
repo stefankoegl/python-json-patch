@@ -72,6 +72,20 @@ class ApplyPatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(obj, [{'move': '/foo/1', 'to': '/foo/3'}])
         self.assertEqual(res, {'foo': ['all', 'cows', 'eat', 'grass']})
 
+    def test_copy_object_key(self):
+        obj = {'foo': {'bar': 'baz', 'waldo': 'fred'},
+               'qux': {'corge': 'grault'}}
+        res = jsonpatch.apply_patch(obj, [{'copy': '/foo/waldo',
+                                           'to': '/qux/thud'}])
+        self.assertEqual(res, {'qux': {'thud': 'fred', 'corge': 'grault'},
+                               'foo': {'bar': 'baz', 'waldo': 'fred'}})
+
+    def test_copy_array_item(self):
+        obj =  {'foo': ['all', 'grass', 'cows', 'eat']}
+        res = jsonpatch.apply_patch(obj, [{'copy': '/foo/1', 'to': '/foo/3'}])
+        self.assertEqual(res, {'foo': ['all', 'grass', 'cows', 'grass', 'eat']})
+
+
     def test_test_success(self):
         obj =  {'baz': 'qux', 'foo': ['a', 2, 'c']}
         jsonpatch.apply_patch(obj, [{'test': '/baz', 'value': 'qux'},
