@@ -422,5 +422,5 @@ class CopyOperation(PatchOperation):
 
     def apply(self, obj):
         subobj, part = self.locate(obj, self.location)
-        value = subobj[part]
+        value = copy.deepcopy(subobj[part])
         AddOperation(self.operation['to'], {'value': value}).apply(obj)

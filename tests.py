@@ -86,6 +86,18 @@ class ApplyPatchTestCase(unittest.TestCase):
         self.assertEqual(res, {'foo': ['all', 'grass', 'cows', 'grass', 'eat']})
 
 
+    def test_copy_mutable(self):
+        """ test if mutable objects (dicts and lists) are copied by value """
+        obj = {'foo': [{'bar': 42}, {'baz': 3.14}], 'boo': []}
+        # copy object somewhere
+        res = jsonpatch.apply_patch(obj, [{'copy': '/foo/0', 'to': '/boo/0' }])
+        self.assertEqual(res, {'foo': [{'bar': 42}, {'baz': 3.14}], 'boo': [{'bar': 42}]})
+        # modify original object
+        res = jsonpatch.apply_patch(res, [{'add': '/foo/0/zoo', 'value': 255}])
+        # check if that didn't modify the copied object
+        self.assertEqual(res['boo'], [{'bar': 42}])
+
+
     def test_test_success(self):
         obj =  {'baz': 'qux', 'foo': ['a', 2, 'c']}
         jsonpatch.apply_patch(obj, [{'test': '/baz', 'value': 'qux'},
