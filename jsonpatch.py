@@ -31,7 +31,7 @@
 #
 
 """Apply JSON-Patches according to
-http://tools.ietf.org/html/draft-ietf-appsawg-json-patch-03"""
+http://tools.ietf.org/html/draft-ietf-appsawg-json-patch-04"""
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
@@ -62,6 +62,9 @@ class JsonPatchConflict(JsonPatchException):
     - attempt to insert value to array at position beyond of it size;
     - etc.
     """
+
+class JsonPatchTestFailed(JsonPatchException, AssertionError):
+    """ A Test operation failed """
 
 
 def apply_patch(doc, patch, in_place=False):
@@ -412,9 +415,17 @@ class TestOperation(PatchOperation):
     """Test value by specified location."""
 
     def apply(self, obj):
-        value = self.operation['value']
-        subobj, part = self.locate(obj, self.location)
-        assert subobj[part] == value
+        try:
+            subobj, part = self.locate(obj, self.location)
+        except JsonPatchConflict, c:
+            raise JsonPatchTestFailed(str(c))
+
+        val = subobj[part]
+
+        if 'value' in self.operation:
+            value = self.operation['value']
+            if val != value:
+                raise JsonPatchTestFailed('%s is not equal to tested value %s' % (val, value))
 
 
 class CopyOperation(PatchOperation):

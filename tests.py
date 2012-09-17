@@ -105,9 +105,37 @@ class ApplyPatchTestCase(unittest.TestCase):
 
     def test_test_error(self):
         obj =  {'bar': 'qux'}
-        self.assertRaises(AssertionError,
+        self.assertRaises(jsonpatch.JsonPatchTestFailed,
                           jsonpatch.apply_patch,
                           obj, [{'test': '/bar', 'value': 'bar'}])
+
+
+    def test_test_not_existing(self):
+        obj =  {'bar': 'qux'}
+        self.assertRaises(jsonpatch.JsonPatchTestFailed,
+                          jsonpatch.apply_patch,
+                          obj, [{'test': '/baz', 'value': 'bar'}])
+
+
+    def test_test_noval_existing(self):
+        obj =  {'bar': 'qux'}
+        jsonpatch.apply_patch(obj, [{'test': '/bar'}])
+
+
+    def test_test_noval_not_existing(self):
+        obj =  {'bar': 'qux'}
+        self.assertRaises(jsonpatch.JsonPatchTestFailed,
+                          jsonpatch.apply_patch,
+                          obj, [{'test': '/baz'}])
+
+
+    def test_test_noval_not_existing_nested(self):
+        obj =  {'bar': {'qux': 2}}
+        self.assertRaises(jsonpatch.JsonPatchTestFailed,
+                          jsonpatch.apply_patch,
+                          obj, [{'test': '/baz/qx'}])
+
+
 
 
 class MakePatchTestCase(unittest.TestCase):
