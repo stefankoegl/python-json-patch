@@ -84,12 +84,12 @@ def apply_patch(doc, patch, in_place=False):
     :rtype: dict
 
     >>> doc = {'foo': 'bar'}
-    >>> other = apply_patch(doc, [{'add': '/baz', 'value': 'qux'}])
+    >>> other = apply_patch(doc, [{'op': 'add', 'path': '/baz', 'value': 'qux'}])
     >>> doc is not other
     True
     >>> other
     {'foo': 'bar', 'baz': 'qux'}
-    >>> apply_patch(doc, [{'add': '/baz', 'value': 'qux'}], in_place=True)
+    >>> apply_patch(doc, [{'op': 'add', 'path': '/baz', 'value': 'qux'}], in_place=True)
     {'foo': 'bar', 'baz': 'qux'}
     >>> doc == other
     True
@@ -125,23 +125,26 @@ class JsonPatch(object):
     """A JSON Patch is a list of Patch Operations.
 
     >>> patch = JsonPatch([
-    ...     {'add': '/foo', 'value': 'bar'},
-    ...     {'add': '/baz', 'value': [1, 2, 3]},
-    ...     {'remove': '/baz/1'},
-    ...     {'test': '/baz', 'value': [1, 3]},
-    ...     {'replace': '/baz/0', 'value': 42},
-    ...     {'remove': '/baz/1'},
+    ...     {'op': 'add', 'path': '/foo', 'value': 'bar'},
+    ...     {'op': 'add', 'path': '/baz', 'value': [1, 2, 3]},
+    ...     {'op': 'remove', 'path': '/baz/1'},
+    ...     {'op': 'test', 'path': '/baz', 'value': [1, 3]},
+    ...     {'op': 'replace', 'path': '/baz/0', 'value': 42},
+    ...     {'op': 'remove', 'path': '/baz/1'},
     ... ])
     >>> doc = {}
-    >>> patch.apply(doc)
-    {'foo': 'bar', 'baz': [42]}
+    >>> result = patch.apply(doc)
+    >>> expected = {'foo': 'bar', 'baz': [42]}
+    >>> result == expected
+    True
 
     JsonPatch object is iterable, so you could easily access to each patch
     statement in loop:
 
     >>> lpatch = list(patch)
-    >>> lpatch[0]
-    {'add': '/foo', 'value': 'bar'}
+    >>> expected = {'op': 'add', 'path': '/foo', 'value': 'bar'}
+    >>> lpatch[0] == expected
+    True
     >>> lpatch == patch.patch
     True
 
@@ -231,19 +234,19 @@ class JsonPatch(object):
                 for operation in compare_list(path, value, other):
                     yield operation
             else:
-                yield {'replace': '/'.join(path), 'value': other}
+                yield {'op': 'replace', 'path': '/'.join(path), 'value': other}
 
         def compare_dict(path, src, dst):
             for key in src:
                 if key not in dst:
-                    yield {'remove': '/'.join(path + [key])}
+                    yield {'op': 'remove', 'path': '/'.join(path + [key])}
                     continue
                 current = path + [key]
                 for operation in compare_values(current, src[key], dst[key]):
                     yield operation
             for key in dst:
                 if key not in src:
-                    yield {'add': '/'.join(path + [key]), 'value': dst[key]}
+                    yield {'op': 'add', 'path': '/'.join(path + [key]), 'value': dst[key]}
 
         def compare_list(path, src, dst):
             lsrc, ldst = len(src), len(dst)
@@ -254,10 +257,10 @@ class JsonPatch(object):
             if lsrc < ldst:
                 for idx in range(lsrc, ldst):
                     current = path + [str(idx)]
-                    yield {'add': '/'.join(current), 'value': dst[idx]}
+                    yield {'op': 'add', 'path': '/'.join(current), 'value': dst[idx]}
             elif lsrc > ldst:
                 for idx in reversed(range(ldst, lsrc)):
-                    yield {'remove': '/'.join(path + [str(idx)])}
+                    yield {'op': 'remove', 'path': '/'.join(path + [str(idx)])}
 
         return cls(list(compare_dict([''], src, dst)))
 
@@ -288,19 +291,24 @@ class JsonPatch(object):
         return obj
 
     def _get_operation(self, operation):
-        for action, op_cls in self.operations.items():
-            if action in operation:
-                location = operation[action]
-                return op_cls(location, operation)
+        if 'op' not in operation:
+            raise JsonPatchException("Operation does not contain 'op' member")
+            raise Exception
 
-        raise JsonPatchException("invalid operation '%s'" % operation)
+        op = operation['op']
+        if op not in self.operations:
+            raise JsonPatchException("Unknown operation '%s'" % op)
+
+        cls = self.operations[op]
+        return cls(operation)
+
 
 
 class PatchOperation(object):
     """A single operation inside a JSON Patch."""
 
-    def __init__(self, location, operation):
-        self.location = location
+    def __init__(self, operation):
+        self.location = operation['path']
         self.operation = operation
 
     def apply(self, obj):
@@ -407,8 +415,9 @@ class MoveOperation(PatchOperation):
     def apply(self, obj):
         subobj, part = self.locate(obj, self.location)
         value = subobj[part]
-        RemoveOperation(self.location, self.operation).apply(obj)
-        AddOperation(self.operation['to'], {'value': value}).apply(obj)
+
+        RemoveOperation({'op': 'remove', 'path': self.location}).apply(obj)
+        AddOperation({'op': 'add', 'path': self.operation['to'], 'value': value}).apply(obj)
 
 
 class TestOperation(PatchOperation):
@@ -434,4 +443,4 @@ class CopyOperation(PatchOperation):
     def apply(self, obj):
         subobj, part = self.locate(obj, self.location)
         value = copy.deepcopy(subobj[part])
-        AddOperation(self.operation['to'], {'value': value}).apply(obj)
+        AddOperation({'op': 'add', 'path': self.operation['to'], 'value': value}).apply(obj)

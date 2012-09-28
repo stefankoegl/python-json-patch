@@ -10,7 +10,7 @@ class ApplyPatchTestCase(unittest.TestCase):
 
     def test_apply_patch_from_string(self):
         obj = {'foo': 'bar'}
-        patch = '[{"add": "/baz", "value": "qux"}]'
+        patch = '[{"op": "add", "path": "/baz", "value": "qux"}]'
         res = jsonpatch.apply_patch(obj, patch)
         self.assertTrue(obj is not res)
         self.assertTrue('baz' in res)
@@ -18,71 +18,71 @@ class ApplyPatchTestCase(unittest.TestCase):
 
     def test_apply_patch_to_copy(self):
         obj = {'foo': 'bar'}
-        res = jsonpatch.apply_patch(obj, [{'add': '/baz', 'value': 'qux'}])
+        res = jsonpatch.apply_patch(obj, [{'op': 'add', 'path': '/baz', 'value': 'qux'}])
         self.assertTrue(obj is not res)
 
     def test_apply_patch_to_same_instance(self):
         obj = {'foo': 'bar'}
-        res = jsonpatch.apply_patch(obj, [{'add': '/baz', 'value': 'qux'}],
+        res = jsonpatch.apply_patch(obj, [{'op': 'add', 'path': '/baz', 'value': 'qux'}],
                                     in_place=True)
         self.assertTrue(obj is res)
 
     def test_add_object_key(self):
         obj = {'foo': 'bar'}
-        res = jsonpatch.apply_patch(obj, [{'add': '/baz', 'value': 'qux'}])
+        res = jsonpatch.apply_patch(obj, [{'op': 'add', 'path': '/baz', 'value': 'qux'}])
         self.assertTrue('baz' in res)
         self.assertEqual(res['baz'], 'qux')
 
     def test_add_array_item(self):
         obj = {'foo': ['bar', 'baz']}
-        res = jsonpatch.apply_patch(obj, [{'add': '/foo/1', 'value': 'qux'}])
+        res = jsonpatch.apply_patch(obj, [{'op': 'add', 'path': '/foo/1', 'value': 'qux'}])
         self.assertEqual(res['foo'], ['bar', 'qux', 'baz'])
 
     def test_remove_object_key(self):
         obj = {'foo': 'bar', 'baz': 'qux'}
-        res = jsonpatch.apply_patch(obj, [{'remove': '/baz'}])
+        res = jsonpatch.apply_patch(obj, [{'op': 'remove', 'path': '/baz'}])
         self.assertTrue('baz' not in res)
 
     def test_remove_array_item(self):
         obj = {'foo': ['bar', 'qux', 'baz']}
-        res = jsonpatch.apply_patch(obj, [{'remove': '/foo/1'}])
+        res = jsonpatch.apply_patch(obj, [{'op': 'remove', 'path': '/foo/1'}])
         self.assertEqual(res['foo'], ['bar', 'baz'])
 
     def test_replace_object_key(self):
         obj = {'foo': 'bar', 'baz': 'qux'}
-        res = jsonpatch.apply_patch(obj, [{'replace': '/baz', 'value': 'boo'}])
+        res = jsonpatch.apply_patch(obj, [{'op': 'replace', 'path': '/baz', 'value': 'boo'}])
         self.assertTrue(res['baz'], 'boo')
 
     def test_replace_array_item(self):
         obj = {'foo': ['bar', 'qux', 'baz']}
-        res = jsonpatch.apply_patch(obj, [{'replace': '/foo/1',
+        res = jsonpatch.apply_patch(obj, [{'op': 'replace', 'path': '/foo/1',
                                            'value': 'boo'}])
         self.assertEqual(res['foo'], ['bar', 'boo', 'baz'])
 
     def test_move_object_key(self):
         obj = {'foo': {'bar': 'baz', 'waldo': 'fred'},
                'qux': {'corge': 'grault'}}
-        res = jsonpatch.apply_patch(obj, [{'move': '/foo/waldo',
+        res = jsonpatch.apply_patch(obj, [{'op': 'move', 'path': '/foo/waldo',
                                            'to': '/qux/thud'}])
         self.assertEqual(res, {'qux': {'thud': 'fred', 'corge': 'grault'},
                                'foo': {'bar': 'baz'}})
 
     def test_move_array_item(self):
         obj =  {'foo': ['all', 'grass', 'cows', 'eat']}
-        res = jsonpatch.apply_patch(obj, [{'move': '/foo/1', 'to': '/foo/3'}])
+        res = jsonpatch.apply_patch(obj, [{'op': 'move', 'path': '/foo/1', 'to': '/foo/3'}])
         self.assertEqual(res, {'foo': ['all', 'cows', 'eat', 'grass']})
 
     def test_copy_object_key(self):
         obj = {'foo': {'bar': 'baz', 'waldo': 'fred'},
                'qux': {'corge': 'grault'}}
-        res = jsonpatch.apply_patch(obj, [{'copy': '/foo/waldo',
+        res = jsonpatch.apply_patch(obj, [{'op': 'copy', 'path': '/foo/waldo',
                                            'to': '/qux/thud'}])
         self.assertEqual(res, {'qux': {'thud': 'fred', 'corge': 'grault'},
                                'foo': {'bar': 'baz', 'waldo': 'fred'}})
 
     def test_copy_array_item(self):
         obj =  {'foo': ['all', 'grass', 'cows', 'eat']}
-        res = jsonpatch.apply_patch(obj, [{'copy': '/foo/1', 'to': '/foo/3'}])
+        res = jsonpatch.apply_patch(obj, [{'op': 'copy', 'path': '/foo/1', 'to': '/foo/3'}])
         self.assertEqual(res, {'foo': ['all', 'grass', 'cows', 'grass', 'eat']})
 
 
@@ -90,50 +90,50 @@ class ApplyPatchTestCase(unittest.TestCase):
         """ test if mutable objects (dicts and lists) are copied by value """
         obj = {'foo': [{'bar': 42}, {'baz': 3.14}], 'boo': []}
         # copy object somewhere
-        res = jsonpatch.apply_patch(obj, [{'copy': '/foo/0', 'to': '/boo/0' }])
+        res = jsonpatch.apply_patch(obj, [{'op': 'copy', 'path': '/foo/0', 'to': '/boo/0' }])
         self.assertEqual(res, {'foo': [{'bar': 42}, {'baz': 3.14}], 'boo': [{'bar': 42}]})
         # modify original object
-        res = jsonpatch.apply_patch(res, [{'add': '/foo/0/zoo', 'value': 255}])
+        res = jsonpatch.apply_patch(res, [{'op': 'add', 'path': '/foo/0/zoo', 'value': 255}])
         # check if that didn't modify the copied object
         self.assertEqual(res['boo'], [{'bar': 42}])
 
 
     def test_test_success(self):
         obj =  {'baz': 'qux', 'foo': ['a', 2, 'c']}
-        jsonpatch.apply_patch(obj, [{'test': '/baz', 'value': 'qux'},
-                                    {'test': '/foo/1', 'value': 2}])
+        jsonpatch.apply_patch(obj, [{'op': 'test', 'path': '/baz', 'value': 'qux'},
+                                    {'op': 'test', 'path': '/foo/1', 'value': 2}])
 
     def test_test_error(self):
         obj =  {'bar': 'qux'}
         self.assertRaises(jsonpatch.JsonPatchTestFailed,
                           jsonpatch.apply_patch,
-                          obj, [{'test': '/bar', 'value': 'bar'}])
+                          obj, [{'op': 'test', 'path': '/bar', 'value': 'bar'}])
 
 
     def test_test_not_existing(self):
         obj =  {'bar': 'qux'}
         self.assertRaises(jsonpatch.JsonPatchTestFailed,
                           jsonpatch.apply_patch,
-                          obj, [{'test': '/baz', 'value': 'bar'}])
+                          obj, [{'op': 'test', 'path': '/baz', 'value': 'bar'}])
 
 
     def test_test_noval_existing(self):
         obj =  {'bar': 'qux'}
-        jsonpatch.apply_patch(obj, [{'test': '/bar'}])
+        jsonpatch.apply_patch(obj, [{'op': 'test', 'path': '/bar'}])
 
 
     def test_test_noval_not_existing(self):
         obj =  {'bar': 'qux'}
         self.assertRaises(jsonpatch.JsonPatchTestFailed,
                           jsonpatch.apply_patch,
-                          obj, [{'test': '/baz'}])
+                          obj, [{'op': 'test', 'path': '/baz'}])
 
 
     def test_test_noval_not_existing_nested(self):
         obj =  {'bar': {'qux': 2}}
         self.assertRaises(jsonpatch.JsonPatchTestFailed,
                           jsonpatch.apply_patch,
-                          obj, [{'test': '/baz/qx'}])
+                          obj, [{'op': 'test', 'path': '/baz/qx'}])
 
 
 
@@ -190,7 +190,7 @@ class MakePatchTestCase(unittest.TestCase):
     def test_add_nested(self):
         # see http://tools.ietf.org/html/draft-ietf-appsawg-json-patch-03#appendix-A.10
         src = {"foo": "bar"}
-        patch_obj = [ { "add": "/child", "value": { "grandchild": { } } } ]
+        patch_obj = [ { "op": "add", "path": "/child", "value": { "grandchild": { } } } ]
         res = jsonpatch.apply_patch(src, patch_obj)
         expected = { "foo": "bar",
                       "child": { "grandchild": { } }
