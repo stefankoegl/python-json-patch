@@ -191,6 +191,18 @@ class JsonPatch(object):
     def __iter__(self):
         return iter(self.patch)
 
+
+    def __hash__(self):
+        return hash(frozenset(self.operations))
+
+
+    def __eq__(self, other):
+        if not isinstance(other, JsonPatch):
+            return False
+
+        return self.patch == other.patch
+
+
     @classmethod
     def from_string(cls, patch_str):
         """Creates JsonPatch instance from string source.
@@ -352,6 +364,17 @@ class PatchOperation(object):
             raise JsonPatchConflict('key %s not found' % loc_part)
         else:
             return obj, part_variants[0]
+
+
+    def __hash__(self):
+        return hash(frozenset(self.operation.items()))
+
+
+    def __eq__(self, other):
+        if not isinstance(other, PatchOperation):
+            return False
+
+        return self.operation == other.operation
 
 
 class RemoveOperation(PatchOperation):

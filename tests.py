@@ -137,6 +137,21 @@ class ApplyPatchTestCase(unittest.TestCase):
 
 
 
+class EqualityTestCase(unittest.TestCase):
+
+    def test_patch_equality(self):
+        patch1 = jsonpatch.JsonPatch([{ "op": "add", "path": "/a/b/c", "value": "foo" }])
+        patch2 = jsonpatch.JsonPatch([{ "path": "/a/b/c", "op": "add", "value": "foo" }])
+        self.assertEqual(patch1, patch2)
+
+
+    def test_patch_unequal(self):
+        patch1 = jsonpatch.JsonPatch([{'op': 'test', 'path': '/test'}])
+        patch2 = jsonpatch.JsonPatch([{'op': 'test', 'path': '/test1'}])
+        self.assertNotEqual(patch1, patch2)
+
+
+
 
 class MakePatchTestCase(unittest.TestCase):
 
@@ -201,6 +216,7 @@ def suite():
     suite = unittest.TestSuite()
     suite.addTest(doctest.DocTestSuite(jsonpatch))
     suite.addTest(unittest.makeSuite(ApplyPatchTestCase))
+    suite.addTest(unittest.makeSuite(EqualityTestCase))
     suite.addTest(unittest.makeSuite(MakePatchTestCase))
     return suite
 
