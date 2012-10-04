@@ -449,8 +449,13 @@ class TestOperation(PatchOperation):
     def apply(self, obj):
         try:
             subobj, part = self.locate(obj, self.location)
-        except JsonPatchConflict, c:
-            raise JsonPatchTestFailed(str(c))
+        except JsonPatchConflict:
+            exc_info = sys.exc_info()
+            exc = JsonPatchTestFailed(str(exc_info[1]))
+            if sys.version_info >= (3, 0):
+                raise exc.with_traceback(exc_info[2])
+            else:
+                raise exc
 
         val = subobj[part]
 
