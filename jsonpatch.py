@@ -30,12 +30,13 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-"""Apply JSON-Patches according to
-http://tools.ietf.org/html/draft-ietf-appsawg-json-patch-05"""
+""" Apply JSON-Patches (according to draft 06) """
+
+# http://tools.ietf.org/html/draft-ietf-appsawg-json-patch-05
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
-__version__ = '0.7'
+__version__ = '0.8'
 __website__ = 'https://github.com/stefankoegl/python-json-patch'
 __license__ = 'Modified BSD License'
 
