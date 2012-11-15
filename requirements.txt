@@ -1,0 +1,1 @@
+jsonpointer>=0.5

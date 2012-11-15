@@ -47,9 +47,13 @@ if sys.version_info < (2, 6):
 else:
     import json
 
+import jsonpointer
+
 if sys.version_info >= (3, 0):
     basestring = (bytes, str)
 
+
+JsonPointerException = jsonpointer.JsonPointerException
 
 class JsonPatchException(Exception):
     """Base Json Patch exception"""
@@ -321,49 +325,12 @@ class PatchOperation(object):
 
     def __init__(self, operation):
         self.location = operation['path']
+        self.pointer = jsonpointer.JsonPointer(self.location)
         self.operation = operation
 
     def apply(self, obj):
         """Abstract method that applies patch operation to specified object."""
         raise NotImplementedError('should implement patch operation.')
-
-    def locate(self, obj, location, last_must_exist=True):
-        """Walks through the object according to location.
-
-        Returns the last step as (sub-object, last location-step)."""
-
-        parts = location.split('/')
-        if parts.pop(0) != '':
-            raise JsonPatchException('location must starts with /')
-
-        for part in parts[:-1]:
-            obj, _ = self._step(obj, part)
-
-        _, last_loc = self._step(obj, parts[-1], must_exist=last_must_exist)
-        return obj, last_loc
-
-    def _step(self, obj, loc_part, must_exist=True):
-        """Goes one step in a locate() call."""
-
-        if isinstance(obj, dict):
-            part_variants = [loc_part]
-            for variant in part_variants:
-                if variant not in obj:
-                    continue
-                return obj[variant], variant
-        elif isinstance(obj, list):
-            part_variants = [int(loc_part)]
-            for variant in part_variants:
-                if variant >= len(obj):
-                    continue
-                return obj[variant], variant
-        else:
-            raise ValueError('list or dict expected, got %r' % type(obj))
-
-        if must_exist:
-            raise JsonPatchConflict('key %s not found' % loc_part)
-        else:
-            return obj, part_variants[0]
 
 
     def __hash__(self):
@@ -381,7 +348,7 @@ class RemoveOperation(PatchOperation):
     """Removes an object property or an array element."""
 
     def apply(self, obj):
-        subobj, part = self.locate(obj, self.location)
+        subobj, part = self.pointer.to_last(obj)
         del subobj[part]
 
 
@@ -390,13 +357,18 @@ class AddOperation(PatchOperation):
 
     def apply(self, obj):
         value = self.operation["value"]
-        subobj, part = self.locate(obj, self.location, last_must_exist=False)
+        subobj, part = self.pointer.to_last(obj, None)
 
         if isinstance(subobj, list):
-            if part > len(subobj) or part < 0:
+
+            if part == '-':
+                subobj.append(value)
+
+            elif part > len(subobj) or part < 0:
                 raise JsonPatchConflict("can't insert outside of list")
 
-            subobj.insert(part, value)
+            else:
+                subobj.insert(part, value)
 
         elif isinstance(subobj, dict):
             if part in subobj:
@@ -414,7 +386,7 @@ class ReplaceOperation(PatchOperation):
 
     def apply(self, obj):
         value = self.operation["value"]
-        subobj, part = self.locate(obj, self.location)
+        subobj, part = self.pointer.to_last(obj)
 
         if isinstance(subobj, list):
             if part > len(subobj) or part < 0:
@@ -436,8 +408,13 @@ class MoveOperation(PatchOperation):
     """Moves an object property or an array element to new location."""
 
     def apply(self, obj):
-        subobj, part = self.locate(obj, self.location)
+        subobj, part = self.pointer.to_last(obj)
         value = subobj[part]
+
+        to_ptr = jsonpointer.JsonPointer(self.operation['to'])
+
+        if self.pointer.contains(to_ptr):
+            raise JsonPatchException('Cannot move values into its own children')
 
         RemoveOperation({'op': 'remove', 'path': self.location}).apply(obj)
         AddOperation({'op': 'add', 'path': self.operation['to'], 'value': value}).apply(obj)
@@ -448,16 +425,16 @@ class TestOperation(PatchOperation):
 
     def apply(self, obj):
         try:
-            subobj, part = self.locate(obj, self.location)
-        except JsonPatchConflict:
+            subobj, part = self.pointer.to_last(obj)
+            val = self.pointer.walk(subobj, part)
+
+        except JsonPointerException:
             exc_info = sys.exc_info()
             exc = JsonPatchTestFailed(str(exc_info[1]))
             if sys.version_info >= (3, 0):
                 raise exc.with_traceback(exc_info[2])
             else:
                 raise exc
-
-        val = subobj[part]
 
         if 'value' in self.operation:
             value = self.operation['value']
@@ -469,6 +446,6 @@ class CopyOperation(PatchOperation):
     """ Copies an object property or an array element to a new location """
 
     def apply(self, obj):
-        subobj, part = self.locate(obj, self.location)
+        subobj, part = self.pointer.to_last(obj)
         value = copy.deepcopy(subobj[part])
         AddOperation({'op': 'add', 'path': self.operation['to'], 'value': value}).apply(obj)

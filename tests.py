@@ -136,6 +136,20 @@ class ApplyPatchTestCase(unittest.TestCase):
                           obj, [{'op': 'test', 'path': '/baz/qx'}])
 
 
+    def test_unrecognized_element(self):
+        obj = {'foo': 'bar', 'baz': 'qux'}
+        res = jsonpatch.apply_patch(obj, [{'op': 'replace', 'path': '/baz', 'value': 'boo', 'foo': 'ignore'}])
+        self.assertTrue(res['baz'], 'boo')
+
+
+    def test_append(self):
+        obj = {'foo': [1, 2]}
+        res = jsonpatch.apply_patch(obj, [
+                {'op': 'add', 'path': '/foo/-', 'value': 3},
+                {'op': 'add', 'path': '/foo/-', 'value': 4},
+            ])
+
+
 
 class EqualityTestCase(unittest.TestCase):
 
