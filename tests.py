@@ -4,6 +4,7 @@
 import doctest
 import unittest
 import jsonpatch
+import sys
 
 
 class ApplyPatchTestCase(unittest.TestCase):
@@ -226,7 +227,12 @@ class MakePatchTestCase(unittest.TestCase):
                    }
         self.assertEqual(expected, res)
 
-def suite():
+
+modules = ['jsonpatch']
+coverage_modules = []
+
+
+def get_suite():
     suite = unittest.TestSuite()
     suite.addTest(doctest.DocTestSuite(jsonpatch))
     suite.addTest(unittest.makeSuite(ApplyPatchTestCase))
@@ -234,5 +240,38 @@ def suite():
     suite.addTest(unittest.makeSuite(MakePatchTestCase))
     return suite
 
-if __name__ == '__main__':
-    unittest.main(defaultTest='suite')
+
+suite = get_suite()
+
+for module in modules:
+    m = __import__(module, fromlist=[module])
+    coverage_modules.append(m)
+    suite.addTest(doctest.DocTestSuite(m))
+
+runner = unittest.TextTestRunner(verbosity=1)
+
+try:
+    import coverage
+except ImportError:
+    coverage = None
+
+if coverage is not None:
+    coverage.erase()
+    coverage.start()
+
+result = runner.run(suite)
+
+if not result.wasSuccessful():
+    sys.exit(1)
+
+if coverage is not None:
+    coverage.stop()
+    coverage.report(coverage_modules)
+    coverage.erase()
+
+if coverage is None:
+    sys.stderr.write("""
+No coverage reporting done (Python module "coverage" is missing)
+Please install the python-coverage package to get coverage reporting.
+""")
+    sys.stderr.flush()
