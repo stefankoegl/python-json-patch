@@ -20,7 +20,7 @@ MODULES = (
         'jsonpatch',
 )
 
-REQUIREMENTS = []
+REQUIREMENTS = list(open('requirements.txt'))
 if sys.version_info < (2, 6):
     REQUIREMENTS += ['simplejson']
 
