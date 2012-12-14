@@ -352,8 +352,13 @@ class RemoveOperation(PatchOperation):
         subobj, part = self.pointer.to_last(obj)
         try:
             del subobj[part]
-        except KeyError as ex:
-            raise JsonPatchConflict(ex)
+        except KeyError:
+            exc_info = sys.exc_info()
+            exc = JsonPatchConflict(str(exc_info[1]))
+            if sys.version_info >= (3, 0):
+                raise exc.with_traceback(exc_info[2])
+            else:
+                raise exc
 
 
 class AddOperation(PatchOperation):
