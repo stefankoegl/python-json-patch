@@ -409,16 +409,15 @@ class MoveOperation(PatchOperation):
     """Moves an object property or an array element to new location."""
 
     def apply(self, obj):
-        subobj, part = self.pointer.to_last(obj)
+        from_ptr = jsonpointer.JsonPointer(self.operation['from'])
+        subobj, part = from_ptr.to_last(obj)
         value = subobj[part]
 
-        to_ptr = jsonpointer.JsonPointer(self.operation['to'])
-
-        if self.pointer.contains(to_ptr):
+        if from_ptr.contains(self.pointer):
             raise JsonPatchException('Cannot move values into its own children')
 
-        RemoveOperation({'op': 'remove', 'path': self.location}).apply(obj)
-        AddOperation({'op': 'add', 'path': self.operation['to'], 'value': value}).apply(obj)
+        RemoveOperation({'op': 'remove', 'path': self.operation['from']}).apply(obj)
+        AddOperation({'op': 'add', 'path': self.location, 'value': value}).apply(obj)
 
 
 class TestOperation(PatchOperation):
@@ -447,6 +446,7 @@ class CopyOperation(PatchOperation):
     """ Copies an object property or an array element to a new location """
 
     def apply(self, obj):
-        subobj, part = self.pointer.to_last(obj)
+        from_ptr = jsonpointer.JsonPointer(self.operation['from'])
+        subobj, part = from_ptr.to_last(obj)
         value = copy.deepcopy(subobj[part])
-        AddOperation({'op': 'add', 'path': self.operation['to'], 'value': value}).apply(obj)
+        AddOperation({'op': 'add', 'path': self.location, 'value': value}).apply(obj)
