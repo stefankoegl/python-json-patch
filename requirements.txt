@@ -1,1 +1,2 @@
+simplejson #required for Python 2.5 compatability
 jsonpointer>=0.5
