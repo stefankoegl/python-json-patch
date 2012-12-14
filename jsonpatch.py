@@ -350,7 +350,10 @@ class RemoveOperation(PatchOperation):
 
     def apply(self, obj):
         subobj, part = self.pointer.to_last(obj)
-        del subobj[part]
+        try:
+            del subobj[part]
+        except KeyError as ex:
+            raise JsonPatchConflict(ex)
 
 
 class AddOperation(PatchOperation):
@@ -426,7 +429,10 @@ class TestOperation(PatchOperation):
     def apply(self, obj):
         try:
             subobj, part = self.pointer.to_last(obj)
-            val = self.pointer.walk(subobj, part)
+            if part is None:
+                val = subobj
+            else:
+                val = self.pointer.walk(subobj, part)
 
         except JsonPointerException:
             exc_info = sys.exc_info()
@@ -439,7 +445,7 @@ class TestOperation(PatchOperation):
         if 'value' in self.operation:
             value = self.operation['value']
             if val != value:
-                raise JsonPatchTestFailed('%s is not equal to tested value %s' % (val, value))
+                raise JsonPatchTestFailed('%s is not equal to tested value %s (types %s and %s)' % (val, value, type(val), type(value)))
 
 
 class CopyOperation(PatchOperation):
