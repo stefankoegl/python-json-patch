@@ -4,7 +4,7 @@ Applying JSON Patches in Python
 -------------------------------
 
 Library to apply JSON Patches according to
-http://tools.ietf.org/html/draft-ietf-appsawg-json-patch-06
+http://tools.ietf.org/html/draft-ietf-appsawg-json-patch-08
 
 See Sourcecode for Examples
 
