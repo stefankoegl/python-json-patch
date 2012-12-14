@@ -198,7 +198,7 @@ class JsonPatch(object):
 
 
     def __hash__(self):
-        return hash(frozenset(self.operations))
+        return hash(tuple(self._get_operation(op) for op in self.patch))
 
 
     def __eq__(self, other):
