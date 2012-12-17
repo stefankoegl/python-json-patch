@@ -307,7 +307,6 @@ class JsonPatch(object):
     def _get_operation(self, operation):
         if 'op' not in operation:
             raise JsonPatchException("Operation does not contain 'op' member")
-            raise Exception
 
         op = operation['op']
         if op not in self.operations:
