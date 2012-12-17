@@ -149,6 +149,7 @@ class ApplyPatchTestCase(unittest.TestCase):
                 {'op': 'add', 'path': '/foo/-', 'value': 3},
                 {'op': 'add', 'path': '/foo/-', 'value': 4},
             ])
+        self.assertEqual(res['foo'], [1, 2, 3, 4])
 
 
 
