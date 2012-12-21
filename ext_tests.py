@@ -62,7 +62,11 @@ class TestCaseTemplate(unittest.TestCase):
 
         else:
             res = jsonpatch.apply_patch(test['doc'], test['patch'])
-            self.assertEquals(res, test['expected'])
+
+            # if there is no 'expected' we only verify that applying the patch
+            # does not raies an exception
+            if 'expected' in test:
+                self.assertEquals(res, test['expected'])
 
 
 def make_test_case(tests):
