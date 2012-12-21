@@ -50,6 +50,10 @@ class TestCaseTemplate(unittest.TestCase):
             # incomplete
             return
 
+        if test.get('disabled', False):
+            # test is disabled
+            return
+
         if 'error' in test:
             self.assertRaises(
                 (jsonpatch.JsonPatchException, jsonpatch.JsonPointerException),
