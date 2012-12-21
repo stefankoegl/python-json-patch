@@ -371,9 +371,6 @@ class AddOperation(PatchOperation):
                 subobj.insert(part, value)
 
         elif isinstance(subobj, dict):
-            if part in subobj:
-                raise JsonPatchConflict("object '%s' already exists" % part)
-
             subobj[part] = value
 
         else:
