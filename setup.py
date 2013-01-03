@@ -51,5 +51,6 @@ setup(name=PACKAGE,
       license=LICENSE,
       url=WEBSITE,
       py_modules=MODULES,
+      package_data={'': ['requirements.txt']},
       **OPTIONS
 )
