@@ -30,9 +30,7 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
-""" Apply JSON-Patches (according to draft 08) """
-
-# http://tools.ietf.org/html/draft-ietf-appsawg-json-patch-05
+""" Apply JSON-Patches (RFC 6902) """
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
