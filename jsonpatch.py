@@ -300,7 +300,7 @@ class JsonPatch(object):
 
         for operation in self.patch:
             operation = self._get_operation(operation)
-            operation.apply(obj)
+            obj = operation.apply(obj)
 
         return obj
 
@@ -351,6 +351,8 @@ class RemoveOperation(PatchOperation):
         except KeyError as ex:
             raise JsonPatchConflict(str(ex))
 
+        return obj
+
 
 class AddOperation(PatchOperation):
     """Adds an object property or an array element."""
@@ -371,11 +373,18 @@ class AddOperation(PatchOperation):
                 subobj.insert(part, value)
 
         elif isinstance(subobj, dict):
-            subobj[part] = value
+            if part is None:
+                # we're replacing the root
+                obj = value
+
+            else:
+                subobj[part] = value
 
         else:
             raise JsonPatchConflict("can't add to type '%s'"
                                     "" % subobj.__class__.__name__)
+
+        return obj
 
 
 class ReplaceOperation(PatchOperation):
@@ -399,6 +408,7 @@ class ReplaceOperation(PatchOperation):
                                     "" % subobj.__class__.__name__)
 
         subobj[part] = value
+        return obj
 
 
 class MoveOperation(PatchOperation):
@@ -412,8 +422,9 @@ class MoveOperation(PatchOperation):
         if from_ptr.contains(self.pointer):
             raise JsonPatchException('Cannot move values into its own children')
 
-        RemoveOperation({'op': 'remove', 'path': self.operation['from']}).apply(obj)
-        AddOperation({'op': 'add', 'path': self.location, 'value': value}).apply(obj)
+        obj = RemoveOperation({'op': 'remove', 'path': self.operation['from']}).apply(obj)
+        obj = AddOperation({'op': 'add', 'path': self.location, 'value': value}).apply(obj)
+        return obj
 
 
 class TestOperation(PatchOperation):
@@ -435,6 +446,8 @@ class TestOperation(PatchOperation):
             if val != value:
                 raise JsonPatchTestFailed('%s is not equal to tested value %s (types %s and %s)' % (val, value, type(val), type(value)))
 
+        return obj
+
 
 class CopyOperation(PatchOperation):
     """ Copies an object property or an array element to a new location """
@@ -443,4 +456,5 @@ class CopyOperation(PatchOperation):
         from_ptr = jsonpointer.JsonPointer(self.operation['from'])
         subobj, part = from_ptr.to_last(obj)
         value = copy.deepcopy(subobj[part])
-        AddOperation({'op': 'add', 'path': self.location, 'value': value}).apply(obj)
+        obj = AddOperation({'op': 'add', 'path': self.location, 'value': value}).apply(obj)
+        return obj
