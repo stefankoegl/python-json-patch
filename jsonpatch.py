@@ -30,6 +30,8 @@
 # THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #
 
+from __future__ import unicode_literals
+
 """ Apply JSON-Patches (RFC 6902) """
 
 # Will be parsed by setup.py to determine package metadata
@@ -87,10 +89,10 @@ def apply_patch(doc, patch, in_place=False):
     >>> other = apply_patch(doc, [{'op': 'add', 'path': '/baz', 'value': 'qux'}])
     >>> doc is not other
     True
-    >>> other
-    {'foo': 'bar', 'baz': 'qux'}
-    >>> apply_patch(doc, [{'op': 'add', 'path': '/baz', 'value': 'qux'}], in_place=True)
-    {'foo': 'bar', 'baz': 'qux'}
+    >>> other == {'foo': 'bar', 'baz': 'qux'}
+    True
+    >>> apply_patch(doc, [{'op': 'add', 'path': '/baz', 'value': 'qux'}], in_place=True) == {'foo': 'bar', 'baz': 'qux'}
+    True
     >>> doc == other
     True
     """
