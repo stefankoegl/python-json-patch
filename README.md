@@ -10,6 +10,7 @@ See Sourcecode for Examples
 
 * Website: https://github.com/stefankoegl/python-json-patch
 * Repository: https://github.com/stefankoegl/python-json-patch.git
+* Documentation: https://python-json-patch.readthedocs.org/
 
 Running external tests
 ----------------------
