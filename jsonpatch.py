@@ -394,6 +394,9 @@ class ReplaceOperation(PatchOperation):
         value = self.operation["value"]
         subobj, part = self.pointer.to_last(obj)
 
+        if part is None:
+            return value
+
         if isinstance(subobj, list):
             if part > len(subobj) or part < 0:
                 raise JsonPatchConflict("can't replace outside of list")
