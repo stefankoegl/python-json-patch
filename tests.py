@@ -185,6 +185,13 @@ class EqualityTestCase(unittest.TestCase):
         self.assertNotEqual(hash(patch1), hash(patch2))
 
 
+    def test_patch_neq_other_objs(self):
+        p = [{'op': 'test', 'path': '/test'}]
+        patch = jsonpatch.JsonPatch(p)
+        # a patch will always compare not-equal to objects of other types
+        self.assertFalse(patch == p)
+        self.assertFalse(patch == None)
+
 
 
 
