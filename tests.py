@@ -262,6 +262,22 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(expected, res)
 
 
+class InvalidInputTests(unittest.TestCase):
+
+    def test_missing_op(self):
+        # an "op" member is required
+        src = {"foo": "bar"}
+        patch_obj = [ { "path": "/child", "value": { "grandchild": { } } } ]
+        self.assertRaises(jsonpatch.JsonPatchException, jsonpatch.apply_patch, src, patch_obj)
+
+
+    def test_invalid_op(self):
+        # "invalid" is not a valid operation
+        src = {"foo": "bar"}
+        patch_obj = [ { "op": "invalid", "path": "/child", "value": { "grandchild": { } } } ]
+        self.assertRaises(jsonpatch.JsonPatchException, jsonpatch.apply_patch, src, patch_obj)
+
+
 modules = ['jsonpatch']
 
 
@@ -271,6 +287,7 @@ def get_suite():
     suite.addTest(unittest.makeSuite(ApplyPatchTestCase))
     suite.addTest(unittest.makeSuite(EqualityTestCase))
     suite.addTest(unittest.makeSuite(MakePatchTestCase))
+    suite.addTest(unittest.makeSuite(InvalidInputTests))
     return suite
 
 
