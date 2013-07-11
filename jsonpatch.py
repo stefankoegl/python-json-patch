@@ -359,7 +359,7 @@ class AddOperation(PatchOperation):
 
     def apply(self, obj):
         value = self.operation["value"]
-        subobj, part = self.pointer.to_last(obj, None)
+        subobj, part = self.pointer.to_last(obj)
 
         if isinstance(subobj, list):
 
