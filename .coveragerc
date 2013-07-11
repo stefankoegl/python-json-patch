@@ -14,3 +14,6 @@ exclude_lines =
     # Python 2/3 compatibility
     except ImportError
     sys.version_info
+
+    # don't include not implemented methods
+    NotImplementedError
