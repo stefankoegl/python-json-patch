@@ -353,7 +353,7 @@ class RemoveOperation(PatchOperation):
         subobj, part = self.pointer.to_last(obj)
         try:
             del subobj[part]
-        except KeyError as ex:
+        except IndexError as ex:
             raise JsonPatchConflict(str(ex))
 
         return obj
