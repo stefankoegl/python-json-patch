@@ -366,6 +366,11 @@ class AddOperation(PatchOperation):
         value = self.operation["value"]
         subobj, part = self.pointer.to_last(obj)
 
+        # type is already checked in to_last(), so we assert here
+        # for consistency
+        assert isinstance(subobj, list) or isinstance(subobj, dict), \
+            "invalid document type %s" (type(doc),)
+
         if isinstance(subobj, list):
 
             if part == '-':
@@ -384,10 +389,6 @@ class AddOperation(PatchOperation):
 
             else:
                 subobj[part] = value
-
-        else:
-            raise JsonPatchConflict("can't add to type '%s'"
-                                    "" % subobj.__class__.__name__)
 
         return obj
 
