@@ -7,6 +7,7 @@ import json
 import doctest
 import unittest
 import jsonpatch
+import jsonpointer
 import sys
 
 
@@ -111,6 +112,11 @@ class ApplyPatchTestCase(unittest.TestCase):
         obj =  {'baz': 'qux', 'foo': ['a', 2, 'c']}
         jsonpatch.apply_patch(obj, [{'op': 'test', 'path': '/baz', 'value': 'qux'},
                                     {'op': 'test', 'path': '/foo/1', 'value': 2}])
+
+    def test_test_whole_obj(self):
+        obj =  {'baz': 1}
+        jsonpatch.apply_patch(obj, [{'op': 'test', 'path': '', 'value': obj}])
+
 
     def test_test_error(self):
         obj =  {'bar': 'qux'}
@@ -284,6 +290,31 @@ class InvalidInputTests(unittest.TestCase):
         self.assertRaises(jsonpatch.JsonPatchException, jsonpatch.apply_patch, src, patch_obj)
 
 
+class ConflictTests(unittest.TestCase):
+
+    def test_remove_indexerror(self):
+        src = {"foo": [1, 2]}
+        patch_obj = [ { "op": "remove", "path": "/foo/10"} ]
+        self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
+
+    def test_remove_keyerror(self):
+        src = {"foo": [1, 2]}
+        patch_obj = [ { "op": "remove", "path": "/foo/b"} ]
+        self.assertRaises(jsonpointer.JsonPointerException, jsonpatch.apply_patch, src, patch_obj)
+
+    def test_insert_oob(self):
+        src = {"foo": [1, 2]}
+        patch_obj = [ { "op": "add", "path": "/foo/10", "value": 1} ]
+        self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
+
+    def test_move_into_child(self):
+        src = {"foo": {"bar": {"baz": 1}}}
+        patch_obj = [ { "op": "move", "from": "/foo", "path": "/foo/bar" } ]
+        self.assertRaises(jsonpatch.JsonPatchException, jsonpatch.apply_patch, src, patch_obj)
+
+
+
+
 modules = ['jsonpatch']
 
 
@@ -294,6 +325,7 @@ def get_suite():
     suite.addTest(unittest.makeSuite(EqualityTestCase))
     suite.addTest(unittest.makeSuite(MakePatchTestCase))
     suite.addTest(unittest.makeSuite(InvalidInputTests))
+    suite.addTest(unittest.makeSuite(ConflictTests))
     return suite
 
 
