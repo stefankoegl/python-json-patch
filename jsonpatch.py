@@ -400,6 +400,11 @@ class ReplaceOperation(PatchOperation):
         value = self.operation["value"]
         subobj, part = self.pointer.to_last(obj)
 
+        # type is already checked in to_last(), so we assert here
+        # for consistency
+        assert isinstance(subobj, list) or isinstance(subobj, dict), \
+            "invalid document type %s" (type(doc),)
+
         if part is None:
             return value
 
@@ -411,10 +416,6 @@ class ReplaceOperation(PatchOperation):
             if not part in subobj:
                 raise JsonPatchConflict("can't replace non-existant object '%s'"
                                         "" % part)
-
-        else:
-            raise JsonPatchConflict("can't replace in type '%s'"
-                                    "" % subobj.__class__.__name__)
 
         subobj[part] = value
         return obj
