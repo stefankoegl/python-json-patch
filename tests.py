@@ -193,6 +193,12 @@ class EqualityTestCase(unittest.TestCase):
         self.assertFalse(patch == p)
         self.assertFalse(patch == None)
 
+        # also a patch operation will always compare
+        # not-equal to objects of other types
+        op = jsonpatch.PatchOperation(p[0])
+        self.assertFalse(op == p[0])
+        self.assertFalse(op == None)
+
     def test_str(self):
         patch_obj = [ { "op": "add", "path": "/child", "value": { "grandchild": { } } } ]
         patch = jsonpatch.JsonPatch(patch_obj)
