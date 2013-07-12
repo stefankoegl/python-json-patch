@@ -63,6 +63,12 @@ class ApplyPatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(obj, [{'op': 'replace', 'path': '', 'value': {'baz': 'qux'}}])
         self.assertTrue(res['baz'], 'qux')
 
+    def test_add_replace_whole_document(self):
+        obj = {'foo': 'bar'}
+        new_obj = {'baz': 'qux'}
+        res = jsonpatch.apply_patch(obj, [{'op': 'add', 'path': '', 'value': new_obj}])
+        self.assertTrue(res, new_obj)
+
     def test_replace_array_item(self):
         obj = {'foo': ['bar', 'qux', 'baz']}
         res = jsonpatch.apply_patch(obj, [{'op': 'replace', 'path': '/foo/1',
