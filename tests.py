@@ -323,6 +323,12 @@ class ConflictTests(unittest.TestCase):
         patch_obj = [ { "op": "replace", "path": "/foo/10", "value": 10} ]
         self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
 
+    def test_replace_missing(self):
+        src = {"foo": 1}
+        patch_obj = [ { "op": "replace", "path": "/bar", "value": 10} ]
+        self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
+
+
 
 modules = ['jsonpatch']
 
