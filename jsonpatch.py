@@ -42,6 +42,7 @@ __license__ = 'Modified BSD License'
 
 import copy
 import sys
+import operator
 
 import json
 
@@ -195,14 +196,17 @@ class JsonPatch(object):
 
 
     def __hash__(self):
-        return hash(tuple(self._get_operation(op) for op in self.patch))
+        return hash(tuple(self._ops))
 
 
     def __eq__(self, other):
         if not isinstance(other, JsonPatch):
             return False
 
-        return self.patch == other.patch
+        if len(self._ops) != len(other._ops):
+            return False
+
+        return all(map(operator.eq, self._ops, other._ops))
 
 
     @classmethod
@@ -282,6 +286,10 @@ class JsonPatch(object):
         """Returns patch set as JSON string."""
         return json.dumps(self.patch)
 
+    @property
+    def _ops(self):
+        return map(self._get_operation, self.patch)
+
     def apply(self, obj, in_place=False):
         """Applies the patch to given object.
 
@@ -298,8 +306,7 @@ class JsonPatch(object):
         if not in_place:
             obj = copy.deepcopy(obj)
 
-        for operation in self.patch:
-            operation = self._get_operation(operation)
+        for operation in self._ops:
             obj = operation.apply(obj)
 
         return obj
