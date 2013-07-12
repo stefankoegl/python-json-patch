@@ -3,6 +3,7 @@
 
 from __future__ import unicode_literals
 
+import json
 import doctest
 import unittest
 import jsonpatch
@@ -185,6 +186,19 @@ class EqualityTestCase(unittest.TestCase):
         self.assertNotEqual(hash(patch1), hash(patch2))
 
 
+    def test_patch_neq_other_objs(self):
+        p = [{'op': 'test', 'path': '/test'}]
+        patch = jsonpatch.JsonPatch(p)
+        # a patch will always compare not-equal to objects of other types
+        self.assertFalse(patch == p)
+        self.assertFalse(patch == None)
+
+    def test_str(self):
+        patch_obj = [ { "op": "add", "path": "/child", "value": { "grandchild": { } } } ]
+        patch = jsonpatch.JsonPatch(patch_obj)
+
+        self.assertEqual(json.dumps(patch_obj), str(patch))
+        self.assertEqual(json.dumps(patch_obj), patch.to_string())
 
 
 
@@ -248,8 +262,23 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(expected, res)
 
 
+class InvalidInputTests(unittest.TestCase):
+
+    def test_missing_op(self):
+        # an "op" member is required
+        src = {"foo": "bar"}
+        patch_obj = [ { "path": "/child", "value": { "grandchild": { } } } ]
+        self.assertRaises(jsonpatch.JsonPatchException, jsonpatch.apply_patch, src, patch_obj)
+
+
+    def test_invalid_op(self):
+        # "invalid" is not a valid operation
+        src = {"foo": "bar"}
+        patch_obj = [ { "op": "invalid", "path": "/child", "value": { "grandchild": { } } } ]
+        self.assertRaises(jsonpatch.JsonPatchException, jsonpatch.apply_patch, src, patch_obj)
+
+
 modules = ['jsonpatch']
-coverage_modules = []
 
 
 def get_suite():
@@ -258,6 +287,7 @@ def get_suite():
     suite.addTest(unittest.makeSuite(ApplyPatchTestCase))
     suite.addTest(unittest.makeSuite(EqualityTestCase))
     suite.addTest(unittest.makeSuite(MakePatchTestCase))
+    suite.addTest(unittest.makeSuite(InvalidInputTests))
     return suite
 
 
@@ -265,33 +295,11 @@ suite = get_suite()
 
 for module in modules:
     m = __import__(module, fromlist=[module])
-    coverage_modules.append(m)
     suite.addTest(doctest.DocTestSuite(m))
 
 runner = unittest.TextTestRunner(verbosity=1)
-
-try:
-    import coverage
-except ImportError:
-    coverage = None
-
-if coverage is not None:
-    coverage.erase()
-    coverage.start()
 
 result = runner.run(suite)
 
 if not result.wasSuccessful():
     sys.exit(1)
-
-if coverage is not None:
-    coverage.stop()
-    coverage.report(coverage_modules)
-    coverage.erase()
-
-if coverage is None:
-    sys.stderr.write("""
-No coverage reporting done (Python module "coverage" is missing)
-Please install the python-coverage package to get coverage reporting.
-""")
-    sys.stderr.flush()
