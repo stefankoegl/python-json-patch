@@ -427,7 +427,7 @@ class MoveOperation(PatchOperation):
         subobj, part = from_ptr.to_last(obj)
         value = subobj[part]
 
-        if from_ptr.contains(self.pointer):
+        if self.pointer.contains(from_ptr):
             raise JsonPatchException('Cannot move values into its own children')
 
         obj = RemoveOperation({'op': 'remove', 'path': self.operation['from']}).apply(obj)
