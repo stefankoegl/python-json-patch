@@ -203,7 +203,7 @@ class JsonPatch(object):
         if not isinstance(other, JsonPatch):
             return False
 
-        return len(self._ops) == len(other._ops) and \
+        return len(list(self._ops)) == len(list(other._ops)) and \
                all(map(operator.eq, self._ops, other._ops))
 
 
