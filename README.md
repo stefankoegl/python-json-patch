@@ -1,4 +1,4 @@
-python-json-patch [![Build Status](https://secure.travis-ci.org/stefankoegl/python-json-patch.png?branch=master)](https://travis-ci.org/stefankoegl/python-json-patch)
+python-json-patch [![Build Status](https://secure.travis-ci.org/stefankoegl/python-json-patch.png?branch=master)](https://travis-ci.org/stefankoegl/python-json-patch) [![Coverage Status](https://coveralls.io/repos/stefankoegl/python-json-patch/badge.png?branch=master)](https://coveralls.io/r/stefankoegl/python-json-patch?branch=master) ![Downloads](https://pypip.in/d/jsonpatch/badge.png) ![Version](https://pypip.in/v/jsonpatch/badge.png)
 =================
 Applying JSON Patches in Python
 -------------------------------
