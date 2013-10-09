@@ -35,7 +35,6 @@
 https://github.com/json-patch/json-patch-tests """
 
 from functools import partial
-import json
 import doctest
 import unittest
 import jsonpatch
@@ -94,7 +93,8 @@ def get_suite(filenames):
 
     for testfile in filenames:
         with open(testfile) as f:
-            tests = json.load(f, object_pairs_hook=jsonpatch.multidict)
+            # we use the (potentially) patched version of json.load here
+            tests = jsonpatch.json.load(f)
             cls = make_test_case(tests)
             suite.addTest(unittest.makeSuite(cls))
 
