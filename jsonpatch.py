@@ -43,6 +43,7 @@ __license__ = 'Modified BSD License'
 import copy
 import sys
 import operator
+import collections
 
 import json
 
@@ -68,6 +69,20 @@ class JsonPatchConflict(JsonPatchException):
 
 class JsonPatchTestFailed(JsonPatchException, AssertionError):
     """ A Test operation failed """
+
+
+def multidict(ordered_pairs):
+    """Convert duplicate keys values to lists."""
+    # read all values into lists
+    d = collections.defaultdict(list)
+    for k, v in ordered_pairs:
+        d[k].append(v)
+
+    # unpack lists that have only 1 item
+    for k, v in d.items():
+        if len(v) == 1:
+            d[k] = v[0]
+    return dict(d)
 
 
 def apply_patch(doc, patch, in_place=False):
@@ -216,7 +231,7 @@ class JsonPatch(object):
 
         :return: :class:`JsonPatch` instance.
         """
-        patch = json.loads(patch_str)
+        patch = json.loads(patch_str, object_pairs_hook=multidict)
         return cls(patch)
 
     @classmethod
@@ -314,6 +329,10 @@ class JsonPatch(object):
             raise JsonPatchException("Operation does not contain 'op' member")
 
         op = operation['op']
+
+        if not isinstance(op, basestring):
+            raise JsonPatchException("Operation must be a string")
+
         if op not in self.operations:
             raise JsonPatchException("Unknown operation '%s'" % op)
 

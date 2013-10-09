@@ -94,7 +94,7 @@ def get_suite(filenames):
 
     for testfile in filenames:
         with open(testfile) as f:
-            tests = json.load(f)
+            tests = json.load(f, object_pairs_hook=jsonpatch.multidict)
             cls = make_test_case(tests)
             suite.addTest(unittest.makeSuite(cls))
 
