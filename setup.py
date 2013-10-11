@@ -52,5 +52,10 @@ setup(name=PACKAGE,
       url=WEBSITE,
       py_modules=MODULES,
       package_data={'': ['requirements.txt']},
+      scripts=['bin/jsondiff'],
+      entry_poimts = {
+        'console_scripts': [
+            'jsondiff = jsondiff:main',
+        ]},
       **OPTIONS
 )
