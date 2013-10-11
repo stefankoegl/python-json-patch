@@ -1,0 +1,42 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+from __future__ import print_function
+
+import sys
+import os.path
+import json
+import jsonpatch
+import argparse
+
+
+parser = argparse.ArgumentParser(
+    description='Apply a JSON patch on a JSON files')
+parser.add_argument('ORIGINAL', type=argparse.FileType('r'),
+                    help='Original file')
+parser.add_argument('PATCH', type=argparse.FileType('r'),
+                    help='Patch file')
+parser.add_argument('--indent', type=int, default=None,
+                    help='Indent output by n spaces')
+parser.add_argument('-v', '--version', action='version',
+                    version='%(prog)s ' + jsonpatch.__version__)
+
+
+def main():
+    try:
+        patch_files()
+    except KeyboardInterrupt:
+        sys.exit(1)
+
+
+def patch_files():
+    """ Diffs two JSON files and prints a patch """
+    args = parser.parse_args()
+    doc = json.load(args.ORIGINAL)
+    patch = json.load(args.PATCH)
+    result = jsonpatch.apply_patch(doc, patch)
+    print(json.dumps(result, indent=args.indent))
+
+
+if __name__ == "__main__":
+    main()
