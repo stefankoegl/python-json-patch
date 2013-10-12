@@ -18,6 +18,7 @@ and PyPy are supported.
 
    tutorial
    mod-jsonpatch
+   commandline
    RFC 6902 <http://tools.ietf.org/html/rfc6902>
 
 
