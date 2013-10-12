@@ -11,7 +11,7 @@ import argparse
 
 
 parser = argparse.ArgumentParser(
-    description='Apply a JSON patch on a JSON files')
+    description='Apply a JSON patch on a JSON file')
 parser.add_argument('ORIGINAL', type=argparse.FileType('r'),
                     help='Original file')
 parser.add_argument('PATCH', type=argparse.FileType('r'),
