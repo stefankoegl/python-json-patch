@@ -16,6 +16,6 @@ See Sourcecode for Examples
 
 Running external tests
 ----------------------
-To run external tests (such as those from https://github.com/json-patch/json-patch-tests) use ext_test.py 
+To run external tests (such as those from https://github.com/json-patch/json-patch-tests) use ext_test.py
 
     ./ext_tests.py ../json-patch-tests/tests.json
