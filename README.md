@@ -11,6 +11,8 @@ See Sourcecode for Examples
 * Website: https://github.com/stefankoegl/python-json-patch
 * Repository: https://github.com/stefankoegl/python-json-patch.git
 * Documentation: https://python-json-patch.readthedocs.org/
+* PyPI: https://pypi.python.org/pypi/jsonpatch
+* Travis-CI: https://travis-ci.org/stefankoegl/python-json-patch
 
 Running external tests
 ----------------------
