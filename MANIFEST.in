@@ -3,3 +3,4 @@ include COPYING
 include README.md
 include tests.py
 include ext_tests.py
+include AUTHORS
