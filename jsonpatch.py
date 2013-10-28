@@ -140,24 +140,26 @@ def apply_patch(doc, patch, in_place=False):
         patch = JsonPatch(patch)
     return patch.apply(doc, in_place)
 
-def make_patch(src, dst):
-    """Generates patch by comparing of two document objects. Actually is
-    a proxy to :meth:`JsonPatch.from_diff` method.
+def make_patch(base, other):
+    """Returns JsonPatch instance by comparing of two document objects.
+    Actually is a proxy to :meth:`JsonPatch.from_diff` method.
 
-    :param src: Data source document object.
-    :type src: dict
+    :param base: Document that would be used as base.
+    :type base: dict
 
-    :param dst: Data source document object.
-    :type dst: dict
+    :param other: Document for which patch will be created based on `base` doc.
+    :type other: dict
 
-    >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
-    >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
-    >>> patch = make_patch(src, dst)
-    >>> new = patch.apply(src)
-    >>> new == dst
+    :return: :class:`JsonPatch` instance.
+
+    >>> base = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
+    >>> other = {'baz': 'qux', 'numbers': [1, 4, 7]}
+    >>> patch = make_patch(base, other)
+    >>> doc = patch.apply(base)
+    >>> doc == other
     True
     """
-    return JsonPatch.from_diff(src, dst)
+    return JsonPatch.from_diff(base, other)
 
 
 class JsonPatch(object):
@@ -256,24 +258,25 @@ class JsonPatch(object):
         return cls(patch)
 
     @classmethod
-    def from_diff(cls, src, dst):
+    def from_diff(cls, base, other):
         """Creates JsonPatch instance based on comparing of two document
-        objects. Json patch would be created for `src` argument against `dst`
-        one.
+        objects. Json patch would be created for `base` argument against
+        `other` one.
 
-        :param src: Data source document object.
-        :type src: dict
+        :param base: Document that would be used as base.
+        :type base: dict
 
-        :param dst: Data source document object.
-        :type dst: dict
+        :param other: Document for which patch will be created based on
+                      `base` doc.
+        :type other: dict
 
         :return: :class:`JsonPatch` instance.
 
-        >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
-        >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
-        >>> patch = JsonPatch.from_diff(src, dst)
-        >>> new = patch.apply(src)
-        >>> new == dst
+        >>> base = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
+        >>> other = {'baz': 'qux', 'numbers': [1, 4, 7]}
+        >>> patch = make_patch(base, other)
+        >>> doc = patch.apply(base)
+        >>> doc == other
         True
         """
         def compare_values(path, value, other):
@@ -314,7 +317,7 @@ class JsonPatch(object):
                 for idx in reversed(range(ldst, lsrc)):
                     yield {'op': 'remove', 'path': '/'.join(path + [str(idx)])}
 
-        return cls(list(compare_dict([''], src, dst)))
+        return cls(list(compare_dict([''], base, other)))
 
     def to_string(self):
         """Returns patch set as JSON string."""
