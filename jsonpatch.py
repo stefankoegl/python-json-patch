@@ -291,30 +291,30 @@ class JsonPatch(object):
             else:
                 yield {'op': 'replace', 'path': '/'.join(path), 'value': other}
 
-        def compare_dict(path, src, dst):
-            for key in src:
-                if key not in dst:
+        def compare_dict(path, base, other):
+            for key in base:
+                if key not in other:
                     yield {'op': 'remove', 'path': '/'.join(path + [key])}
                     continue
                 current = path + [key]
-                for operation in compare_values(current, src[key], dst[key]):
+                for operation in compare_values(current, base[key], other[key]):
                     yield operation
-            for key in dst:
-                if key not in src:
-                    yield {'op': 'add', 'path': '/'.join(path + [key]), 'value': dst[key]}
+            for key in other:
+                if key not in base:
+                    yield {'op': 'add', 'path': '/'.join(path + [key]), 'value': other[key]}
 
-        def compare_list(path, src, dst):
-            lsrc, ldst = len(src), len(dst)
-            for idx in range(min(lsrc, ldst)):
+        def compare_list(path, base, other):
+            lbase, lother = len(base), len(other)
+            for idx in range(min(lbase, lother)):
                 current = path + [str(idx)]
-                for operation in compare_values(current, src[idx], dst[idx]):
+                for operation in compare_values(current, base[idx], other[idx]):
                     yield operation
-            if lsrc < ldst:
-                for idx in range(lsrc, ldst):
+            if lbase < lother:
+                for idx in range(lbase, lother):
                     current = path + [str(idx)]
-                    yield {'op': 'add', 'path': '/'.join(current), 'value': dst[idx]}
-            elif lsrc > ldst:
-                for idx in reversed(range(ldst, lsrc)):
+                    yield {'op': 'add', 'path': '/'.join(current), 'value': other[idx]}
+            elif lbase > lother:
+                for idx in reversed(range(lother, lbase)):
                     yield {'op': 'remove', 'path': '/'.join(path + [str(idx)])}
 
         return cls(list(compare_dict([''], base, other)))
