@@ -223,57 +223,57 @@ class EqualityTestCase(unittest.TestCase):
 class MakePatchTestCase(unittest.TestCase):
 
     def test_apply_patch_to_copy(self):
-        src = {'foo': 'bar', 'boo': 'qux'}
-        dst = {'baz': 'qux', 'foo': 'boo'}
-        patch = jsonpatch.make_patch(src, dst)
-        res = patch.apply(src)
-        self.assertTrue(src is not res)
+        base = {'foo': 'bar', 'boo': 'qux'}
+        other = {'baz': 'qux', 'foo': 'boo'}
+        patch = jsonpatch.make_patch(base, other)
+        res = patch.apply(base)
+        self.assertTrue(base is not res)
 
     def test_apply_patch_to_same_instance(self):
-        src = {'foo': 'bar', 'boo': 'qux'}
-        dst = {'baz': 'qux', 'foo': 'boo'}
-        patch = jsonpatch.make_patch(src, dst)
-        res = patch.apply(src, in_place=True)
-        self.assertTrue(src is res)
+        base = {'foo': 'bar', 'boo': 'qux'}
+        other = {'baz': 'qux', 'foo': 'boo'}
+        patch = jsonpatch.make_patch(base, other)
+        res = patch.apply(base, in_place=True)
+        self.assertTrue(base is res)
 
     def test_objects(self):
-        src = {'foo': 'bar', 'boo': 'qux'}
-        dst = {'baz': 'qux', 'foo': 'boo'}
-        patch = jsonpatch.make_patch(src, dst)
-        res = patch.apply(src)
-        self.assertEqual(res, dst)
+        base = {'foo': 'bar', 'boo': 'qux'}
+        other = {'baz': 'qux', 'foo': 'boo'}
+        patch = jsonpatch.make_patch(base, other)
+        res = patch.apply(base)
+        self.assertEqual(res, other)
 
     def test_arrays(self):
-        src = {'numbers': [1, 2, 3], 'other': [1, 3, 4, 5]}
-        dst = {'numbers': [1, 3, 4, 5], 'other': [1, 3, 4]}
-        patch = jsonpatch.make_patch(src, dst)
-        res = patch.apply(src)
-        self.assertEqual(res, dst)
+        base = {'numbers': [1, 2, 3], 'other': [1, 3, 4, 5]}
+        other = {'numbers': [1, 3, 4, 5], 'other': [1, 3, 4]}
+        patch = jsonpatch.make_patch(base, other)
+        res = patch.apply(base)
+        self.assertEqual(res, other)
 
     def test_complex_object(self):
-        src = {'data': [
+        base = {'data': [
             {'foo': 1}, {'bar': [1, 2, 3]}, {'baz': {'1': 1, '2': 2}}
         ]}
-        dst = {'data': [
+        other = {'data': [
             {'foo': [42]}, {'bar': []}, {'baz': {'boo': 'oom!'}}
         ]}
-        patch = jsonpatch.make_patch(src, dst)
-        res = patch.apply(src)
-        self.assertEqual(res, dst)
+        patch = jsonpatch.make_patch(base, other)
+        res = patch.apply(base)
+        self.assertEqual(res, other)
 
     def test_array_add_remove(self):
         # see https://github.com/stefankoegl/python-json-patch/issues/4
-        src = {'numbers': [], 'other': [1, 5, 3, 4]}
-        dst = {'numbers': [1, 3, 4, 5], 'other': []}
-        patch = jsonpatch.make_patch(src, dst)
-        res = patch.apply(src)
-        self.assertEqual(res, dst)
+        base = {'numbers': [], 'other': [1, 5, 3, 4]}
+        other = {'numbers': [1, 3, 4, 5], 'other': []}
+        patch = jsonpatch.make_patch(base, other)
+        res = patch.apply(base)
+        self.assertEqual(res, other)
 
     def test_add_nested(self):
         # see http://tools.ietf.org/html/draft-ietf-appsawg-json-patch-03#appendix-A.10
-        src = {"foo": "bar"}
+        base = {"foo": "bar"}
         patch_obj = [ { "op": "add", "path": "/child", "value": { "grandchild": { } } } ]
-        res = jsonpatch.apply_patch(src, patch_obj)
+        res = jsonpatch.apply_patch(base, patch_obj)
         expected = { "foo": "bar",
                       "child": { "grandchild": { } }
                    }
