@@ -248,6 +248,9 @@ class JsonPatch(object):
                 return False
         return True
 
+    def __ne__(self, other):
+        return not(self == other)
+
     @classmethod
     def from_string(cls, patch_str):
         """Creates JsonPatch instance from string source.
@@ -390,6 +393,9 @@ class PatchOperation(object):
         if not isinstance(other, PatchOperation):
             return False
         return self.operation == other.operation
+
+    def __ne__(self, other):
+        return not(self == other)
 
 
 class RemoveOperation(PatchOperation):
