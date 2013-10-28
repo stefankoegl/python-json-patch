@@ -39,7 +39,6 @@ import copy
 import functools
 import inspect
 import json
-import operator
 import sys
 
 from jsonpointer import JsonPointer, JsonPointerException
@@ -52,6 +51,11 @@ __license__ = 'Modified BSD License'
 
 if sys.version_info >= (3, 0):
     basestring = (bytes, str)  # pylint: disable=C0103
+    # pylint: disable=E0611
+    from itertools import zip_longest
+else:
+    # pylint: disable=E0611,W0404
+    from itertools import izip_longest as zip_longest
 
 
 class JsonPatchException(Exception):
@@ -78,11 +82,11 @@ def multidict(ordered_pairs):
     for key, value in ordered_pairs:
         mdict[key].append(value)
 
-    # unpack lists that have only 1 item
-    for key, values in mdict.items():
-        if len(values) == 1:
-            mdict[key] = values[0]
-    return dict(mdict)
+    return dict(
+        # unpack lists that have only 1 item
+        (key, values[0] if len(values) == 1 else values)
+        for key, values in mdict.items()
+    )
 
 
 def get_loadjson():
@@ -237,8 +241,12 @@ class JsonPatch(object):
         if not isinstance(other, JsonPatch):
             return False
 
-        return len(list(self._ops)) == len(list(other._ops)) and \
-               all(map(operator.eq, self._ops, other._ops))
+        for lop, rop in zip_longest(self._ops, other._ops):
+            if lop is None or rop is None:
+                return False
+            if lop != rop:
+                return False
+        return True
 
     @classmethod
     def from_string(cls, patch_str):
@@ -312,7 +320,8 @@ class JsonPatch(object):
                            'path': '/'.join(current),
                            'value': dst[idx]}
             elif lsrc > ldst:
-                for idx in reversed(range(ldst, lsrc)):
+                # more effective than reversed(range(ldst, lsrc))
+                for idx in range(lsrc - 1, ldst - 1 , -1):
                     yield {'op': 'remove', 'path': '/'.join(path + [str(idx)])}
 
         return cls(list(compare_dict([''], src, dst)))
