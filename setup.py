@@ -53,7 +53,7 @@ setup(name=PACKAGE,
       py_modules=MODULES,
       package_data={'': ['requirements.txt']},
       scripts=['bin/jsondiff', 'bin/jsonpatch'],
-      entry_poimts = {
+      entry_points = {
         'console_scripts': [
             'jsondiff = jsondiff:main',
             'jsonpatch = jsonpatch:main',
