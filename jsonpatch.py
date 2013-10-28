@@ -49,12 +49,12 @@ __version__ = '1.3'
 __website__ = 'https://github.com/stefankoegl/python-json-patch'
 __license__ = 'Modified BSD License'
 
+
+# pylint: disable=E0611,W0404
 if sys.version_info >= (3, 0):
-    basestring = (bytes, str)  # pylint: disable=C0103
-    # pylint: disable=E0611
+    basestring = (bytes, str)  # pylint: disable=C0103,W0622
     from itertools import zip_longest
 else:
-    # pylint: disable=E0611,W0404
     from itertools import izip_longest as zip_longest
 
 
