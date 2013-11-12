@@ -240,13 +240,7 @@ class JsonPatch(object):
     def __eq__(self, other):
         if not isinstance(other, JsonPatch):
             return False
-
-        for lop, rop in zip_longest(self._ops, other._ops):
-            if lop is None or rop is None:
-                return False
-            if lop != rop:
-                return False
-        return True
+        return self._ops == other._ops
 
     def __ne__(self, other):
         return not(self == other)
