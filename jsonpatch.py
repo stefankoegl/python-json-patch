@@ -323,8 +323,7 @@ class JsonPatch(object):
                            'path': '/'.join(current),
                            'value': dst[idx]}
             elif lsrc > ldst:
-                # more effective than reversed(range(ldst, lsrc))
-                for idx in range(lsrc - 1, ldst - 1 , -1):
+                for idx in reversed(range(ldst, lsrc)):
                     yield {'op': 'remove', 'path': '/'.join(path + [str(idx)])}
 
         return cls(list(compare_dict([''], src, dst)))
