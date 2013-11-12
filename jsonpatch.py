@@ -328,7 +328,7 @@ class JsonPatch(object):
 
     @property
     def _ops(self):
-        return map(self._get_operation, self.patch)
+        return tuple(map(self._get_operation, self.patch))
 
     def apply(self, obj, in_place=False):
         """Applies the patch to given object.
