@@ -417,13 +417,7 @@ class AddOperation(PatchOperation):
         value = self.operation["value"]
         subobj, part = self.pointer.to_last(obj)
 
-        # type is already checked in to_last(), so we assert here
-        # for consistency
-        assert isinstance(subobj, list) or isinstance(subobj, dict), \
-            "invalid document type %s" % type(subobj)
-
         if isinstance(subobj, list):
-
             if part == '-':
                 subobj.append(value)  # pylint: disable=E1103
 
@@ -439,6 +433,9 @@ class AddOperation(PatchOperation):
             else:
                 subobj[part] = value
 
+        else:
+            raise TypeError("invalid document type %s" % (type(subobj),))
+
         return obj
 
 
@@ -448,11 +445,6 @@ class ReplaceOperation(PatchOperation):
     def apply(self, obj):
         value = self.operation["value"]
         subobj, part = self.pointer.to_last(obj)
-
-        # type is already checked in to_last(), so we assert here
-        # for consistency
-        assert isinstance(subobj, list) or isinstance(subobj, dict), \
-            "invalid document type %s" % subobj
 
         if part is None:
             return value
@@ -465,6 +457,9 @@ class ReplaceOperation(PatchOperation):
             if not part in subobj:
                 raise JsonPatchConflict("can't replace non-existent object '%s'"
                                         % part)
+
+        else:
+            raise TypeError("invalid document type %s" % (type(subobj),))
 
         subobj[part] = value
         return obj
