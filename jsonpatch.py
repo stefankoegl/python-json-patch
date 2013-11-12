@@ -367,7 +367,7 @@ class JsonPatch(object):
             raise JsonPatchException("Operation must be a string")
 
         if op not in self.operations:
-            raise JsonPatchException("Unknown operation '%s'" % op)
+            raise JsonPatchException("Unknown operation {0!r}".format(op))
 
         cls = self.operations[op]
         return cls(operation)
@@ -434,7 +434,7 @@ class AddOperation(PatchOperation):
                 subobj[part] = value
 
         else:
-            raise TypeError("invalid document type %s" % (type(subobj),))
+            raise TypeError("invalid document type {0}".format(type(subobj)))
 
         return obj
 
@@ -455,11 +455,10 @@ class ReplaceOperation(PatchOperation):
 
         elif isinstance(subobj, dict):
             if not part in subobj:
-                raise JsonPatchConflict("can't replace non-existent object '%s'"
-                                        % part)
-
+                msg = "can't replace non-existent object '{0}'".format(part)
+                raise JsonPatchConflict(msg)
         else:
-            raise TypeError("invalid document type %s" % (type(subobj),))
+            raise TypeError("invalid document type {0}".format(type(subobj)))
 
         subobj[part] = value
         return obj
@@ -506,9 +505,9 @@ class TestOperation(PatchOperation):
         if 'value' in self.operation:
             value = self.operation['value']
             if val != value:
-                raise JsonPatchTestFailed(
-                    '%s is not equal to tested value %s (types %s and %s)'
-                    % (val, value, type(val), type(value)))
+                msg = '{0} ({1}) is not equal to tested value {2} ({3})'
+                raise JsonPatchTestFailed(msg.format(val, type(val),
+                                                     value, type(value)))
 
         return obj
 
