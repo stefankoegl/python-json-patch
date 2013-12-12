@@ -1,12 +1,11 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from __future__ import print_function
-
 import sys
 import os.path
 import json
 import jsonpatch
+import tempfile
 import argparse
 
 
@@ -15,9 +14,12 @@ parser = argparse.ArgumentParser(
 parser.add_argument('ORIGINAL', type=argparse.FileType('r'),
                     help='Original file')
 parser.add_argument('PATCH', type=argparse.FileType('r'),
-                    help='Patch file')
+		    nargs='?', default=sys.stdin,
+                    help='Patch file (read from stdin if omitted)')
 parser.add_argument('--indent', type=int, default=None,
                     help='Indent output by n spaces')
+parser.add_argument('-i', '--in-place', action='store_true',
+		    help='Modify ORIGINAL in-place instead of to stdout')
 parser.add_argument('-v', '--version', action='version',
                     version='%(prog)s ' + jsonpatch.__version__)
 
@@ -35,7 +37,18 @@ def patch_files():
     doc = json.load(args.ORIGINAL)
     patch = json.load(args.PATCH)
     result = jsonpatch.apply_patch(doc, patch)
-    print(json.dumps(result, indent=args.indent))
+    if args.in_place:
+        dirname = os.path.abspath(os.path.dirname(args.ORIGINAL.name))
+        fd, pathname = tempfile.mkstemp(dir=dirname)
+        fp = os.fdopen(fd, 'w')
+    else:
+        fp = sys.stdout
+    json.dump(result, fp, indent=args.indent)
+    if args.in_place:
+        fp.close()
+        os.link(args.ORIGINAL.name, args.ORIGINAL.name + '.orig')
+        os.chmod(pathname, os.stat(args.ORIGINAL.name).st_mode)
+        os.rename(pathname, args.ORIGINAL.name)
 
 
 if __name__ == "__main__":
