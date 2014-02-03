@@ -398,7 +398,7 @@ class RemoveOperation(PatchOperation):
         subobj, part = self.pointer.to_last(obj)
         try:
             del subobj[part]
-        except IndexError as ex:
+        except (KeyError, IndexError) as ex:
             raise JsonPatchConflict(str(ex))
 
         return obj
@@ -464,7 +464,10 @@ class MoveOperation(PatchOperation):
     def apply(self, obj):
         from_ptr = JsonPointer(self.operation['from'])
         subobj, part = from_ptr.to_last(obj)
-        value = subobj[part]
+        try:
+            value = subobj[part]
+        except (KeyError, IndexError) as ex:
+            raise JsonPatchConflict(str(ex))
 
         if isinstance(subobj, dict) and self.pointer.contains(from_ptr):
             raise JsonPatchException('Cannot move values into its own children')
@@ -512,7 +515,10 @@ class CopyOperation(PatchOperation):
     def apply(self, obj):
         from_ptr = JsonPointer(self.operation['from'])
         subobj, part = from_ptr.to_last(obj)
-        value = copy.deepcopy(subobj[part])
+        try:
+            value = copy.deepcopy(subobj[part])
+        except (KeyError, IndexError) as ex:
+            raise JsonPatchConflict(str(ex))
 
         obj = AddOperation({
             'op': 'add',

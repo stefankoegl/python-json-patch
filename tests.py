@@ -75,6 +75,12 @@ class ApplyPatchTestCase(unittest.TestCase):
                                            'value': 'boo'}])
         self.assertEqual(res['foo'], ['bar', 'boo', 'baz'])
 
+    def test_move_object_keyerror(self):
+        obj = {'foo': {'bar': 'baz'},
+               'qux': {'corge': 'grault'}}
+        patch_obj = [ {'op': 'move', 'from': '/foo/non-existent', 'path': '/qux/thud'} ]
+        self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, obj, patch_obj)
+
     def test_move_object_key(self):
         obj = {'foo': {'bar': 'baz', 'waldo': 'fred'},
                'qux': {'corge': 'grault'}}
@@ -93,6 +99,12 @@ class ApplyPatchTestCase(unittest.TestCase):
         patch = [{"op": "move", "from": "/0", "path": "/0/bar/0"}]
         res = jsonpatch.apply_patch(obj, patch)
         self.assertEqual(res, [{'bar': [{"foo": []}]}])
+
+    def test_copy_object_keyerror(self):
+        obj = {'foo': {'bar': 'baz'},
+               'qux': {'corge': 'grault'}}
+        patch_obj = [{'op': 'copy', 'from': '/foo/non-existent', 'path': '/qux/thud'}]
+        self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, obj, patch_obj)
 
     def test_copy_object_key(self):
         obj = {'foo': {'bar': 'baz', 'waldo': 'fred'},
@@ -313,6 +325,11 @@ class ConflictTests(unittest.TestCase):
         src = {"foo": [1, 2]}
         patch_obj = [ { "op": "remove", "path": "/foo/b"} ]
         self.assertRaises(jsonpointer.JsonPointerException, jsonpatch.apply_patch, src, patch_obj)
+
+    def test_remove_keyerror_dict(self):
+        src = {'foo': {'bar': 'barz'}}
+        patch_obj = [ { "op": "remove", "path": "/foo/non-existent"} ]
+        self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
 
     def test_insert_oob(self):
         src = {"foo": [1, 2]}
