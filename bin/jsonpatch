@@ -47,7 +47,8 @@ def patch_files():
             # Attempt to replace the file atomically.  We do this by
             # creating a temporary file in the same directory as the
             # original file so we can atomically move the new file over
-            # the original later.
+            # the original later.  (This is done in the same directory
+	    # because atomic renames do not work across mount points.)
 
             fd, pathname = tempfile.mkstemp(dir=dirname)
             fp = os.fdopen(fd, 'w')
