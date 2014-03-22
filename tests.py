@@ -279,6 +279,43 @@ class MakePatchTestCase(unittest.TestCase):
                    }
         self.assertEqual(expected, res)
 
+    def test_should_just_add_new_item_not_rebuild_all_list(self):
+        src = {'foo': [1, 2, 3]}
+        dst = {'foo': [3, 1, 2, 3]}
+        patch = list(jsonpatch.make_patch(src, dst))
+        self.assertEqual(len(patch), 1)
+        self.assertEqual(patch[0]['op'], 'add')
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
+
+    def test_use_replace_instead_of_remove_add(self):
+        src = {'foo': [1, 2, 3]}
+        dst = {'foo': [3, 2, 3]}
+        patch = list(jsonpatch.make_patch(src, dst))
+        self.assertEqual(len(patch), 1)
+        self.assertEqual(patch[0]['op'], 'replace')
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
+
+    def test_use_move_instead_of_remove_add(self):
+        src = {'foo': [4, 1, 2, 3]}
+        dst = {'foo': [1, 2, 3, 4]}
+        patch = list(jsonpatch.make_patch(src, dst))
+        self.assertEqual(len(patch), 1)
+        self.assertEqual(patch[0]['op'], 'move')
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
+
+    def test_use_move_instead_of_add_remove(self):
+        src = {'foo': [1, 2, 3]}
+        dst = {'foo': [3, 1, 2]}
+        patch = list(jsonpatch.make_patch(src, dst))
+        self.assertEqual(len(patch), 1)
+        self.assertEqual(patch[0]['op'], 'move')
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
+
+
 
 class InvalidInputTests(unittest.TestCase):
 

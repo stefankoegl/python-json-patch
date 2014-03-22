@@ -38,6 +38,7 @@ import collections
 import copy
 import functools
 import inspect
+import itertools
 import json
 import sys
 
@@ -53,9 +54,6 @@ __license__ = 'Modified BSD License'
 # pylint: disable=E0611,W0404
 if sys.version_info >= (3, 0):
     basestring = (bytes, str)  # pylint: disable=C0103,W0622
-    from itertools import zip_longest
-else:
-    from itertools import izip_longest as zip_longest
 
 
 class JsonPatchException(Exception):
@@ -282,15 +280,15 @@ class JsonPatch(object):
             if value == other:
                 return
             if isinstance(value, dict) and isinstance(other, dict):
-                for operation in compare_dict(path, value, other):
+                for operation in compare_dicts(path, value, other):
                     yield operation
             elif isinstance(value, list) and isinstance(other, list):
-                for operation in compare_list(path, value, other):
+                for operation in compare_lists(path, value, other):
                     yield operation
             else:
                 yield {'op': 'replace', 'path': '/'.join(path), 'value': other}
 
-        def compare_dict(path, src, dst):
+        def compare_dicts(path, src, dst):
             for key in src:
                 if key not in dst:
                     yield {'op': 'remove', 'path': '/'.join(path + [key])}
@@ -304,23 +302,10 @@ class JsonPatch(object):
                            'path': '/'.join(path + [key]),
                            'value': dst[key]}
 
-        def compare_list(path, src, dst):
-            lsrc, ldst = len(src), len(dst)
-            for idx in range(min(lsrc, ldst)):
-                current = path + [str(idx)]
-                for operation in compare_values(current, src[idx], dst[idx]):
-                    yield operation
-            if lsrc < ldst:
-                for idx in range(lsrc, ldst):
-                    current = path + [str(idx)]
-                    yield {'op': 'add',
-                           'path': '/'.join(current),
-                           'value': dst[idx]}
-            elif lsrc > ldst:
-                for idx in reversed(range(ldst, lsrc)):
-                    yield {'op': 'remove', 'path': '/'.join(path + [str(idx)])}
+        def compare_lists(path, src, dst):
+            return _compare_lists(path, src, dst)
 
-        return cls(list(compare_dict([''], src, dst)))
+        return cls(list(compare_dicts([''], src, dst)))
 
     def to_string(self):
         """Returns patch set as JSON string."""
@@ -521,3 +506,230 @@ class CopyOperation(PatchOperation):
         }).apply(obj)
 
         return obj
+
+
+def _compare_lists(path, src, dst):
+    """Compares two lists objects and return JSON patch about."""
+    return _optimize(_compare(path, src, dst, *_split_by_common_seq(src, dst)))
+
+
+def _longest_common_subseq(src, dst):
+    """Returns pair of ranges of longest common subsequence for the `src`
+    and `dst` lists.
+
+    >>> src = [1, 2, 3, 4]
+    >>> dst = [0, 1, 2, 3, 5]
+    >>> # The longest common subsequence for these lists is [1, 2, 3]
+    ... # which is located at (0, 3) index range for src list and (1, 4) for
+    ... # dst one. Tuple of these ranges we should get back.
+    ... assert ((0, 3), (1, 4)) == _longest_common_subseq(src, dst)
+    """
+    lsrc, ldst = len(src), len(dst)
+    drange = list(range(ldst))
+    matrix = [[0] * ldst for _ in range(lsrc)]
+    z = 0  # length of the longest subsequence
+    range_src, range_dst = None, None
+    for i, j in itertools.product(range(lsrc), drange):
+        if src[i] == dst[j]:
+            if i == 0 or j == 0:
+                matrix[i][j] = 1
+            else:
+                matrix[i][j] = matrix[i-1][j-1] + 1
+            if matrix[i][j] > z:
+                z = matrix[i][j]
+            if matrix[i][j] == z:
+                range_src = (i-z+1, i+1)
+                range_dst = (j-z+1, j+1)
+        else:
+            matrix[i][j] = 0
+    return range_src, range_dst
+
+
+def _split_by_common_seq(src, dst, bx=(0, -1), by=(0, -1)):
+    """Recursively splits the `dst` list onto two parts: left and right.
+    The left part contains differences on left from common subsequence,
+    same as the right part by for other side.
+
+    To easily understand the process let's take two lists: [0, 1, 2, 3] as
+    `src` and [1, 2, 4, 5] for `dst`. If we've tried to generate the binary tree
+    where nodes are common subsequence for both lists, leaves on the left
+    side are subsequence for `src` list and leaves on the right one for `dst`,
+    our tree would looks like::
+
+        [1, 2]
+       /     \
+    [0]       []
+             /  \
+          [3]   [4, 5]
+
+    This function generate the similar structure as flat tree, but without
+    nodes with common subsequences - since we're don't need them - only with
+    left and right leaves::
+
+        []
+       / \
+    [0]  []
+        / \
+     [3]  [4, 5]
+
+    The `bx` is the absolute range for currently processed subsequence of
+    `src` list.  The `by` means the same, but for the `dst` list.
+    """
+    # Prevent useless comparisons in future
+    bx = bx if bx[0] != bx[1] else None
+    by = by if by[0] != by[1] else None
+
+    if not src:
+        return [None, by]
+    elif not dst:
+        return [bx, None]
+
+    # note that these ranges are relative for processed sublists
+    x, y = _longest_common_subseq(src, dst)
+
+    if x is None or y is None:  # no more any common subsequence
+        return [bx, by]
+
+    return [_split_by_common_seq(src[:x[0]], dst[:y[0]],
+                                 (bx[0], bx[0] + x[0]),
+                                 (by[0], by[0] + y[0])),
+            _split_by_common_seq(src[x[1]:], dst[y[1]:],
+                                 (bx[0] + x[1], bx[0] + len(src)),
+                                 (bx[0] + y[1], bx[0] + len(dst)))]
+
+
+def _compare(path, src, dst, left, right):
+    """Same as :func:`_compare_with_shift` but strips emitted `shift` value."""
+    for op, _ in _compare_with_shift(path, src, dst, left, right, 0):
+        yield op
+
+
+def _compare_with_shift(path, src, dst, left, right, shift):
+    """Recursively compares differences from `left` and `right` sides
+    from common subsequences.
+
+    The `shift` parameter is used to store index shift which caused
+    by ``add`` and ``remove`` operations.
+
+    Yields JSON patch operations and list index shift.
+    """
+    if isinstance(left, list):
+        for item, shift in _compare_with_shift(path, src, dst, *left,
+                                               shift=shift):
+            yield item, shift
+    elif left is not None:
+        for item, shift in _compare_left(path, src, left, shift):
+            yield item, shift
+
+    if isinstance(right, list):
+        for item, shift in _compare_with_shift(path, src, dst, *right,
+                                               shift=shift):
+            yield item, shift
+    elif right is not None:
+        for item, shift in _compare_right(path, dst, right, shift):
+            yield item, shift
+
+
+def _compare_left(path, src, left, shift):
+    """Yields JSON patch ``remove`` operations for elements that are only
+    exists in the `src` list."""
+    start, end = left
+    if end == -1:
+        end = len(src)
+    # we need to `remove` elements from list tail to not deal with index shift
+    for idx in reversed(range(start + shift, end + shift)):
+        current = path + [str(idx)]
+        yield (
+            {'op': 'remove',
+             # yes, there should be any value field, but we'll use it
+             # to apply `move` optimization a bit later and will remove
+             # it in _optimize function.
+             'value': src[idx - shift],
+             'path': '/'.join(current)},
+            shift - 1
+        )
+        shift -= 1
+
+
+def _compare_right(path, dst, right, shift):
+    """Yields JSON patch ``add`` operations for elements that are only
+    exists in the `dst` list"""
+    start, end = right
+    if end == -1:
+        end = len(dst)
+    for idx in range(start, end):
+        current = path + [str(idx)]
+        yield (
+            {'op': 'add', 'path': '/'.join(current), 'value': dst[idx]},
+            shift + 1
+        )
+        shift += 1
+
+
+def _optimize(operations):
+    """Optimizes operations which was produced by lists comparison.
+
+    Actually it does two kinds of optimizations:
+
+    1. Seeks pair of ``remove`` and ``add`` operations against the same path
+       and replaces them with ``replace`` operation.
+    2. Seeks pair of ``remove`` and ``add`` operations for the same value
+       and replaces them with ``move`` operation.
+    """
+    result = []
+    ops_by_path = {}
+    ops_by_value = {}
+    add_remove = set(['add', 'remove'])
+    for item in operations:
+        # could we apply "move" optimization for dict values?
+        hashable_value = not isinstance(item['value'], (dict, list))
+        if item['path'] in ops_by_path:
+            _optimize_using_replace(ops_by_path[item['path']], item)
+            continue
+        if hashable_value and item['value'] in ops_by_value:
+            prev_item = ops_by_value[item['value']]
+            # ensure that we processing pair of add-remove ops
+            if set([item['op'], prev_item['op']]) == add_remove:
+                _optimize_using_move(prev_item, item)
+                ops_by_value.pop(item['value'])
+                continue
+        result.append(item)
+        ops_by_path[item['path']] = item
+        if hashable_value:
+            ops_by_value[item['value']] = item
+
+    # cleanup
+    ops_by_path.clear()
+    ops_by_value.clear()
+    for item in result:
+        if item['op'] == 'remove':
+            item.pop('value')  # strip our hack
+        yield item
+
+
+def _optimize_using_replace(prev, cur):
+    """Optimises JSON patch by using ``replace`` operation instead of
+    ``remove`` and ``add`` against the same path."""
+    prev['op'] = 'replace'
+    if cur['op'] == 'add':
+        prev['value'] = cur['value']
+
+
+def _optimize_using_move(prev_item, item):
+    """Optimises JSON patch by using ``move`` operation instead of
+    ``remove` and ``add`` against the different paths but for the same value."""
+    prev_item['op'] = 'move'
+    move_from, move_to = [
+        (item['path'], prev_item['path']),
+        (prev_item['path'], item['path']),
+    ][item['op'] == 'add']
+    if item['op'] == 'add':  # first was remove then add
+        prev_item['from'] = move_from
+        prev_item['path'] = move_to
+    else:  # first was add then remove
+        head, move_from = move_from.rsplit('/', 1)
+        # since add operation was first it incremented
+        # overall index shift value. we have to fix this
+        move_from = int(move_from) - 1
+        prev_item['from'] = head + '/%d' % move_from
+        prev_item['path'] = move_to
