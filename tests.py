@@ -337,7 +337,7 @@ class MakePatchTestCase(unittest.TestCase):
         src = {"x/y": 1}
         dst = {"x/y": 2}
         patch = jsonpatch.make_patch(src, dst)
-        self.assertEqual("""[{"path": "/x~1y", "value": 2, "op": "replace"}]""", str(patch))
+        self.assertEqual([{"path": "/x~1y", "value": 2, "op": "replace"}], patch.patch)
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
