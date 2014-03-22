@@ -286,26 +286,29 @@ class JsonPatch(object):
                 for operation in compare_lists(path, value, other):
                     yield operation
             else:
-                yield {'op': 'replace', 'path': '/'.join(path), 'value': other}
+                ptr = JsonPointer.from_parts(path)
+                yield {'op': 'replace', 'path': ptr.path, 'value': other}
 
         def compare_dicts(path, src, dst):
             for key in src:
                 if key not in dst:
-                    yield {'op': 'remove', 'path': '/'.join(path + [key])}
+                    ptr = JsonPointer.from_parts(path + [key])
+                    yield {'op': 'remove', 'path': ptr.path}
                     continue
                 current = path + [key]
                 for operation in compare_values(current, src[key], dst[key]):
                     yield operation
             for key in dst:
                 if key not in src:
+                    ptr = JsonPointer.from_parts(path + [key])
                     yield {'op': 'add',
-                           'path': '/'.join(path + [key]),
+                           'path': ptr.path,
                            'value': dst[key]}
 
         def compare_lists(path, src, dst):
             return _compare_lists(path, src, dst)
 
-        return cls(list(compare_dicts([''], src, dst)))
+        return cls(list(compare_dicts([], src, dst)))
 
     def to_string(self):
         """Returns patch set as JSON string."""
@@ -644,14 +647,15 @@ def _compare_left(path, src, left, shift):
         end = len(src)
     # we need to `remove` elements from list tail to not deal with index shift
     for idx in reversed(range(start + shift, end + shift)):
-        current = path + [str(idx)]
+        ptr = JsonPointer.from_parts(path + [str(idx)])
         yield (
             {'op': 'remove',
              # yes, there should be any value field, but we'll use it
              # to apply `move` optimization a bit later and will remove
              # it in _optimize function.
              'value': src[idx - shift],
-             'path': '/'.join(current)},
+             'path': ptr.path,
+            },
             shift - 1
         )
         shift -= 1
@@ -664,9 +668,9 @@ def _compare_right(path, dst, right, shift):
     if end == -1:
         end = len(dst)
     for idx in range(start, end):
-        current = path + [str(idx)]
+        ptr = JsonPointer.from_parts(path + [str(idx)])
         yield (
-            {'op': 'add', 'path': '/'.join(current), 'value': dst[idx]},
+            {'op': 'add', 'path': ptr.path, 'value': dst[idx]},
             shift + 1
         )
         shift += 1

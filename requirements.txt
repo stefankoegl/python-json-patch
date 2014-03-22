@@ -1,1 +1,1 @@
-jsonpointer>=1.2
+jsonpointer>=1.3

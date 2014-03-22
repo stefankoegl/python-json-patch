@@ -333,6 +333,13 @@ class MakePatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
+    def test_escape(self):
+        src = {"x/y": 1}
+        dst = {"x/y": 2}
+        patch = jsonpatch.make_patch(src, dst)
+        self.assertEqual("""[{"path": "/x~1y", "value": 2, "op": "replace"}]""", str(patch))
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
 
 
 class InvalidInputTests(unittest.TestCase):
