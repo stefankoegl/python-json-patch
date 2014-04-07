@@ -399,7 +399,8 @@ class RemoveOperation(PatchOperation):
         try:
             del subobj[part]
         except IndexError as ex:
-            raise JsonPatchConflict(str(ex))
+            msg = "can't remove non-existent object '{0}'".format(part)
+            raise JsonPatchConflict(msg)
 
         return obj
 
