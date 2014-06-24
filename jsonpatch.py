@@ -308,7 +308,7 @@ class JsonPatch(object):
         def compare_lists(path, src, dst):
             return _compare_lists(path, src, dst)
 
-        return cls(list(compare_dicts([], src, dst)))
+        return cls(list(compare_values([], src, dst)))
 
     def to_string(self):
         """Returns patch set as JSON string."""

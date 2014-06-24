@@ -341,6 +341,14 @@ class MakePatchTestCase(unittest.TestCase):
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
+    def test_root_list(self):
+        """ Test making and applying a patch of the root is a list """
+        src = [{'foo': 'bar', 'boo': 'qux'}]
+        dst = [{'baz': 'qux', 'foo': 'boo'}]
+        patch = jsonpatch.make_patch(src, dst)
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+
 
 class InvalidInputTests(unittest.TestCase):
 
