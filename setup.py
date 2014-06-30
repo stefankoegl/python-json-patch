@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import sys
+import io
 import re
 import warnings
 try:
@@ -10,7 +11,7 @@ except ImportError:
     from distutils.core import setup
     has_setuptools = False
 
-src = open('jsonpatch.py').read()
+src = io.open('jsonpatch.py', encoding='utf-8').read()
 metadata = dict(re.findall("__([a-z]+)__ = '([^']+)'", src))
 docstrings = re.findall('"""([^"]*)"""', src, re.MULTILINE | re.DOTALL)
 
