@@ -158,7 +158,9 @@ class ApplyPatchTestCase(unittest.TestCase):
 
     def test_test_noval_existing(self):
         obj =  {'bar': 'qux'}
-        jsonpatch.apply_patch(obj, [{'op': 'test', 'path': '/bar'}])
+        self.assertRaises(jsonpatch.InvalidJsonPatch,
+                          jsonpatch.apply_patch,
+                          obj, [{'op': 'test', 'path': '/bar'}])
 
 
     def test_test_noval_not_existing(self):

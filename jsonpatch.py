@@ -60,6 +60,10 @@ class JsonPatchException(Exception):
     """Base Json Patch exception"""
 
 
+class InvalidJsonPatch(JsonPatchException):
+    """ Raised if an invalid JSON Patch is created """
+
+
 class JsonPatchConflict(JsonPatchException):
     """Raised if patch could not be applied due to conflict situation such as:
     - attempt to add object key then it already exists;
@@ -341,15 +345,15 @@ class JsonPatch(object):
 
     def _get_operation(self, operation):
         if 'op' not in operation:
-            raise JsonPatchException("Operation does not contain 'op' member")
+            raise InvalidJsonPatch("Operation does not contain 'op' member")
 
         op = operation['op']
 
         if not isinstance(op, basestring):
-            raise JsonPatchException("Operation must be a string")
+            raise InvalidJsonPatch("Operation must be a string")
 
         if op not in self.operations:
-            raise JsonPatchException("Unknown operation {0!r}".format(op))
+            raise InvalidJsonPatch("Unknown operation {0!r}".format(op))
 
         cls = self.operations[op]
         return cls(operation)
@@ -397,7 +401,12 @@ class AddOperation(PatchOperation):
     """Adds an object property or an array element."""
 
     def apply(self, obj):
-        value = self.operation["value"]
+        try:
+            value = self.operation["value"]
+        except KeyError as ex:
+            raise InvalidJsonPatch(
+                "The operation does not contain a 'value' member")
+
         subobj, part = self.pointer.to_last(obj)
 
         if isinstance(subobj, list):
@@ -426,7 +435,12 @@ class ReplaceOperation(PatchOperation):
     """Replaces an object property or an array element by new value."""
 
     def apply(self, obj):
-        value = self.operation["value"]
+        try:
+            value = self.operation["value"]
+        except KeyError as ex:
+            raise InvalidJsonPatch(
+                "The operation does not contain a 'value' member")
+
         subobj, part = self.pointer.to_last(obj)
 
         if part is None:
@@ -451,7 +465,12 @@ class MoveOperation(PatchOperation):
     """Moves an object property or an array element to new location."""
 
     def apply(self, obj):
-        from_ptr = JsonPointer(self.operation['from'])
+        try:
+            from_ptr = JsonPointer(self.operation['from'])
+        except KeyError as ex:
+            raise InvalidJsonPatch(
+                "The operation does not contain a 'from' member")
+
         subobj, part = from_ptr.to_last(obj)
         try:
             value = subobj[part]
@@ -459,7 +478,7 @@ class MoveOperation(PatchOperation):
             raise JsonPatchConflict(str(ex))
 
         if isinstance(subobj, dict) and self.pointer.contains(from_ptr):
-            raise JsonPatchException('Cannot move values into its own children')
+            raise JsonPatchConflict('Cannot move values into its own children')
 
         obj = RemoveOperation({
             'op': 'remove',
@@ -488,12 +507,16 @@ class TestOperation(PatchOperation):
         except JsonPointerException as ex:
             raise JsonPatchTestFailed(str(ex))
 
-        if 'value' in self.operation:
+        try:
             value = self.operation['value']
-            if val != value:
-                msg = '{0} ({1}) is not equal to tested value {2} ({3})'
-                raise JsonPatchTestFailed(msg.format(val, type(val),
-                                                     value, type(value)))
+        except KeyError as ex:
+            raise InvalidJsonPatch(
+                "The operation does not contain a 'value' member")
+
+        if val != value:
+            msg = '{0} ({1}) is not equal to tested value {2} ({3})'
+            raise JsonPatchTestFailed(msg.format(val, type(val),
+                                                 value, type(value)))
 
         return obj
 
@@ -502,7 +525,12 @@ class CopyOperation(PatchOperation):
     """ Copies an object property or an array element to a new location """
 
     def apply(self, obj):
-        from_ptr = JsonPointer(self.operation['from'])
+        try:
+            from_ptr = JsonPointer(self.operation['from'])
+        except KeyError as ex:
+            raise InvalidJsonPatch(
+                "The operation does not contain a 'from' member")
+
         subobj, part = from_ptr.to_last(obj)
         try:
             value = copy.deepcopy(subobj[part])
