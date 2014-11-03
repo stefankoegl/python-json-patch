@@ -42,6 +42,11 @@ import itertools
 import json
 import sys
 
+try:
+    from collections.abc import MutableMapping, MutableSequence
+except ImportError:
+    from collections import MutableMapping, MutableSequence
+
 from jsonpointer import JsonPointer, JsonPointerException
 
 # Will be parsed by setup.py to determine package metadata
@@ -283,10 +288,12 @@ class JsonPatch(object):
         def compare_values(path, value, other):
             if value == other:
                 return
-            if isinstance(value, dict) and isinstance(other, dict):
+            if isinstance(value, MutableMapping) and \
+                    isinstance(other, MutableMapping):
                 for operation in compare_dicts(path, value, other):
                     yield operation
-            elif isinstance(value, list) and isinstance(other, list):
+            elif isinstance(value, MutableSequence) and \
+                    isinstance(other, MutableSequence):
                 for operation in compare_lists(path, value, other):
                     yield operation
             else:
@@ -409,7 +416,7 @@ class AddOperation(PatchOperation):
 
         subobj, part = self.pointer.to_last(obj)
 
-        if isinstance(subobj, list):
+        if isinstance(subobj, MutableSequence):
             if part == '-':
                 subobj.append(value)  # pylint: disable=E1103
 
@@ -419,7 +426,7 @@ class AddOperation(PatchOperation):
             else:
                 subobj.insert(part, value)  # pylint: disable=E1103
 
-        elif isinstance(subobj, dict):
+        elif isinstance(subobj, MutableMapping):
             if part is None:
                 obj = value  # we're replacing the root
             else:
@@ -446,11 +453,11 @@ class ReplaceOperation(PatchOperation):
         if part is None:
             return value
 
-        if isinstance(subobj, list):
+        if isinstance(subobj, MutableSequence):
             if part > len(subobj) or part < 0:
                 raise JsonPatchConflict("can't replace outside of list")
 
-        elif isinstance(subobj, dict):
+        elif isinstance(subobj, MutableMapping):
             if not part in subobj:
                 msg = "can't replace non-existent object '{0}'".format(part)
                 raise JsonPatchConflict(msg)
@@ -477,7 +484,8 @@ class MoveOperation(PatchOperation):
         except (KeyError, IndexError) as ex:
             raise JsonPatchConflict(str(ex))
 
-        if isinstance(subobj, dict) and self.pointer.contains(from_ptr):
+        if isinstance(subobj, MutableMapping) and \
+                self.pointer.contains(from_ptr):
             raise JsonPatchConflict('Cannot move values into its own children')
 
         obj = RemoveOperation({
@@ -651,7 +659,7 @@ def _compare_with_shift(path, src, dst, left, right, shift):
 
     Yields JSON patch operations and list index shift.
     """
-    if isinstance(left, list):
+    if isinstance(left, MutableSequence):
         for item, shift in _compare_with_shift(path, src, dst, *left,
                                                shift=shift):
             yield item, shift
@@ -659,7 +667,7 @@ def _compare_with_shift(path, src, dst, left, right, shift):
         for item, shift in _compare_left(path, src, left, shift):
             yield item, shift
 
-    if isinstance(right, list):
+    if isinstance(right, MutableSequence):
         for item, shift in _compare_with_shift(path, src, dst, *right,
                                                shift=shift):
             yield item, shift
@@ -721,7 +729,8 @@ def _optimize(operations):
     add_remove = set(['add', 'remove'])
     for item in operations:
         # could we apply "move" optimization for dict values?
-        hashable_value = not isinstance(item['value'], (dict, list))
+        hashable_value = not isinstance(item['value'],
+                                        (MutableMapping, MutableSequence))
         if item['path'] in ops_by_path:
             _optimize_using_replace(ops_by_path[item['path']], item)
             continue
