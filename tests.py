@@ -351,6 +351,14 @@ class MakePatchTestCase(unittest.TestCase):
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
+    def test_make_patch_unicode(self):
+        """ Test if unicode keys and values are handled correctly """
+        src = {}
+        dst = {u'\xee': u'\xee'}
+        patch = jsonpatch.make_patch(src, dst)
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+
 
 class InvalidInputTests(unittest.TestCase):
 
