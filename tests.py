@@ -327,13 +327,17 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(res, dst)
 
     def test_use_move_instead_of_add_remove(self):
-        src = {'foo': [1, 2, 3]}
-        dst = {'foo': [3, 1, 2]}
-        patch = list(jsonpatch.make_patch(src, dst))
-        self.assertEqual(len(patch), 1)
-        self.assertEqual(patch[0]['op'], 'move')
-        res = jsonpatch.apply_patch(src, patch)
-        self.assertEqual(res, dst)
+        def fn(_src, _dst):
+            patch = list(jsonpatch.make_patch(_src, _dst))
+            self.assertEqual(len(patch), 1)
+            self.assertEqual(patch[0]['op'], 'move')
+            res = jsonpatch.apply_patch(_src, patch)
+            self.assertEqual(res, _dst)
+
+        fn({'foo': [1, 2, 3]}, {'foo': [3, 1, 2]})
+        fn({'foo': [1, 2, 3]}, {'foo': [3, 2, 1]})
+        fn([1, 2, 3], [3, 1, 2])
+        fn([1, 2, 3], [3, 2, 1])
 
     def test_escape(self):
         src = {"x/y": 1}
