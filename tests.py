@@ -356,6 +356,38 @@ class MakePatchTestCase(unittest.TestCase):
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
+    def test_fail_prone_list_1(self):
+        """ Test making and applying a patch of the root is a list """
+        src = [u'a', u'r', u'b']
+        dst = [u'b', u'o']
+        patch = jsonpatch.make_patch(src, dst)
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+
+    def test_fail_prone_list_2(self):
+        """ Test making and applying a patch of the root is a list """
+        src = [u'a', u'r', u'b', u'x', u'm', u'n']
+        dst = [u'b', u'o', u'm', u'n']
+        patch = jsonpatch.make_patch(src, dst)
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+
+    def test_fail_prone_list_3(self):
+        """ Test making and applying a patch of the root is a list """
+        src = [u'boo1', u'bar', u'foo1', u'qux']
+        dst = [u'qux', u'bar']
+        patch = jsonpatch.make_patch(src, dst)
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+
+    def test_fail_prone_list_4(self):
+        """ Test making and applying a patch of the root is a list """
+        src = [u'bar1', 59, u'foo1', u'foo']
+        dst = [u'foo', u'bar', u'foo1']
+        patch = jsonpatch.make_patch(src, dst)
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+
 
 class InvalidInputTests(unittest.TestCase):
 
