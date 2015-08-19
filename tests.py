@@ -329,8 +329,9 @@ class MakePatchTestCase(unittest.TestCase):
     def test_use_move_instead_of_add_remove(self):
         def fn(_src, _dst):
             patch = list(jsonpatch.make_patch(_src, _dst))
-            self.assertEqual(len(patch), 1)
-            self.assertEqual(patch[0]['op'], 'move')
+            # Check if there are only 'move' operations
+            for p in patch:
+                self.assertEqual(p['op'], 'move')
             res = jsonpatch.apply_patch(_src, patch)
             self.assertEqual(res, _dst)
 
