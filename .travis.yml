@@ -11,6 +11,7 @@ python:
 
 install:
   - travis_retry pip install -r requirements.txt
+  - if [ "$TRAVIS_PYTHON_VERSION" == "3.2" ]; then travis_retry pip install 'coverage<4'; fi
   - travis_retry pip install coveralls
 
 script:
