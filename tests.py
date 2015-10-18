@@ -358,32 +358,32 @@ class MakePatchTestCase(unittest.TestCase):
 
     def test_fail_prone_list_1(self):
         """ Test making and applying a patch of the root is a list """
-        src = [u'a', u'r', u'b']
-        dst = [u'b', u'o']
+        src = ['a', 'r', 'b']
+        dst = ['b', 'o']
         patch = jsonpatch.make_patch(src, dst)
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
     def test_fail_prone_list_2(self):
         """ Test making and applying a patch of the root is a list """
-        src = [u'a', u'r', u'b', u'x', u'm', u'n']
-        dst = [u'b', u'o', u'm', u'n']
+        src = ['a', 'r', 'b', 'x', 'm', 'n']
+        dst = ['b', 'o', 'm', 'n']
         patch = jsonpatch.make_patch(src, dst)
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
     def test_fail_prone_list_3(self):
         """ Test making and applying a patch of the root is a list """
-        src = [u'boo1', u'bar', u'foo1', u'qux']
-        dst = [u'qux', u'bar']
+        src = ['boo1', 'bar', 'foo1', 'qux']
+        dst = ['qux', 'bar']
         patch = jsonpatch.make_patch(src, dst)
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
     def test_fail_prone_list_4(self):
         """ Test making and applying a patch of the root is a list """
-        src = [u'bar1', 59, u'foo1', u'foo']
-        dst = [u'foo', u'bar', u'foo1']
+        src = ['bar1', 59, 'foo1', 'foo']
+        dst = ['foo', 'bar', 'foo1']
         patch = jsonpatch.make_patch(src, dst)
         res = patch.apply(src)
         self.assertEqual(res, dst)
