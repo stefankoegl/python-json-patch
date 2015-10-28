@@ -414,30 +414,30 @@ class ConflictTests(unittest.TestCase):
         self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
 
 
-
-modules = ['jsonpatch']
-
-
-def get_suite():
-    suite = unittest.TestSuite()
-    suite.addTest(doctest.DocTestSuite(jsonpatch))
-    suite.addTest(unittest.makeSuite(ApplyPatchTestCase))
-    suite.addTest(unittest.makeSuite(EqualityTestCase))
-    suite.addTest(unittest.makeSuite(MakePatchTestCase))
-    suite.addTest(unittest.makeSuite(InvalidInputTests))
-    suite.addTest(unittest.makeSuite(ConflictTests))
-    return suite
+if __name__ == '__main__':
+    modules = ['jsonpatch']
 
 
-suite = get_suite()
+    def get_suite():
+        suite = unittest.TestSuite()
+        suite.addTest(doctest.DocTestSuite(jsonpatch))
+        suite.addTest(unittest.makeSuite(ApplyPatchTestCase))
+        suite.addTest(unittest.makeSuite(EqualityTestCase))
+        suite.addTest(unittest.makeSuite(MakePatchTestCase))
+        suite.addTest(unittest.makeSuite(InvalidInputTests))
+        suite.addTest(unittest.makeSuite(ConflictTests))
+        return suite
 
-for module in modules:
-    m = __import__(module, fromlist=[module])
-    suite.addTest(doctest.DocTestSuite(m))
 
-runner = unittest.TextTestRunner(verbosity=1)
+    suite = get_suite()
 
-result = runner.run(suite)
+    for module in modules:
+        m = __import__(module, fromlist=[module])
+        suite.addTest(doctest.DocTestSuite(m))
 
-if not result.wasSuccessful():
-    sys.exit(1)
+    runner = unittest.TextTestRunner(verbosity=1)
+
+    result = runner.run(suite)
+
+    if not result.wasSuccessful():
+        sys.exit(1)
