@@ -641,7 +641,7 @@ def _split_by_common_seq(src, dst, bx=(0, -1), by=(0, -1)):
                                  (by[0], by[0] + y[0])),
             _split_by_common_seq(src[x[1]:], dst[y[1]:],
                                  (bx[0] + x[1], bx[0] + len(src)),
-                                 (bx[0] + y[1], bx[0] + len(dst)))]
+                                 (by[0] + y[1], by[0] + len(dst)))]
 
 
 def _compare(path, src, dst, left, right):
