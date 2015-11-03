@@ -359,6 +359,13 @@ class MakePatchTestCase(unittest.TestCase):
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
+    def test_issue40(self):
+        """ Tests an issue in _split_by_common_seq reported in #40 """
+
+        src = [8, 7, 2, 1, 0, 9, 4, 3, 5, 6]
+        dest = [7, 2, 1, 0, 9, 4, 3, 6, 5, 8]
+        patch = jsonpatch.make_patch(src, dest)
+
 
 class InvalidInputTests(unittest.TestCase):
 
