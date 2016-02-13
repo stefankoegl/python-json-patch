@@ -370,8 +370,6 @@ class MakePatchTestCase(unittest.TestCase):
         """ Test whether a minimal patch is created, see #36 """
         src = [{"foo": 1, "bar": 2}]
         dst = [{"foo": 2, "bar": 2}]
-        import pudb
-        #pudb.set_trace()
         patch = jsonpatch.make_patch(src, dst)
 
         exp = [
