@@ -484,6 +484,10 @@ class MoveOperation(PatchOperation):
         except (KeyError, IndexError) as ex:
             raise JsonPatchConflict(str(ex))
 
+        # If source and target are equal, this is a no-op
+        if self.pointer == from_ptr:
+            return obj
+
         if isinstance(subobj, MutableMapping) and \
                 self.pointer.contains(from_ptr):
             raise JsonPatchConflict('Cannot move values into its own children')
