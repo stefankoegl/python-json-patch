@@ -756,11 +756,18 @@ def _optimize(operations):
 
 
 def _optimize_using_replace(prev, cur):
-    """Optimises JSON patch by using ``replace`` operation instead of
-    ``remove`` and ``add`` against the same path."""
+    """Optimises by replacing ``add``/``remove`` with ``replace`` on same path
+
+    For nested strucures, tries to recurse replacement, see #36 """
     prev['op'] = 'replace'
     if cur['op'] == 'add':
-        prev['value'] = cur['value']
+        # make recursive patch
+        patch = make_patch(prev['value'], cur['value'])
+        if len(patch.patch) == 1:
+            prev['path'] = prev['path'] + patch.patch[0]['path']
+            prev['value'] = patch.patch[0]['value']
+        else:
+            prev['value'] = cur['value']
 
 
 def _optimize_using_move(prev_item, item):

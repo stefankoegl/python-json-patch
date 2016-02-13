@@ -366,6 +366,24 @@ class MakePatchTestCase(unittest.TestCase):
         dest = [7, 2, 1, 0, 9, 4, 3, 6, 5, 8]
         patch = jsonpatch.make_patch(src, dest)
 
+    def test_minimal_patch(self):
+        """ Test whether a minimal patch is created, see #36 """
+        src = [{"foo": 1, "bar": 2}]
+        dst = [{"foo": 2, "bar": 2}]
+        import pudb
+        #pudb.set_trace()
+        patch = jsonpatch.make_patch(src, dst)
+
+        exp = [
+            {
+                "path": "/0/foo",
+                "value": 2,
+                "op": "replace"
+            }
+        ]
+
+        self.assertEqual(patch.patch, exp)
+
 
 class InvalidInputTests(unittest.TestCase):
 
