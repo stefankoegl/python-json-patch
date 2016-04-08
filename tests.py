@@ -356,6 +356,9 @@ class MakePatchTestCase(unittest.TestCase):
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
+
+class ListTests(unittest.TestCase):
+
     def test_fail_prone_list_1(self):
         """ Test making and applying a patch of the root is a list """
         src = ['a', 'r', 'b']
@@ -453,6 +456,7 @@ def get_suite():
     suite.addTest(unittest.makeSuite(ApplyPatchTestCase))
     suite.addTest(unittest.makeSuite(EqualityTestCase))
     suite.addTest(unittest.makeSuite(MakePatchTestCase))
+    suite.addTest(unittest.makeSuite(ListTests))
     suite.addTest(unittest.makeSuite(InvalidInputTests))
     suite.addTest(unittest.makeSuite(ConflictTests))
     return suite
