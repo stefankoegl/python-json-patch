@@ -327,13 +327,18 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(res, dst)
 
     def test_use_move_instead_of_add_remove(self):
-        src = {'foo': [1, 2, 3]}
-        dst = {'foo': [3, 1, 2]}
-        patch = list(jsonpatch.make_patch(src, dst))
-        self.assertEqual(len(patch), 1)
-        self.assertEqual(patch[0]['op'], 'move')
-        res = jsonpatch.apply_patch(src, patch)
-        self.assertEqual(res, dst)
+        def fn(_src, _dst):
+            patch = list(jsonpatch.make_patch(_src, _dst))
+            # Check if there are only 'move' operations
+            for p in patch:
+                self.assertEqual(p['op'], 'move')
+            res = jsonpatch.apply_patch(_src, patch)
+            self.assertEqual(res, _dst)
+
+        fn({'foo': [1, 2, 3]}, {'foo': [3, 1, 2]})
+        fn({'foo': [1, 2, 3]}, {'foo': [3, 2, 1]})
+        fn([1, 2, 3], [3, 1, 2])
+        fn([1, 2, 3], [3, 2, 1])
 
     def test_escape(self):
         src = {"x/y": 1}
@@ -381,6 +386,41 @@ class MakePatchTestCase(unittest.TestCase):
         ]
 
         self.assertEqual(patch.patch, exp)
+
+
+class ListTests(unittest.TestCase):
+
+    def test_fail_prone_list_1(self):
+        """ Test making and applying a patch of the root is a list """
+        src = ['a', 'r', 'b']
+        dst = ['b', 'o']
+        patch = jsonpatch.make_patch(src, dst)
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+
+    def test_fail_prone_list_2(self):
+        """ Test making and applying a patch of the root is a list """
+        src = ['a', 'r', 'b', 'x', 'm', 'n']
+        dst = ['b', 'o', 'm', 'n']
+        patch = jsonpatch.make_patch(src, dst)
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+
+    def test_fail_prone_list_3(self):
+        """ Test making and applying a patch of the root is a list """
+        src = ['boo1', 'bar', 'foo1', 'qux']
+        dst = ['qux', 'bar']
+        patch = jsonpatch.make_patch(src, dst)
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+
+    def test_fail_prone_list_4(self):
+        """ Test making and applying a patch of the root is a list """
+        src = ['bar1', 59, 'foo1', 'foo']
+        dst = ['foo', 'bar', 'foo1']
+        patch = jsonpatch.make_patch(src, dst)
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
 
 
 class InvalidInputTests(unittest.TestCase):
@@ -447,6 +487,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.makeSuite(ApplyPatchTestCase))
         suite.addTest(unittest.makeSuite(EqualityTestCase))
         suite.addTest(unittest.makeSuite(MakePatchTestCase))
+        suite.addTest(unittest.makeSuite(ListTests))
         suite.addTest(unittest.makeSuite(InvalidInputTests))
         suite.addTest(unittest.makeSuite(ConflictTests))
         return suite
