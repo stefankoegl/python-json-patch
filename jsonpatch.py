@@ -767,7 +767,7 @@ def _optimize_using_replace(prev, cur):
     if cur['op'] == 'add':
         # make recursive patch
         patch = make_patch(prev['value'], cur['value'])
-        if len(patch.patch) == 1:
+        if len(patch.patch) == 1 and patch.patch[0]['op'] != 'remove':
             prev['path'] = prev['path'] + patch.patch[0]['path']
             prev['value'] = patch.patch[0]['value']
         else:
