@@ -317,6 +317,15 @@ class MakePatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
+    def test_use_replace_instead_of_remove_add_nested(self):
+        src = {'foo': [{'bar': 1, 'baz': 2}, {'bar': 2, 'baz': 3}]}
+        dst = {'foo': [{'bar': 1}, {'bar': 2, 'baz': 3}]}
+        patch = list(jsonpatch.make_patch(src, dst))
+        self.assertEqual(len(patch), 1)
+        self.assertEqual(patch[0]['op'], 'replace')
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
+
     def test_use_move_instead_of_remove_add(self):
         src = {'foo': [4, 1, 2, 3]}
         dst = {'foo': [1, 2, 3, 4]}
