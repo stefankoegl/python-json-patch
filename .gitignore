@@ -4,3 +4,5 @@ build
 dist
 *.egg-info/
 doc/_build
+# created by the tox command
+.tox/
