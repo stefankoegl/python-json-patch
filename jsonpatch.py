@@ -105,8 +105,11 @@ def get_loadjson():
     function with object_pairs_hook set to multidict for Python versions that
     support the parameter. """
 
-    argspec = inspect.getargspec(json.load)
-    if 'object_pairs_hook' not in argspec.args:
+    if sys.version_info >= (3, 3):
+        args = inspect.signature(json.load).parameters
+    else:
+        args = inspect.getargspec(json.load).args
+    if 'object_pairs_hook' not in args:
         return json.load
 
     return functools.partial(json.load, object_pairs_hook=multidict)
