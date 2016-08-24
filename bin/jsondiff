@@ -32,8 +32,9 @@ def diff_files():
     doc1 = json.load(args.FILE1)
     doc2 = json.load(args.FILE2)
     patch = jsonpatch.make_patch(doc1, doc2)
-    print(json.dumps(patch.patch, indent=args.indent))
-
+    if patch.patch:
+        print(json.dumps(patch.patch, indent=args.indent))
+        sys.exit(2)
 
 if __name__ == "__main__":
     main()
