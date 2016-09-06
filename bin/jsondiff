@@ -34,7 +34,7 @@ def diff_files():
     patch = jsonpatch.make_patch(doc1, doc2)
     if patch.patch:
         print(json.dumps(patch.patch, indent=args.indent))
-        sys.exit(2)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
