@@ -174,200 +174,6 @@ def make_patch(src, dst):
     return JsonPatch.from_diff(src, dst)
 
 
-class JsonPatch(object):
-    """A JSON Patch is a list of Patch Operations.
-
-    >>> patch = JsonPatch([
-    ...     {'op': 'add', 'path': '/foo', 'value': 'bar'},
-    ...     {'op': 'add', 'path': '/baz', 'value': [1, 2, 3]},
-    ...     {'op': 'remove', 'path': '/baz/1'},
-    ...     {'op': 'test', 'path': '/baz', 'value': [1, 3]},
-    ...     {'op': 'replace', 'path': '/baz/0', 'value': 42},
-    ...     {'op': 'remove', 'path': '/baz/1'},
-    ... ])
-    >>> doc = {}
-    >>> result = patch.apply(doc)
-    >>> expected = {'foo': 'bar', 'baz': [42]}
-    >>> result == expected
-    True
-
-    JsonPatch object is iterable, so you could easily access to each patch
-    statement in loop:
-
-    >>> lpatch = list(patch)
-    >>> expected = {'op': 'add', 'path': '/foo', 'value': 'bar'}
-    >>> lpatch[0] == expected
-    True
-    >>> lpatch == patch.patch
-    True
-
-    Also JsonPatch could be converted directly to :class:`bool` if it contains
-    any operation statements:
-
-    >>> bool(patch)
-    True
-    >>> bool(JsonPatch([]))
-    False
-
-    This behavior is very handy with :func:`make_patch` to write more readable
-    code:
-
-    >>> old = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
-    >>> new = {'baz': 'qux', 'numbers': [1, 4, 7]}
-    >>> patch = make_patch(old, new)
-    >>> if patch:
-    ...     # document have changed, do something useful
-    ...     patch.apply(old)    #doctest: +ELLIPSIS
-    {...}
-    """
-    def __init__(self, patch):
-        self.patch = patch
-
-        self.operations = {
-            'remove': RemoveOperation,
-            'add': AddOperation,
-            'replace': ReplaceOperation,
-            'move': MoveOperation,
-            'test': TestOperation,
-            'copy': CopyOperation,
-        }
-
-    def __str__(self):
-        """str(self) -> self.to_string()"""
-        return self.to_string()
-
-    def __bool__(self):
-        return bool(self.patch)
-
-    __nonzero__ = __bool__
-
-    def __iter__(self):
-        return iter(self.patch)
-
-    def __hash__(self):
-        return hash(tuple(self._ops))
-
-    def __eq__(self, other):
-        if not isinstance(other, JsonPatch):
-            return False
-        return self._ops == other._ops
-
-    def __ne__(self, other):
-        return not(self == other)
-
-    @classmethod
-    def from_string(cls, patch_str):
-        """Creates JsonPatch instance from string source.
-
-        :param patch_str: JSON patch as raw string.
-        :type patch_str: str
-
-        :return: :class:`JsonPatch` instance.
-        """
-        patch = json.loads(patch_str)
-        return cls(patch)
-
-    @classmethod
-    def from_diff(cls, src, dst):
-        """Creates JsonPatch instance based on comparing of two document
-        objects. Json patch would be created for `src` argument against `dst`
-        one.
-
-        :param src: Data source document object.
-        :type src: dict
-
-        :param dst: Data source document object.
-        :type dst: dict
-
-        :return: :class:`JsonPatch` instance.
-
-        >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
-        >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
-        >>> patch = JsonPatch.from_diff(src, dst)
-        >>> new = patch.apply(src)
-        >>> new == dst
-        True
-        """
-        def compare_values(path, value, other):
-            if value == other:
-                return
-            if isinstance(value, MutableMapping) and \
-                    isinstance(other, MutableMapping):
-                for operation in compare_dicts(path, value, other):
-                    yield operation
-            elif isinstance(value, MutableSequence) and \
-                    isinstance(other, MutableSequence):
-                for operation in compare_lists(path, value, other):
-                    yield operation
-            else:
-                ptr = JsonPointer.from_parts(path)
-                yield {'op': 'replace', 'path': ptr.path, 'value': other}
-
-        def compare_dicts(path, src, dst):
-            for key in src:
-                if key not in dst:
-                    ptr = JsonPointer.from_parts(path + [key])
-                    yield {'op': 'remove', 'path': ptr.path}
-                    continue
-                current = path + [key]
-                for operation in compare_values(current, src[key], dst[key]):
-                    yield operation
-            for key in dst:
-                if key not in src:
-                    ptr = JsonPointer.from_parts(path + [key])
-                    yield {'op': 'add',
-                           'path': ptr.path,
-                           'value': dst[key]}
-
-        def compare_lists(path, src, dst):
-            return _compare_lists(path, src, dst)
-
-        return cls(list(compare_values([], src, dst)))
-
-    def to_string(self):
-        """Returns patch set as JSON string."""
-        return json.dumps(self.patch)
-
-    @property
-    def _ops(self):
-        return tuple(map(self._get_operation, self.patch))
-
-    def apply(self, obj, in_place=False):
-        """Applies the patch to given object.
-
-        :param obj: Document object.
-        :type obj: dict
-
-        :param in_place: Tweaks way how patch would be applied - directly to
-                         specified `obj` or to his copy.
-        :type in_place: bool
-
-        :return: Modified `obj`.
-        """
-
-        if not in_place:
-            obj = copy.deepcopy(obj)
-
-        for operation in self._ops:
-            obj = operation.apply(obj)
-
-        return obj
-
-    def _get_operation(self, operation):
-        if 'op' not in operation:
-            raise InvalidJsonPatch("Operation does not contain 'op' member")
-
-        op = operation['op']
-
-        if not isinstance(op, basestring):
-            raise InvalidJsonPatch("Operation must be a string")
-
-        if op not in self.operations:
-            raise InvalidJsonPatch("Unknown operation {0!r}".format(op))
-
-        cls = self.operations[op]
-        return cls(operation)
-
 
 class PatchOperation(object):
     """A single operation inside a JSON Patch."""
@@ -560,11 +366,200 @@ class CopyOperation(PatchOperation):
 
         return obj
 
+class JsonPatch(object):
+    """A JSON Patch is a list of Patch Operations.
+
+    >>> patch = JsonPatch([
+    ...     {'op': 'add', 'path': '/foo', 'value': 'bar'},
+    ...     {'op': 'add', 'path': '/baz', 'value': [1, 2, 3]},
+    ...     {'op': 'remove', 'path': '/baz/1'},
+    ...     {'op': 'test', 'path': '/baz', 'value': [1, 3]},
+    ...     {'op': 'replace', 'path': '/baz/0', 'value': 42},
+    ...     {'op': 'remove', 'path': '/baz/1'},
+    ... ])
+    >>> doc = {}
+    >>> result = patch.apply(doc)
+    >>> expected = {'foo': 'bar', 'baz': [42]}
+    >>> result == expected
+    True
+
+    JsonPatch object is iterable, so you could easily access to each patch
+    statement in loop:
+
+    >>> lpatch = list(patch)
+    >>> expected = {'op': 'add', 'path': '/foo', 'value': 'bar'}
+    >>> lpatch[0] == expected
+    True
+    >>> lpatch == patch.patch
+    True
+
+    Also JsonPatch could be converted directly to :class:`bool` if it contains
+    any operation statements:
+
+    >>> bool(patch)
+    True
+    >>> bool(JsonPatch([]))
+    False
+
+    This behavior is very handy with :func:`make_patch` to write more readable
+    code:
+
+    >>> old = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
+    >>> new = {'baz': 'qux', 'numbers': [1, 4, 7]}
+    >>> patch = make_patch(old, new)
+    >>> if patch:
+    ...     # document have changed, do something useful
+    ...     patch.apply(old)    #doctest: +ELLIPSIS
+    {...}
+    """
+    operations = {
+        'remove': RemoveOperation,
+        'add': AddOperation,
+        'replace': ReplaceOperation,
+        'move': MoveOperation,
+        'test': TestOperation,
+        'copy': CopyOperation,
+    }
+
+    def __init__(self, patch):
+        self.patch = patch
+
+    def __str__(self):
+        """str(self) -> self.to_string()"""
+        return self.to_string()
+
+    def __bool__(self):
+        return bool(self.patch)
+
+    __nonzero__ = __bool__
+
+    def __iter__(self):
+        return iter(self.patch)
+
+    def __hash__(self):
+        return hash(tuple(self._ops))
+
+    def __eq__(self, other):
+        if not isinstance(other, JsonPatch):
+            return False
+        return self._ops == other._ops
+
+    def __ne__(self, other):
+        return not(self == other)
+
+    @classmethod
+    def from_string(cls, patch_str):
+        """Creates JsonPatch instance from string source.
+
+        :param patch_str: JSON patch as raw string.
+        :type patch_str: str
+
+        :return: :class:`JsonPatch` instance.
+        """
+        patch = json.loads(patch_str)
+        return cls(patch)
+
+    @classmethod
+    def from_diff(cls, src, dst):
+        """Creates JsonPatch instance based on comparing of two document
+        objects. Json patch would be created for `src` argument against `dst`
+        one.
+
+        :param src: Data source document object.
+        :type src: dict
+
+        :param dst: Data source document object.
+        :type dst: dict
+
+        :return: :class:`JsonPatch` instance.
+
+        >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
+        >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
+        >>> patch = JsonPatch.from_diff(src, dst)
+        >>> new = patch.apply(src)
+        >>> new == dst
+        True
+        """
+        return cls(list(_compare_values([], src, dst)))
+
+    def to_string(self):
+        """Returns patch set as JSON string."""
+        return json.dumps(self.patch)
+
+    @property
+    def _ops(self):
+        return tuple(map(self._get_operation, self.patch))
+
+    def apply(self, obj, in_place=False):
+        """Applies the patch to given object.
+
+        :param obj: Document object.
+        :type obj: dict
+
+        :param in_place: Tweaks way how patch would be applied - directly to
+                         specified `obj` or to his copy.
+        :type in_place: bool
+
+        :return: Modified `obj`.
+        """
+
+        if not in_place:
+            obj = copy.deepcopy(obj)
+
+        for operation in self._ops:
+            obj = operation.apply(obj)
+
+        return obj
+
+    def _get_operation(self, operation):
+        if 'op' not in operation:
+            raise InvalidJsonPatch("Operation does not contain 'op' member")
+
+        op = operation['op']
+
+        if not isinstance(op, basestring):
+            raise InvalidJsonPatch("Operation must be a string")
+
+        if op not in self.operations:
+            raise InvalidJsonPatch("Unknown operation {0!r}".format(op))
+
+        cls = self.operations[op]
+        return cls(operation)
+
+def _compare_values(path, value, other):
+    if value == other:
+        return
+    if isinstance(value, MutableMapping) and \
+            isinstance(other, MutableMapping):
+        for operation in _compare_dicts(path, value, other):
+            yield operation
+    elif isinstance(value, MutableSequence) and \
+            isinstance(other, MutableSequence):
+        for operation in _compare_lists(path, value, other):
+            yield operation
+    else:
+        ptr = JsonPointer.from_parts(path)
+        yield {'op': 'replace', 'path': ptr.path, 'value': other}
+
+def _compare_dicts(path, src, dst):
+    for key in src:
+        if key not in dst:
+            ptr = JsonPointer.from_parts(path + [key])
+            yield {'op': 'remove', 'path': ptr.path}
+            continue
+        current = path + [key]
+        for operation in _compare_values(current, src[key], dst[key]):
+            yield operation
+    for key in dst:
+        if key not in src:
+            ptr = JsonPointer.from_parts(path + [key])
+            yield {'op': 'add',
+                   'path': ptr.path,
+                   'value': dst[key]}
 
 def _compare_lists(path, src, dst):
     """Compares two lists objects and return JSON patch about."""
     return _optimize(_compare(path, src, dst, *_split_by_common_seq(src, dst)))
-
 
 def _longest_common_subseq(src, dst):
     """Returns pair of ranges of longest common subsequence for the `src`
@@ -720,6 +715,8 @@ def _compare_right(path, dst, right, shift):
         shift += 1
 
 
+_add_remove = set(['add', 'remove'])
+
 def _optimize(operations):
     """Optimizes operations which was produced by lists comparison.
 
@@ -730,37 +727,39 @@ def _optimize(operations):
     2. Seeks pair of ``remove`` and ``add`` operations for the same value
        and replaces them with ``move`` operation.
     """
-    result = []
     ops_by_path = {}
     ops_by_value = {}
-    add_remove = set(['add', 'remove'])
     for item in operations:
         # could we apply "move" optimization for dict values?
-        hashable_value = not isinstance(item['value'],
+        value = item['value']
+        path = item['path']
+        hashable_value = not isinstance(value,
                                         (MutableMapping, MutableSequence))
-        if item['path'] in ops_by_path:
-            _optimize_using_replace(ops_by_path[item['path']], item)
+        if path in ops_by_path:
+            prev_item, prev_hashable_value = ops_by_path[path]
+            if not hashable_value and not prev_hashable_value:
+                del ops_by_path[path]
+                for i in _compare_values(path[1:].split('/'), prev_item['value'], value):
+                    yield i
+            else:
+                _optimize_using_replace(prev_item, item)
             continue
-        if hashable_value and item['value'] in ops_by_value:
-            prev_item = ops_by_value[item['value']]
+        if hashable_value and value in ops_by_value:
+            prev_item = ops_by_value[value]
             # ensure that we processing pair of add-remove ops
             if set([item['op'], prev_item['op']]) == add_remove:
                 _optimize_using_move(prev_item, item)
-                ops_by_value.pop(item['value'])
+                ops_by_value.pop(value)
                 continue
-        result.append(item)
-        ops_by_path[item['path']] = item
+
+        ops_by_path[path] = (item, hashable_value)
         if hashable_value:
-            ops_by_value[item['value']] = item
+            ops_by_value[value] = item
 
-    # cleanup
-    ops_by_path.clear()
-    ops_by_value.clear()
-    for item in result:
+    for item, _ in ops_by_path.itervalues():
         if item['op'] == 'remove':
-            item.pop('value')  # strip our hack
+            del item['value']  # strip our hack
         yield item
-
 
 def _optimize_using_replace(prev, cur):
     """Optimises by replacing ``add``/``remove`` with ``replace`` on same path
