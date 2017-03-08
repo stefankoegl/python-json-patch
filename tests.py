@@ -433,7 +433,7 @@ class OptimizationTests(unittest.TestCase):
     def test_success_if_correct_expected_patch_appied(self):
         src = [{"a": 1, "b": 2}]
         dst = [{"b": 2, "c": 2}]
-        exp = [{u'path': u'/0', u'value': {u'c': 2, u'b': 2}, u'op': u'replace'}]
+        exp = [{'path': '/0', 'value': {'c': 2, 'b': 2}, 'op': 'replace'}]
         patch = jsonpatch.make_patch(src, dst)
         self.assertEqual(patch.patch, exp)
 
