@@ -267,7 +267,6 @@ class EqualityTestCase(unittest.TestCase):
         self.assertEqual(json.dumps(patch_obj), patch.to_string())
 
 
-
 class MakePatchTestCase(unittest.TestCase):
 
     def test_apply_patch_to_copy(self):
@@ -336,7 +335,6 @@ class MakePatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
-
     def test_escape(self):
         src = {"x/y": 1}
         dst = {"x/y": 2}
@@ -367,6 +365,17 @@ class MakePatchTestCase(unittest.TestCase):
         src = [8, 7, 2, 1, 0, 9, 4, 3, 5, 6]
         dest = [7, 2, 1, 0, 9, 4, 3, 6, 5, 8]
         patch = jsonpatch.make_patch(src, dest)
+
+    def test_json_patch(self):
+        old = {
+            'queue': {'teams_out': [{'id': 3, 'reason': 'If tied'}, {'id': 5, 'reason': 'If tied'}]},
+        }
+        new = {
+            'queue': {'teams_out': [{'id': 5, 'reason': 'If lose'}]}
+        }
+        patch = jsonpatch.make_patch(old, new)
+        new_from_patch = jsonpatch.apply_patch(old, patch)
+        self.assertEqual(new, new_from_patch)
 
 
 class OptimizationTests(unittest.TestCase):
