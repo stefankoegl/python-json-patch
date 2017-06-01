@@ -104,8 +104,9 @@ def get_loadjson():
     methods returns an unmodified json.load for Python 2.6 and a partial
     function with object_pairs_hook set to multidict for Python versions that
     support the parameter. """
-
-    if sys.version_info >= (3, 3):
+    if isinstance(json.load, functools.partial):
+        return json.load
+    elif sys.version_info >= (3, 3):
         args = inspect.signature(json.load).parameters
     else:
         args = inspect.getargspec(json.load).args
