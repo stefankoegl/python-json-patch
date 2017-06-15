@@ -13,6 +13,34 @@ import sys
 
 class ApplyPatchTestCase(unittest.TestCase):
 
+    def test_js_file(self):
+        with open('./tests.js', 'r') as f:
+            tests = json.load(f)
+            for test in tests:
+                try:
+                    if 'expected' not in test:
+                        continue
+                    result = jsonpatch.apply_patch(test['doc'], test['patch'])
+                    self.assertEqual(result, test['expected'])
+                except Exception:
+                    if test.get('error'):
+                        continue
+                    else:
+                        raise
+
+    def test_success_if_replaced_dict(self):
+        src = [{'a': 1}, {'b': 2}]
+        dst = [{'a': 1, 'b': 2}]
+        patch = jsonpatch.make_patch(src, dst)
+        self.assertEqual(patch.apply(src), dst)
+
+    def test_success_if_raise_no_error(self):
+        src = [{}]
+        dst = [{'key': ''}]
+        patch = jsonpatch.make_patch(src, dst)
+        patch.apply(src)
+        self.assertTrue(True)
+
     def test_apply_patch_from_string(self):
         obj = {'foo': 'bar'}
         patch = '[{"op": "add", "path": "/baz", "value": "qux"}]'
@@ -239,7 +267,6 @@ class EqualityTestCase(unittest.TestCase):
         self.assertEqual(json.dumps(patch_obj), patch.to_string())
 
 
-
 class MakePatchTestCase(unittest.TestCase):
 
     def test_apply_patch_to_copy(self):
@@ -308,6 +335,50 @@ class MakePatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
+    def test_escape(self):
+        src = {"x/y": 1}
+        dst = {"x/y": 2}
+        patch = jsonpatch.make_patch(src, dst)
+        self.assertEqual([{"path": "/x~1y", "value": 2, "op": "replace"}], patch.patch)
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+
+    def test_root_list(self):
+        """ Test making and applying a patch of the root is a list """
+        src = [{'foo': 'bar', 'boo': 'qux'}]
+        dst = [{'baz': 'qux', 'foo': 'boo'}]
+        patch = jsonpatch.make_patch(src, dst)
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+
+    def test_make_patch_unicode(self):
+        """ Test if unicode keys and values are handled correctly """
+        src = {}
+        dst = {'\xee': '\xee'}
+        patch = jsonpatch.make_patch(src, dst)
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+
+    def test_issue40(self):
+        """ Tests an issue in _split_by_common_seq reported in #40 """
+
+        src = [8, 7, 2, 1, 0, 9, 4, 3, 5, 6]
+        dest = [7, 2, 1, 0, 9, 4, 3, 6, 5, 8]
+        patch = jsonpatch.make_patch(src, dest)
+
+    def test_json_patch(self):
+        old = {
+            'queue': {'teams_out': [{'id': 3, 'reason': 'If tied'}, {'id': 5, 'reason': 'If tied'}]},
+        }
+        new = {
+            'queue': {'teams_out': [{'id': 5, 'reason': 'If lose'}]}
+        }
+        patch = jsonpatch.make_patch(old, new)
+        new_from_patch = jsonpatch.apply_patch(old, patch)
+        self.assertEqual(new, new_from_patch)
+
+
+class OptimizationTests(unittest.TestCase):
     def test_use_replace_instead_of_remove_add(self):
         src = {'foo': [1, 2, 3]}
         dst = {'foo': [3, 2, 3]}
@@ -344,41 +415,42 @@ class MakePatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
-    def test_escape(self):
-        src = {"x/y": 1}
-        dst = {"x/y": 2}
+    def test_success_if_replace_inside_dict(self):
+        src = [{'a': 1, 'foo': {'b': 2, 'd': 5}}]
+        dst = [{'a': 1, 'foo': {'b': 3, 'd': 6}}]
         patch = jsonpatch.make_patch(src, dst)
-        self.assertEqual([{"path": "/x~1y", "value": 2, "op": "replace"}], patch.patch)
-        res = patch.apply(src)
-        self.assertEqual(res, dst)
+        self.assertEqual(patch.apply(src), dst)
 
-    def test_root_list(self):
-        """ Test making and applying a patch of the root is a list """
-        src = [{'foo': 'bar', 'boo': 'qux'}]
-        dst = [{'baz': 'qux', 'foo': 'boo'}]
+    def test_success_if_replace_single_value(self):
+        src = [{'a': 1, 'b': 2, 'd': 5}]
+        dst = [{'a': 1, 'c': 3, 'd': 5}]
         patch = jsonpatch.make_patch(src, dst)
-        res = patch.apply(src)
-        self.assertEqual(res, dst)
+        self.assertEqual(patch.apply(src), dst)
 
-    def test_make_patch_unicode(self):
-        """ Test if unicode keys and values are handled correctly """
-        src = {}
-        dst = {'\xee': '\xee'}
+    def test_success_if_replaced_by_object(self):
+        src = [{'a': 1, 'b': 2, 'd': 5}]
+        dst = [{'d': 6}]
         patch = jsonpatch.make_patch(src, dst)
-        res = patch.apply(src)
-        self.assertEqual(res, dst)
+        self.assertEqual(patch.apply(src), dst)
 
-    def test_issue40(self):
-        """ Tests an issue in _split_by_common_seq reported in #40 """
+    def test_success_if_correct_patch_appied(self):
+        src = [{'a': 1}, {'b': 2}]
+        dst = [{'a': 1, 'b': 2}]
+        patch = jsonpatch.make_patch(src, dst)
+        self.assertEqual(patch.apply(src), dst)
 
-        src = [8, 7, 2, 1, 0, 9, 4, 3, 5, 6]
-        dest = [7, 2, 1, 0, 9, 4, 3, 6, 5, 8]
-        patch = jsonpatch.make_patch(src, dest)
+    def test_success_if_correct_expected_patch_appied(self):
+        src = [{"a": 1, "b": 2}]
+        dst = [{"b": 2, "c": 2}]
+        exp = [{'path': '/0', 'value': {'c': 2, 'b': 2}, 'op': 'replace'}]
+        patch = jsonpatch.make_patch(src, dst)
+        self.assertEqual(patch.patch, exp)
 
     def test_minimal_patch(self):
         """ Test whether a minimal patch is created, see #36 """
         src = [{"foo": 1, "bar": 2}]
         dst = [{"foo": 2, "bar": 2}]
+
         patch = jsonpatch.make_patch(src, dst)
 
         exp = [
@@ -458,6 +530,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.makeSuite(MakePatchTestCase))
         suite.addTest(unittest.makeSuite(InvalidInputTests))
         suite.addTest(unittest.makeSuite(ConflictTests))
+        suite.addTest(unittest.makeSuite(OptimizationTests))
         return suite
 
 
