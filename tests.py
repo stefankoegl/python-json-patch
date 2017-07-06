@@ -10,11 +10,17 @@ import jsonpatch
 import jsonpointer
 import sys
 import string
+
 try:
     import hypothesis
     from hypothesis import strategies as st
 except ImportError:
     hypothesis = None
+
+try:
+    unicode
+except NameError:
+    unicode = str
 
 
 class ApplyPatchTestCase(unittest.TestCase):
@@ -536,8 +542,8 @@ if hypothesis is not None:
         | st.dictionaries(st.text(string.printable), children))
 
     class RoundtripTests(unittest.TestCase):
-        @hypothesis.example({}, {u'%20': None})
-        @hypothesis.example({u'%20': None}, {})
+        @hypothesis.example({}, {unicode('%20'): None})
+        @hypothesis.example({unicode('%20'): None}, {})
         @hypothesis.given(json_st, json_st)
         def test_roundtrip(self, src, dst):
             patch = jsonpatch.JsonPatch.from_diff(src, dst, False)
