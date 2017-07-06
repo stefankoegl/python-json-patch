@@ -524,7 +524,7 @@ json_st = st.recursive(
     st.one_of([
         st.none(),
         st.booleans(),
-        st.floats(),
+        st.floats(allow_nan=False),
         st.text(string.printable)]),
     lambda children:
     st.lists(children)
