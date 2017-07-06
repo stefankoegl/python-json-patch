@@ -9,6 +9,8 @@ import unittest
 import jsonpatch
 import jsonpointer
 import sys
+import string
+from hypothesis import given, note, strategies as st
 
 
 class ApplyPatchTestCase(unittest.TestCase):
@@ -518,6 +520,26 @@ class ConflictTests(unittest.TestCase):
         self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
 
 
+json_st = st.recursive(
+    st.one_of([
+        st.none(),
+        st.booleans(),
+        st.floats(),
+        st.text(string.printable)]),
+    lambda children:
+    st.lists(children)
+    | st.dictionaries(st.text(string.printable), children))
+
+
+class RoundtripTests(unittest.TestCase):
+    @given(json_st, json_st)
+    def test_roundtrip(self, src, dst):
+        patch = jsonpatch.JsonPatch.from_diff(src, dst, False)
+        note('Patch: %s' % (patch,))
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+
+
 if __name__ == '__main__':
     modules = ['jsonpatch']
 
@@ -531,6 +553,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.makeSuite(InvalidInputTests))
         suite.addTest(unittest.makeSuite(ConflictTests))
         suite.addTest(unittest.makeSuite(OptimizationTests))
+        suite.addTest(unittest.makeSuite(RoundtripTests))
         return suite
 
 
