@@ -11,7 +11,8 @@ python:
   - "pypy3"
 
 install:
-  - travis_retry pip install -r requirements.txt -r requirements-dev.txt
+  - travis_retry pip install -r requirements.txt
+  - if [ "$TRAVIS_PYTHON_VERSION" != "2.6" -a "$TRAVIS_PYTHON_VERSION" != "3.2" -a "$TRAVIS_PYTHON_VERSION" != "3.3" ]; then travis_retry pip install hypothesis; fi
   - if [ "$TRAVIS_PYTHON_VERSION" == "3.2" ]; then travis_retry pip install 'coverage<4'; fi
   - travis_retry pip install coveralls
 
