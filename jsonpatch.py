@@ -179,7 +179,7 @@ def make_patch(src, dst):
     if new != dst:
         return JsonPatch.from_diff(src, dst, False)
 
-    return JsonPatch.from_diff(src, dst)
+    return patch
 
 
 class JsonPatch(object):
