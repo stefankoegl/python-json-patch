@@ -175,7 +175,11 @@ def make_patch(src, dst):
     # TODO: fix patch optimiztion and remove the following check
     # fix when patch with optimization is incorrect
     patch = JsonPatch.from_diff(src, dst)
-    new = patch.apply(src)
+    try:
+        new = patch.apply(src) 
+    except JsonPatchConflict: # see TODO
+        return JsonPatch.from_diff(src, dst, False)
+    
     if new != dst:
         return JsonPatch.from_diff(src, dst, False)
 
@@ -601,7 +605,6 @@ def _longest_common_subseq(src, dst):
                 matrix[i][j] = matrix[i-1][j-1] + 1
             if matrix[i][j] > z:
                 z = matrix[i][j]
-            if matrix[i][j] == z:
                 range_src = (i-z+1, i+1)
                 range_dst = (j-z+1, j+1)
         else:

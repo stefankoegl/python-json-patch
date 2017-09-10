@@ -376,7 +376,15 @@ class MakePatchTestCase(unittest.TestCase):
         patch = jsonpatch.make_patch(old, new)
         new_from_patch = jsonpatch.apply_patch(old, patch)
         self.assertEqual(new, new_from_patch)
-
+    
+    def test_arrays_one_element_sequences(self):
+        """ Tests the case of multiple common one element sequences inside an array """
+        # see https://github.com/stefankoegl/python-json-patch/issues/30#issuecomment-155070128
+        src = [1,2,3]
+        dst = [3,1,4,2]
+        patch = jsonpatch.make_patch(src, dst)
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
 
 class OptimizationTests(unittest.TestCase):
     def test_use_replace_instead_of_remove_add(self):
