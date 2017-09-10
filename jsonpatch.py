@@ -43,17 +43,6 @@ import json
 import sys
 
 
-if sys.version_info[0] >= 3:
-    _range = range
-    _viewkeys = dict.keys
-else:
-    _range = xrange
-    if sys.version_info[1] >= 7:
-        _viewkeys = dict.viewkeys
-    else:
-        _viewkeys = lambda x: set(dict.keys(x))
-
-
 _ST_ADD    = 0
 _ST_REMOVE = 1
 
@@ -782,8 +771,8 @@ class DiffBuilder(object):
         }))
 
     def _compare_dicts(self, path, src, dst):
-        src_keys = _viewkeys(src)
-        dst_keys = _viewkeys(dst)
+        src_keys = set(src.keys())
+        dst_keys = set(dst.keys())
         added_keys = dst_keys - src_keys
         removed_keys = src_keys - dst_keys
         for key in removed_keys:
@@ -797,7 +786,7 @@ class DiffBuilder(object):
         len_src, len_dst = len(src), len(dst)
         max_len = max(len_src, len_dst)
         min_len = min(len_src, len_dst)
-        for key in _range(max_len):
+        for key in range(max_len):
             if key < min_len:
                 old, new = src[key], dst[key]
                 if old == new:
@@ -812,11 +801,11 @@ class DiffBuilder(object):
     def _compare_values(self, path, key, src, dst):
         if src == dst:
             return
-        elif isinstance(src, dict) and \
-                isinstance(dst, dict):
+        elif isinstance(src, MutableMapping) and \
+                isinstance(dst, MutableMapping):
             self._compare_dicts(_path_join(path, key), src, dst)
-        elif isinstance(src, list) and \
-                isinstance(dst, list):
+        elif isinstance(src, MutableSequence) and \
+                isinstance(dst, MutableSequence):
             self._compare_lists(_path_join(path, key), src, dst)
         else:
             self._item_replaced(path, key, dst)
