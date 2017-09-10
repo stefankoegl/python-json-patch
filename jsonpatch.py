@@ -51,8 +51,10 @@ _ST_REMOVE = 1
 
 try:
     from collections.abc import MutableMapping, MutableSequence
+
 except ImportError:
     from collections import MutableMapping, MutableSequence
+    str = unicode
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
