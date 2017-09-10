@@ -540,28 +540,28 @@ class MoveOperation(PatchOperation):
         return obj
 
     @property
-    def oldpath(self):
-        oldptr = JsonPointer(self.operation['from'])
-        return '/'.join(oldptr.parts[:-1])
+    def from_path(self):
+        from_ptr = JsonPointer(self.operation['from'])
+        return '/'.join(from_ptr.parts[:-1])
 
     @property
-    def oldkey(self):
-        oldptr = JsonPointer(self.operation['from'])
+    def from_key(self):
+        from_ptr = JsonPointer(self.operation['from'])
         try:
-            return int(oldptr.parts[-1])
+            return int(from_ptr.parts[-1])
         except TypeError:
-            return oldptr.parts[-1]
+            return from_ptr.parts[-1]
 
-    @oldkey.setter
-    def oldkey(self, value):
-        oldptr = JsonPointer(self.operation['from'])
-        oldptr.parts[-1] = str(value)
-        self.operation['from'] = oldptr.path
+    @from_key.setter
+    def from_key(self, value):
+        from_ptr = JsonPointer(self.operation['from'])
+        from_ptr.parts[-1] = str(value)
+        self.operation['from'] = from_ptr.path
 
     def _on_undo_remove(self, path, key):
-        if self.oldpath == path:
-            if self.oldkey >= key:
-                self.oldkey += 1
+        if self.from_path == path:
+            if self.from_key >= key:
+                self.from_key += 1
             else:
                 key -= 1
         if self.path == path:
@@ -572,9 +572,9 @@ class MoveOperation(PatchOperation):
         return key
 
     def _on_undo_add(self, path, key):
-        if self.oldpath == path:
-            if self.oldkey > key:
-                self.oldkey -= 1
+        if self.from_path == path:
+            if self.from_key > key:
+                self.from_key -= 1
             else:
                 key -= 1
         if self.path == path:
