@@ -376,7 +376,7 @@ class MakePatchTestCase(unittest.TestCase):
         patch = jsonpatch.make_patch(old, new)
         new_from_patch = jsonpatch.apply_patch(old, patch)
         self.assertEqual(new, new_from_patch)
-    
+
     def test_arrays_one_element_sequences(self):
         """ Tests the case of multiple common one element sequences inside an array """
         # see https://github.com/stefankoegl/python-json-patch/issues/30#issuecomment-155070128

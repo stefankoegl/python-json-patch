@@ -176,10 +176,10 @@ def make_patch(src, dst):
     # fix when patch with optimization is incorrect
     patch = JsonPatch.from_diff(src, dst)
     try:
-        new = patch.apply(src) 
+        new = patch.apply(src)
     except JsonPatchConflict: # see TODO
         return JsonPatch.from_diff(src, dst, False)
-    
+
     if new != dst:
         return JsonPatch.from_diff(src, dst, False)
 
