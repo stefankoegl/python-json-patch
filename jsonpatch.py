@@ -306,9 +306,9 @@ class JsonPatch(object):
         True
         """
 
-        info = _compare_info()
-        _compare_values('', None, info, src, dst)
-        ops = [op for op in info.execute()]
+        builder = DiffBuilder()
+        builder._compare_values('', None, src, dst)
+        ops = list(builder.execute())
         return cls(ops)
 
     def to_string(self):
@@ -648,7 +648,7 @@ class CopyOperation(PatchOperation):
         return obj
 
 
-class _compare_info(object):
+class DiffBuilder(object):
 
     def __init__(self):
         self.index_storage = [{}, {}]
@@ -724,104 +724,104 @@ class _compare_info(object):
             yield curr[2].operation
             curr = curr[1]
 
+    def _item_added(self, path, key, item):
+        index = self.take_index(item, _ST_REMOVE)
+        if index != None:
+            op = index[2]
+            if type(op.key) == int:
+                for v in self.iter_from(index):
+                    op.key = v._on_undo_remove(op.path, op.key)
+            self.remove(index)
+            if op.location != _path_join(path, key):
+                new_op = MoveOperation({
+                    'op': 'move',
+                    'from': op.location,
+                    'path': _path_join(path, key),
+                })
+                self.insert(new_op)
+        else:
+            new_op = AddOperation({
+                'op': 'add',
+                'path': _path_join(path, key),
+                'value': item,
+            })
+            new_index = self.insert(new_op)
+            self.store_index(item, new_index, _ST_ADD)
+
+    def _item_removed(self, path, key, item):
+        new_op = RemoveOperation({
+            'op': 'remove',
+            'path': _path_join(path, key),
+            'value': item,
+        })
+        index = self.take_index(item, _ST_ADD)
+        new_index = self.insert(new_op)
+        if index != None:
+            op = index[2]
+            if type(op.key) == int:
+                for v in self.iter_from(index):
+                    op.key = v._on_undo_add(op.path, op.key)
+            self.remove(index)
+            if new_op.location != op.location:
+                new_op = MoveOperation({
+                    'op': 'move',
+                    'from': new_op.location,
+                    'path': op.location,
+                })
+                new_index[2] = new_op
+            else:
+                self.remove(new_index)
+        else:
+            self.store_index(item, new_index, _ST_REMOVE)
+
+    def _item_replaced(self, path, key, item):
+        self.insert(ReplaceOperation({
+            'op': 'replace',
+            'path': _path_join(path, key),
+            'value': item,
+        }))
+
+    def _compare_dicts(self, path, src, dst):
+        src_keys = _viewkeys(src)
+        dst_keys = _viewkeys(dst)
+        added_keys = dst_keys - src_keys
+        removed_keys = src_keys - dst_keys
+        for key in removed_keys:
+            self._item_removed(path, str(key), src[key])
+        for key in added_keys:
+            self._item_added(path, str(key), dst[key])
+        for key in src_keys & dst_keys:
+            self._compare_values(path, key, src[key], dst[key])
+
+    def _compare_lists(self, path, src, dst):
+        len_src, len_dst = len(src), len(dst)
+        max_len = max(len_src, len_dst)
+        min_len = min(len_src, len_dst)
+        for key in _range(max_len):
+            if key < min_len:
+                old, new = src[key], dst[key]
+                if old == new:
+                    continue
+                self._item_removed(path, key, old)
+                self._item_added(path, key, new)
+            elif len_src > len_dst:
+                self._item_removed(path, len_dst, src[key])
+            else:
+                self._item_added(path, key, dst[key])
+
+    def _compare_values(self, path, key, src, dst):
+        if src == dst:
+            return
+        elif isinstance(src, dict) and \
+                isinstance(dst, dict):
+            self._compare_dicts(_path_join(path, key), src, dst)
+        elif isinstance(src, list) and \
+                isinstance(dst, list):
+            self._compare_lists(_path_join(path, key), src, dst)
+        else:
+            self._item_replaced(path, key, dst)
+
 def _path_join(path, key):
     if key != None:
         return path + '/' + str(key).replace('~', '~0').replace('/', '~1')
     return path
-
-def _item_added(path, key, info, item):
-    index = info.take_index(item, _ST_REMOVE)
-    if index != None:
-        op = index[2]
-        if type(op.key) == int:
-            for v in info.iter_from(index):
-                op.key = v._on_undo_remove(op.path, op.key)
-        info.remove(index)
-        if op.location != _path_join(path, key):
-            new_op = MoveOperation({
-                'op': 'move',
-                'from': op.location,
-                'path': _path_join(path, key),
-            })
-            info.insert(new_op)
-    else:
-        new_op = AddOperation({
-            'op': 'add',
-            'path': _path_join(path, key),
-            'value': item,
-        })
-        new_index = info.insert(new_op)
-        info.store_index(item, new_index, _ST_ADD)
-
-def _item_removed(path, key, info, item):
-    new_op = RemoveOperation({
-        'op': 'remove',
-        'path': _path_join(path, key),
-        'value': item,
-    })
-    index = info.take_index(item, _ST_ADD)
-    new_index = info.insert(new_op)
-    if index != None:
-        op = index[2]
-        if type(op.key) == int:
-            for v in info.iter_from(index):
-                op.key = v._on_undo_add(op.path, op.key)
-        info.remove(index)
-        if new_op.location != op.location:
-            new_op = MoveOperation({
-                'op': 'move',
-                'from': new_op.location,
-                'path': op.location,
-            })
-            new_index[2] = new_op
-        else:
-            info.remove(new_index)
-    else:
-        info.store_index(item, new_index, _ST_REMOVE)
-
-def _item_replaced(path, key, info, item):
-    info.insert(ReplaceOperation({
-        'op': 'replace',
-        'path': _path_join(path, key),
-        'value': item,
-    }))
-
-def _compare_dicts(path, info, src, dst):
-    src_keys = _viewkeys(src)
-    dst_keys = _viewkeys(dst)
-    added_keys = dst_keys - src_keys
-    removed_keys = src_keys - dst_keys
-    for key in removed_keys:
-        _item_removed(path, str(key), info, src[key])
-    for key in added_keys:
-        _item_added(path, str(key), info, dst[key])
-    for key in src_keys & dst_keys:
-        _compare_values(path, key, info, src[key], dst[key])
-
-def _compare_lists(path, info, src, dst):
-    len_src, len_dst = len(src), len(dst)
-    max_len = max(len_src, len_dst)
-    min_len = min(len_src, len_dst)
-    for key in _range(max_len):
-        if key < min_len:
-            old, new = src[key], dst[key]
-            if old == new:
-                continue
-            _item_removed(path, key, info, old)
-            _item_added(path, key, info, new)
-        elif len_src > len_dst:
-            _item_removed(path, len_dst, info, src[key])
-        else:
-            _item_added(path, key, info, dst[key])
-
-def _compare_values(path, key, info, src, dst):
-    if src == dst:
-        return
-    elif isinstance(src, dict) and \
-            isinstance(dst, dict):
-        _compare_dicts(_path_join(path, key), info, src, dst)
-    elif isinstance(src, list) and \
-            isinstance(dst, list):
-        _compare_lists(_path_join(path, key), info, src, dst)
-    else:
-        _item_replaced(path, key, info, dst)
