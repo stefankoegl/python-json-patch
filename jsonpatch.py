@@ -379,6 +379,23 @@ class PatchOperation(object):
     def __ne__(self, other):
         return not(self == other)
 
+    @property
+    def path(self):
+        return '/'.join(self.pointer.parts[:-1])
+
+    @property
+    def key(self):
+        try:
+            return int(self.pointer.parts[-1])
+        except ValueError:
+            return self.pointer.parts[-1]
+
+    @key.setter
+    def key(self, value):
+        self.pointer.parts[-1] = str(value)
+        self.location = self.pointer.path
+        self.operation['path'] = self.location
+
 
 class RemoveOperation(PatchOperation):
     """Removes an object property or an array element."""
@@ -392,6 +409,22 @@ class RemoveOperation(PatchOperation):
             raise JsonPatchConflict(msg)
 
         return obj
+
+    def _on_undo_remove(self, path, key):
+        if self.path == path:
+            if self.key >= key:
+                self.key += 1
+            else:
+                key -= 1
+        return key
+
+    def _on_undo_add(self, path, key):
+        if self.path == path:
+            if self.key > key:
+                self.key -= 1
+            else:
+                key -= 1
+        return key
 
 
 class AddOperation(PatchOperation):
@@ -427,6 +460,22 @@ class AddOperation(PatchOperation):
 
         return obj
 
+    def _on_undo_remove(self, path, key):
+        if self.path == path:
+            if self.key > key:
+                self.key += 1
+            else:
+                key += 1
+        return key
+
+    def _on_undo_add(self, path, key):
+        if self.path == path:
+            if self.key > key:
+                self.key -= 1
+            else:
+                key += 1
+        return key
+
 
 class ReplaceOperation(PatchOperation):
     """Replaces an object property or an array element by new value."""
@@ -456,6 +505,12 @@ class ReplaceOperation(PatchOperation):
 
         subobj[part] = value
         return obj
+
+    def _on_undo_remove(self, path, key):
+        return key
+
+    def _on_undo_add(self, path, key):
+        return key
 
 
 class MoveOperation(PatchOperation):
@@ -494,6 +549,51 @@ class MoveOperation(PatchOperation):
         }).apply(obj)
 
         return obj
+
+    @property
+    def oldpath(self):
+        oldptr = JsonPointer(self.operation['from'])
+        return '/'.join(oldptr.parts[:-1])
+
+    @property
+    def oldkey(self):
+        oldptr = JsonPointer(self.operation['from'])
+        try:
+            return int(oldptr.parts[-1])
+        except TypeError:
+            return oldptr.parts[-1]
+
+    @oldkey.setter
+    def oldkey(self, value):
+        oldptr = JsonPointer(self.operation['from'])
+        oldptr.parts[-1] = str(value)
+        self.operation['from'] = oldptr.path
+
+    def _on_undo_remove(self, path, key):
+        if self.oldpath == path:
+            if self.oldkey >= key:
+                self.oldkey += 1
+            else:
+                key -= 1
+        if self.path == path:
+            if self.key > key:
+                self.key += 1
+            else:
+                key += 1
+        return key
+
+    def _on_undo_add(self, path, key):
+        if self.oldpath == path:
+            if self.oldkey > key:
+                self.oldkey -= 1
+            else:
+                key -= 1
+        if self.path == path:
+            if self.key > key:
+                self.key -= 1
+            else:
+                key += 1
+        return key
 
 
 class TestOperation(PatchOperation):
@@ -610,114 +710,15 @@ class _compare_info(object):
         while curr is not root:
             if curr[1] is not root:
                 op_first, op_second = curr[2], curr[1][2]
-                if op_first.key == op_second.key and \
-                        op_first.path == op_second.path and \
-                        type(op_first) == _op_remove and \
-                        type(op_second) == _op_add:
-                    yield _op_replace(op_second.path, op_second.key, op_second.value).get()
+                if ( #op_first.key == op_second.key and \
+                        op_first.location == op_second.location and \
+                        type(op_first) == RemoveOperation and \
+                        type(op_second) == AddOperation):
+                    yield ReplaceOperation({'op': 'replace', 'path': op_second.location, 'value': op_second.operation['value']}).operation
                     curr = curr[1][1]
                     continue
-            yield curr[2].get()
+            yield curr[2].operation
             curr = curr[1]
-
-class _op_base(object):
-    def __init__(self, path, key, value):
-        self.path  = path
-        self.key   = key
-        self.value = value
-
-    def __repr__(self):
-        return str(self.get())
-
-class _op_add(_op_base):
-    def _on_undo_remove(self, path, key):
-        if self.path == path:
-            if self.key > key:
-                self.key += 1
-            else:
-                key += 1
-        return key
-
-    def _on_undo_add(self, path, key):
-        if self.path == path:
-            if self.key > key:
-                self.key -= 1
-            else:
-                key += 1
-        return key
-
-    def get(self):
-        return {'op': 'add', 'path': _path_join(self.path, self.key), 'value': self.value}
-
-class _op_remove(_op_base):
-    def _on_undo_remove(self, path, key):
-        if self.path == path:
-            if self.key >= key:
-                self.key += 1
-            else:
-                key -= 1
-        return key
-
-    def _on_undo_add(self, path, key):
-        if self.path == path:
-            if self.key > key:
-                self.key -= 1
-            else:
-                key -= 1
-        return key
-
-    def get(self):
-        return {'op': 'remove', 'path': _path_join(self.path, self.key)}
-
-class _op_replace(_op_base):
-    def _on_undo_remove(self, path, key):
-        return key
-
-    def _on_undo_add(self, path, key):
-        return key
-
-    def get(self):
-        return {'op': 'replace', 'path': _path_join(self.path, self.key), 'value': self.value}
-
-
-class _op_move(object):
-    def __init__(self, oldpath, oldkey, path, key):
-        self.oldpath = oldpath
-        self.oldkey  = oldkey
-        self.path    = path
-        self.key     = key
-
-    def _on_undo_remove(self, path, key):
-        if self.oldpath == path:
-            if self.oldkey >= key:
-                self.oldkey += 1
-            else:
-                key -= 1
-        if self.path == path:
-            if self.key > key:
-                self.key += 1
-            else:
-                key += 1
-        return key
-
-    def _on_undo_add(self, path, key):
-        if self.oldpath == path:
-            if self.oldkey > key:
-                self.oldkey -= 1
-            else:
-                key -= 1
-        if self.path == path:
-            if self.key > key:
-                self.key -= 1
-            else:
-                key += 1
-        return key
-
-    def get(self):
-        return {'op': 'move', 'path': _path_join(self.path, self.key), 'from': _path_join(self.oldpath, self.oldkey)}
-
-    def __repr__(self):
-        return str(self.get())
 
 def _path_join(path, key):
     if key != None:
@@ -732,16 +733,16 @@ def _item_added(path, key, info, item):
             for v in info.iter_from(index):
                 op.key = v._on_undo_remove(op.path, op.key)
         info.remove(index)
-        if op.path != path or op.key != key:
-            new_op = _op_move(op.path, op.key, path, key)
+        if op.location != _path_join(path, key):
+            new_op = MoveOperation({'op': 'move', 'from': op.location, 'path': _path_join(path, key)})
             info.insert(new_op)
     else:
-        new_op = _op_add(path, key, item)
+        new_op = AddOperation({'op': 'add', 'path': _path_join(path, key), 'value': item})
         new_index = info.insert(new_op)
         info.store_index(item, new_index, _ST_ADD)
 
 def _item_removed(path, key, info, item):
-    new_op = _op_remove(path, key, item)
+    new_op = RemoveOperation({'op': 'remove', 'path': _path_join(path, key), 'value': item})
     index = info.take_index(item, _ST_ADD)
     new_index = info.insert(new_op)
     if index != None:
@@ -750,8 +751,8 @@ def _item_removed(path, key, info, item):
             for v in info.iter_from(index):
                 op.key = v._on_undo_add(op.path, op.key)
         info.remove(index)
-        if new_op.path != op.path or new_op.key != op.key:
-            new_op = _op_move(new_op.path, new_op.key, op.path, op.key)
+        if new_op.location != op.location:
+            new_op = MoveOperation({'op': 'move', 'from': new_op.location, 'path': op.location})
             new_index[2] = new_op
         else:
             info.remove(new_index)
@@ -759,7 +760,7 @@ def _item_removed(path, key, info, item):
         info.store_index(item, new_index, _ST_REMOVE)
 
 def _item_replaced(path, key, info, item):
-    info.insert(_op_replace(path, key, item))
+    info.insert(ReplaceOperation({'op': 'replace', 'path': _path_join(path, key), 'value': item}))
 
 def _compare_dicts(path, info, src, dst):
     src_keys = _viewkeys(src)
