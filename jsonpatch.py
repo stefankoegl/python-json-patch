@@ -42,8 +42,10 @@ import itertools
 import json
 import sys
 
+from jsonpointer import JsonPointer, JsonPointerException
 
-_ST_ADD    = 0
+
+_ST_ADD = 0
 _ST_REMOVE = 1
 
 
@@ -51,8 +53,6 @@ try:
     from collections.abc import MutableMapping, MutableSequence
 except ImportError:
     from collections import MutableMapping, MutableSequence
-
-from jsonpointer import JsonPointer, JsonPointerException
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
@@ -486,7 +486,7 @@ class ReplaceOperation(PatchOperation):
                 raise JsonPatchConflict("can't replace outside of list")
 
         elif isinstance(subobj, MutableMapping):
-            if not part in subobj:
+            if part not in subobj:
                 msg = "can't replace non-existent object '{0}'".format(part)
                 raise JsonPatchConflict(msg)
         else:
@@ -649,10 +649,11 @@ class DiffBuilder(object):
         try:
             storage = self.index_storage[st]
             stored = storage.get(value)
-            if stored == None:
+            if stored is None:
                 storage[value] = [index]
             else:
                 storage[value].append(index)
+
         except TypeError:
             self.index_storage2[st].append((value, index))
 
@@ -661,6 +662,7 @@ class DiffBuilder(object):
             stored = self.index_storage[st].get(value)
             if stored:
                 return stored.pop()
+
         except TypeError:
             storage = self.index_storage2[st]
             for i in range(len(storage)-1, -1, -1):
@@ -699,10 +701,9 @@ class DiffBuilder(object):
         while curr is not root:
             if curr[1] is not root:
                 op_first, op_second = curr[2], curr[1][2]
-                if ( #op_first.key == op_second.key and \
-                        op_first.location == op_second.location and \
+                if op_first.location == op_second.location and \
                         type(op_first) == RemoveOperation and \
-                        type(op_second) == AddOperation):
+                        type(op_second) == AddOperation:
                     yield ReplaceOperation({
                         'op': 'replace',
                         'path': op_second.location,
@@ -710,16 +711,18 @@ class DiffBuilder(object):
                     }).operation
                     curr = curr[1][1]
                     continue
+
             yield curr[2].operation
             curr = curr[1]
 
     def _item_added(self, path, key, item):
         index = self.take_index(item, _ST_REMOVE)
-        if index != None:
+        if index is not None:
             op = index[2]
             if type(op.key) == int:
                 for v in self.iter_from(index):
                     op.key = v._on_undo_remove(op.path, op.key)
+
             self.remove(index)
             if op.location != _path_join(path, key):
                 new_op = MoveOperation({
@@ -745,11 +748,12 @@ class DiffBuilder(object):
         })
         index = self.take_index(item, _ST_ADD)
         new_index = self.insert(new_op)
-        if index != None:
+        if index is not None:
             op = index[2]
             if type(op.key) == int:
                 for v in self.iter_from(index):
                     op.key = v._on_undo_add(op.path, op.key)
+
             self.remove(index)
             if new_op.location != op.location:
                 new_op = MoveOperation({
@@ -758,8 +762,10 @@ class DiffBuilder(object):
                     'path': op.location,
                 })
                 new_index[2] = new_op
+
             else:
                 self.remove(new_index)
+
         else:
             self.store_index(item, new_index, _ST_REMOVE)
 
@@ -775,10 +781,13 @@ class DiffBuilder(object):
         dst_keys = set(dst.keys())
         added_keys = dst_keys - src_keys
         removed_keys = src_keys - dst_keys
+
         for key in removed_keys:
             self._item_removed(path, str(key), src[key])
+
         for key in added_keys:
             self._item_added(path, str(key), dst[key])
+
         for key in src_keys & dst_keys:
             self._compare_values(path, key, src[key], dst[key])
 
@@ -791,26 +800,34 @@ class DiffBuilder(object):
                 old, new = src[key], dst[key]
                 if old == new:
                     continue
+
                 self._item_removed(path, key, old)
                 self._item_added(path, key, new)
+
             elif len_src > len_dst:
                 self._item_removed(path, len_dst, src[key])
+
             else:
                 self._item_added(path, key, dst[key])
 
     def _compare_values(self, path, key, src, dst):
         if src == dst:
             return
+
         elif isinstance(src, MutableMapping) and \
                 isinstance(dst, MutableMapping):
             self._compare_dicts(_path_join(path, key), src, dst)
+
         elif isinstance(src, MutableSequence) and \
                 isinstance(dst, MutableSequence):
             self._compare_lists(_path_join(path, key), src, dst)
+
         else:
             self._item_replaced(path, key, dst)
 
+
 def _path_join(path, key):
-    if key != None:
-        return path + '/' + str(key).replace('~', '~0').replace('/', '~1')
-    return path
+    if key is None:
+        return path
+
+    return path + '/' + str(key).replace('~', '~0').replace('/', '~1')
