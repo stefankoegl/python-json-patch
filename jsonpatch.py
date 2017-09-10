@@ -714,7 +714,11 @@ class _compare_info(object):
                         op_first.location == op_second.location and \
                         type(op_first) == RemoveOperation and \
                         type(op_second) == AddOperation):
-                    yield ReplaceOperation({'op': 'replace', 'path': op_second.location, 'value': op_second.operation['value']}).operation
+                    yield ReplaceOperation({
+                        'op': 'replace',
+                        'path': op_second.location,
+                        'value': op_second.operation['value'],
+                    }).operation
                     curr = curr[1][1]
                     continue
             yield curr[2].operation
@@ -734,15 +738,27 @@ def _item_added(path, key, info, item):
                 op.key = v._on_undo_remove(op.path, op.key)
         info.remove(index)
         if op.location != _path_join(path, key):
-            new_op = MoveOperation({'op': 'move', 'from': op.location, 'path': _path_join(path, key)})
+            new_op = MoveOperation({
+                'op': 'move',
+                'from': op.location,
+                'path': _path_join(path, key),
+            })
             info.insert(new_op)
     else:
-        new_op = AddOperation({'op': 'add', 'path': _path_join(path, key), 'value': item})
+        new_op = AddOperation({
+            'op': 'add',
+            'path': _path_join(path, key),
+            'value': item,
+        })
         new_index = info.insert(new_op)
         info.store_index(item, new_index, _ST_ADD)
 
 def _item_removed(path, key, info, item):
-    new_op = RemoveOperation({'op': 'remove', 'path': _path_join(path, key), 'value': item})
+    new_op = RemoveOperation({
+        'op': 'remove',
+        'path': _path_join(path, key),
+        'value': item,
+    })
     index = info.take_index(item, _ST_ADD)
     new_index = info.insert(new_op)
     if index != None:
@@ -752,7 +768,11 @@ def _item_removed(path, key, info, item):
                 op.key = v._on_undo_add(op.path, op.key)
         info.remove(index)
         if new_op.location != op.location:
-            new_op = MoveOperation({'op': 'move', 'from': new_op.location, 'path': op.location})
+            new_op = MoveOperation({
+                'op': 'move',
+                'from': new_op.location,
+                'path': op.location,
+            })
             new_index[2] = new_op
         else:
             info.remove(new_index)
@@ -760,7 +780,11 @@ def _item_removed(path, key, info, item):
         info.store_index(item, new_index, _ST_REMOVE)
 
 def _item_replaced(path, key, info, item):
-    info.insert(ReplaceOperation({'op': 'replace', 'path': _path_join(path, key), 'value': item}))
+    info.insert(ReplaceOperation({
+        'op': 'replace',
+        'path': _path_join(path, key),
+        'value': item,
+    }))
 
 def _compare_dicts(path, info, src, dst):
     src_keys = _viewkeys(src)
