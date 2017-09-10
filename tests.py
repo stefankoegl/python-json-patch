@@ -425,12 +425,8 @@ class OptimizationTests(unittest.TestCase):
 
         fn({'foo': [1, 2, 3]}, {'foo': [3, 1, 2]})
         fn([1, 2, 3], [3, 1, 2])
-
-        # Optimizations for the following tests are currently not performed.
-        # The tests are disabled, as the missing optimizations do not
-        # invalidate the results
-        #fn({'foo': [1, 2, 3]}, {'foo': [3, 2, 1]})
-        #fn([1, 2, 3], [3, 2, 1])
+        fn({'foo': [1, 2, 3]}, {'foo': [3, 2, 1]})
+        fn([1, 2, 3], [3, 2, 1])
 
     def test_success_if_replace_inside_dict(self):
         src = [{'a': 1, 'foo': {'b': 2, 'd': 5}}]
