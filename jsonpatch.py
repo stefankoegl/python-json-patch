@@ -188,18 +188,7 @@ def make_patch(src, dst):
     True
     """
 
-    # TODO: fix patch optimiztion and remove the following check
-    # fix when patch with optimization is incorrect
-    patch = JsonPatch.from_diff(src, dst)
-    try:
-        new = patch.apply(src)
-    except JsonPatchConflict: # see TODO
-        return JsonPatch.from_diff(src, dst, False)
-
-    if new != dst:
-        return JsonPatch.from_diff(src, dst, False)
-
-    return patch
+    return JsonPatch.from_diff(src, dst)
 
 
 class JsonPatch(object):
