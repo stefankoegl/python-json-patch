@@ -801,8 +801,17 @@ class DiffBuilder(object):
                 if old == new:
                     continue
 
-                self._item_removed(path, key, old)
-                self._item_added(path, key, new)
+                elif isinstance(old, MutableMapping) and \
+                    isinstance(new, MutableMapping):
+                    self._compare_dicts(_path_join(path, key), old, new)
+
+                elif isinstance(old, MutableSequence) and \
+                        isinstance(new, MutableSequence):
+                    self._compare_lists(_path_join(path, key), old, new)
+
+                else:
+                    self._item_removed(path, key, old)
+                    self._item_added(path, key, new)
 
             elif len_src > len_dst:
                 self._item_removed(path, len_dst, src[key])
