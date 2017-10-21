@@ -98,7 +98,7 @@ def multidict(ordered_pairs):
 
 # The "object_pairs_hook" parameter is used to handle duplicate keys when
 # loading a JSON object.
-json.load = functools.partial(json.load, object_pairs_hook=multidict)
+_jsonloads = functools.partial(json.loads, object_pairs_hook=multidict)
 
 
 def apply_patch(doc, patch, in_place=False):
@@ -260,7 +260,7 @@ class JsonPatch(object):
 
         :return: :class:`JsonPatch` instance.
         """
-        patch = json.loads(patch_str)
+        patch = _jsonloads(patch_str)
         return cls(patch)
 
     @classmethod
