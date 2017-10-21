@@ -23,17 +23,12 @@ MODULES = (
 )
 
 REQUIREMENTS = list(open('requirements.txt'))
-if sys.version_info < (2, 6):
-    REQUIREMENTS += ['simplejson']
 
 if has_setuptools:
     OPTIONS = {
         'install_requires': REQUIREMENTS
     }
 else:
-    if sys.version_info < (2, 6):
-        warnings.warn('No setuptools installed. Be sure that you have '
-                      'json or simplejson package installed')
     OPTIONS = {}
 
 AUTHOR_EMAIL = metadata['author']
@@ -61,7 +56,6 @@ CLASSIFIERS = [
     'Operating System :: OS Independent',
     'Programming Language :: Python',
     'Programming Language :: Python :: 2',
-    'Programming Language :: Python :: 2.6',
     'Programming Language :: Python :: 2.7',
     'Programming Language :: Python :: 3',
     'Programming Language :: Python :: 3.3',
