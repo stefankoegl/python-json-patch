@@ -10,7 +10,8 @@ help:
 	@echo
 
 test:
-	python tests.py
+	python -Wd -m coverage run --branch --source=jsonpatch tests.py
+	coverage report --show-missing
 
 coverage:
 	coverage run --source=jsonpatch tests.py

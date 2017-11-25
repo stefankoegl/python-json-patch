@@ -42,12 +42,19 @@ import itertools
 import json
 import sys
 
+from jsonpointer import JsonPointer, JsonPointerException
+
+
+_ST_ADD = 0
+_ST_REMOVE = 1
+
+
 try:
     from collections.abc import MutableMapping, MutableSequence
+
 except ImportError:
     from collections import MutableMapping, MutableSequence
-
-from jsonpointer import JsonPointer, JsonPointerException
+    str = unicode
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
@@ -156,18 +163,7 @@ def make_patch(src, dst):
     True
     """
 
-    # TODO: fix patch optimiztion and remove the following check
-    # fix when patch with optimization is incorrect
-    patch = JsonPatch.from_diff(src, dst)
-    try:
-        new = patch.apply(src)
-    except JsonPatchConflict: # see TODO
-        return JsonPatch.from_diff(src, dst, False)
-
-    if new != dst:
-        return JsonPatch.from_diff(src, dst, False)
-
-    return patch
+    return JsonPatch.from_diff(src, dst)
 
 
 class JsonPatch(object):
@@ -284,41 +280,11 @@ class JsonPatch(object):
         >>> new == dst
         True
         """
-        def compare_values(path, value, other):
-            if value == other:
-                return
-            if isinstance(value, MutableMapping) and \
-                    isinstance(other, MutableMapping):
-                for operation in compare_dicts(path, value, other):
-                    yield operation
-            elif isinstance(value, MutableSequence) and \
-                    isinstance(other, MutableSequence):
-                for operation in compare_lists(path, value, other):
-                    yield operation
-            else:
-                ptr = JsonPointer.from_parts(path)
-                yield {'op': 'replace', 'path': ptr.path, 'value': other}
 
-        def compare_dicts(path, src, dst):
-            for key in src:
-                if key not in dst:
-                    ptr = JsonPointer.from_parts(path + [key])
-                    yield {'op': 'remove', 'path': ptr.path}
-                    continue
-                current = path + [key]
-                for operation in compare_values(current, src[key], dst[key]):
-                    yield operation
-            for key in dst:
-                if key not in src:
-                    ptr = JsonPointer.from_parts(path + [key])
-                    yield {'op': 'add',
-                           'path': ptr.path,
-                           'value': dst[key]}
-
-        def compare_lists(path, src, dst):
-            return _compare_lists(path, src, dst, optimization=optimization)
-
-        return cls(list(compare_values([], src, dst)))
+        builder = DiffBuilder()
+        builder._compare_values('', None, src, dst)
+        ops = list(builder.execute())
+        return cls(ops)
 
     def to_string(self):
         """Returns patch set as JSON string."""
@@ -388,6 +354,23 @@ class PatchOperation(object):
     def __ne__(self, other):
         return not(self == other)
 
+    @property
+    def path(self):
+        return '/'.join(self.pointer.parts[:-1])
+
+    @property
+    def key(self):
+        try:
+            return int(self.pointer.parts[-1])
+        except ValueError:
+            return self.pointer.parts[-1]
+
+    @key.setter
+    def key(self, value):
+        self.pointer.parts[-1] = str(value)
+        self.location = self.pointer.path
+        self.operation['path'] = self.location
+
 
 class RemoveOperation(PatchOperation):
     """Removes an object property or an array element."""
@@ -401,6 +384,22 @@ class RemoveOperation(PatchOperation):
             raise JsonPatchConflict(msg)
 
         return obj
+
+    def _on_undo_remove(self, path, key):
+        if self.path == path:
+            if self.key >= key:
+                self.key += 1
+            else:
+                key -= 1
+        return key
+
+    def _on_undo_add(self, path, key):
+        if self.path == path:
+            if self.key > key:
+                self.key -= 1
+            else:
+                key -= 1
+        return key
 
 
 class AddOperation(PatchOperation):
@@ -436,6 +435,22 @@ class AddOperation(PatchOperation):
 
         return obj
 
+    def _on_undo_remove(self, path, key):
+        if self.path == path:
+            if self.key > key:
+                self.key += 1
+            else:
+                key += 1
+        return key
+
+    def _on_undo_add(self, path, key):
+        if self.path == path:
+            if self.key > key:
+                self.key -= 1
+            else:
+                key += 1
+        return key
+
 
 class ReplaceOperation(PatchOperation):
     """Replaces an object property or an array element by new value."""
@@ -457,7 +472,7 @@ class ReplaceOperation(PatchOperation):
                 raise JsonPatchConflict("can't replace outside of list")
 
         elif isinstance(subobj, MutableMapping):
-            if not part in subobj:
+            if part not in subobj:
                 msg = "can't replace non-existent object '{0}'".format(part)
                 raise JsonPatchConflict(msg)
         else:
@@ -465,6 +480,12 @@ class ReplaceOperation(PatchOperation):
 
         subobj[part] = value
         return obj
+
+    def _on_undo_remove(self, path, key):
+        return key
+
+    def _on_undo_add(self, path, key):
+        return key
 
 
 class MoveOperation(PatchOperation):
@@ -503,6 +524,51 @@ class MoveOperation(PatchOperation):
         }).apply(obj)
 
         return obj
+
+    @property
+    def from_path(self):
+        from_ptr = JsonPointer(self.operation['from'])
+        return '/'.join(from_ptr.parts[:-1])
+
+    @property
+    def from_key(self):
+        from_ptr = JsonPointer(self.operation['from'])
+        try:
+            return int(from_ptr.parts[-1])
+        except TypeError:
+            return from_ptr.parts[-1]
+
+    @from_key.setter
+    def from_key(self, value):
+        from_ptr = JsonPointer(self.operation['from'])
+        from_ptr.parts[-1] = str(value)
+        self.operation['from'] = from_ptr.path
+
+    def _on_undo_remove(self, path, key):
+        if self.from_path == path:
+            if self.from_key >= key:
+                self.from_key += 1
+            else:
+                key -= 1
+        if self.path == path:
+            if self.key > key:
+                self.key += 1
+            else:
+                key += 1
+        return key
+
+    def _on_undo_add(self, path, key):
+        if self.from_path == path:
+            if self.from_key > key:
+                self.from_key -= 1
+            else:
+                key -= 1
+        if self.path == path:
+            if self.key > key:
+                self.key -= 1
+            else:
+                key += 1
+        return key
 
 
 class TestOperation(PatchOperation):
@@ -557,248 +623,206 @@ class CopyOperation(PatchOperation):
         return obj
 
 
-def _compare_lists(path, src, dst, optimization=True):
-    """Compares two lists objects and return JSON patch about."""
-    patch = list(_compare(path, src, dst, *_split_by_common_seq(src, dst)))
-    if optimization:
-        return list(_optimize(patch))
-    return patch
+class DiffBuilder(object):
 
+    def __init__(self):
+        self.index_storage = [{}, {}]
+        self.index_storage2 = [[], []]
+        self.__root = root = []
+        root[:] = [root, root, None]
 
-def _longest_common_subseq(src, dst):
-    """Returns pair of ranges of longest common subsequence for the `src`
-    and `dst` lists.
-
-    >>> src = [1, 2, 3, 4]
-    >>> dst = [0, 1, 2, 3, 5]
-    >>> # The longest common subsequence for these lists is [1, 2, 3]
-    ... # which is located at (0, 3) index range for src list and (1, 4) for
-    ... # dst one. Tuple of these ranges we should get back.
-    ... assert ((0, 3), (1, 4)) == _longest_common_subseq(src, dst)
-    """
-    lsrc, ldst = len(src), len(dst)
-    drange = list(range(ldst))
-    matrix = [[0] * ldst for _ in range(lsrc)]
-    z = 0  # length of the longest subsequence
-    range_src, range_dst = None, None
-    for i, j in itertools.product(range(lsrc), drange):
-        if src[i] == dst[j]:
-            if i == 0 or j == 0:
-                matrix[i][j] = 1
+    def store_index(self, value, index, st):
+        try:
+            storage = self.index_storage[st]
+            stored = storage.get(value)
+            if stored is None:
+                storage[value] = [index]
             else:
-                matrix[i][j] = matrix[i-1][j-1] + 1
-            if matrix[i][j] > z:
-                z = matrix[i][j]
-                range_src = (i-z+1, i+1)
-                range_dst = (j-z+1, j+1)
+                storage[value].append(index)
+
+        except TypeError:
+            self.index_storage2[st].append((value, index))
+
+    def take_index(self, value, st):
+        try:
+            stored = self.index_storage[st].get(value)
+            if stored:
+                return stored.pop()
+
+        except TypeError:
+            storage = self.index_storage2[st]
+            for i in range(len(storage)-1, -1, -1):
+                if storage[i][0] == value:
+                    return storage.pop(i)[1]
+
+    def insert(self, op):
+        root = self.__root
+        last = root[0]
+        last[1] = root[0] = [last, root, op]
+        return root[0]
+
+    def remove(self, index):
+        link_prev, link_next, _ = index
+        link_prev[1] = link_next
+        link_next[0] = link_prev
+        index[:] = []
+
+    def iter_from(self, start):
+        root = self.__root
+        curr = start[1]
+        while curr is not root:
+            yield curr[2]
+            curr = curr[1]
+
+    def __iter__(self):
+        root = self.__root
+        curr = root[1]
+        while curr is not root:
+            yield curr[2]
+            curr = curr[1]
+
+    def execute(self):
+        root = self.__root
+        curr = root[1]
+        while curr is not root:
+            if curr[1] is not root:
+                op_first, op_second = curr[2], curr[1][2]
+                if op_first.location == op_second.location and \
+                        type(op_first) == RemoveOperation and \
+                        type(op_second) == AddOperation:
+                    yield ReplaceOperation({
+                        'op': 'replace',
+                        'path': op_second.location,
+                        'value': op_second.operation['value'],
+                    }).operation
+                    curr = curr[1][1]
+                    continue
+
+            yield curr[2].operation
+            curr = curr[1]
+
+    def _item_added(self, path, key, item):
+        index = self.take_index(item, _ST_REMOVE)
+        if index is not None:
+            op = index[2]
+            if type(op.key) == int:
+                for v in self.iter_from(index):
+                    op.key = v._on_undo_remove(op.path, op.key)
+
+            self.remove(index)
+            if op.location != _path_join(path, key):
+                new_op = MoveOperation({
+                    'op': 'move',
+                    'from': op.location,
+                    'path': _path_join(path, key),
+                })
+                self.insert(new_op)
         else:
-            matrix[i][j] = 0
-    return range_src, range_dst
+            new_op = AddOperation({
+                'op': 'add',
+                'path': _path_join(path, key),
+                'value': item,
+            })
+            new_index = self.insert(new_op)
+            self.store_index(item, new_index, _ST_ADD)
 
+    def _item_removed(self, path, key, item):
+        new_op = RemoveOperation({
+            'op': 'remove',
+            'path': _path_join(path, key),
+            'value': item,
+        })
+        index = self.take_index(item, _ST_ADD)
+        new_index = self.insert(new_op)
+        if index is not None:
+            op = index[2]
+            if type(op.key) == int:
+                for v in self.iter_from(index):
+                    op.key = v._on_undo_add(op.path, op.key)
 
-def _split_by_common_seq(src, dst, bx=(0, -1), by=(0, -1)):
-    """Recursively splits the `dst` list onto two parts: left and right.
-    The left part contains differences on left from common subsequence,
-    same as the right part by for other side.
+            self.remove(index)
+            if new_op.location != op.location:
+                new_op = MoveOperation({
+                    'op': 'move',
+                    'from': new_op.location,
+                    'path': op.location,
+                })
+                new_index[2] = new_op
 
-    To easily understand the process let's take two lists: [0, 1, 2, 3] as
-    `src` and [1, 2, 4, 5] for `dst`. If we've tried to generate the binary tree
-    where nodes are common subsequence for both lists, leaves on the left
-    side are subsequence for `src` list and leaves on the right one for `dst`,
-    our tree would looks like::
+            else:
+                self.remove(new_index)
 
-        [1, 2]
-       /     \
-    [0]       []
-             /  \
-          [3]   [4, 5]
-
-    This function generate the similar structure as flat tree, but without
-    nodes with common subsequences - since we're don't need them - only with
-    left and right leaves::
-
-        []
-       / \
-    [0]  []
-        / \
-     [3]  [4, 5]
-
-    The `bx` is the absolute range for currently processed subsequence of
-    `src` list.  The `by` means the same, but for the `dst` list.
-    """
-    # Prevent useless comparisons in future
-    bx = bx if bx[0] != bx[1] else None
-    by = by if by[0] != by[1] else None
-
-    if not src:
-        return [None, by]
-    elif not dst:
-        return [bx, None]
-
-    # note that these ranges are relative for processed sublists
-    x, y = _longest_common_subseq(src, dst)
-
-    if x is None or y is None:  # no more any common subsequence
-        return [bx, by]
-
-    return [_split_by_common_seq(src[:x[0]], dst[:y[0]],
-                                 (bx[0], bx[0] + x[0]),
-                                 (by[0], by[0] + y[0])),
-            _split_by_common_seq(src[x[1]:], dst[y[1]:],
-                                 (bx[0] + x[1], bx[0] + len(src)),
-                                 (by[0] + y[1], by[0] + len(dst)))]
-
-
-def _compare(path, src, dst, left, right):
-    """Same as :func:`_compare_with_shift` but strips emitted `shift` value."""
-    for op, _ in _compare_with_shift(path, src, dst, left, right, 0):
-        yield op
-
-
-def _compare_with_shift(path, src, dst, left, right, shift):
-    """Recursively compares differences from `left` and `right` sides
-    from common subsequences.
-
-    The `shift` parameter is used to store index shift which caused
-    by ``add`` and ``remove`` operations.
-
-    Yields JSON patch operations and list index shift.
-    """
-    if isinstance(left, MutableSequence):
-        for item, shift in _compare_with_shift(path, src, dst, *left,
-                                               shift=shift):
-            yield item, shift
-    elif left is not None:
-        for item, shift in _compare_left(path, src, left, shift):
-            yield item, shift
-
-    if isinstance(right, MutableSequence):
-        for item, shift in _compare_with_shift(path, src, dst, *right,
-                                               shift=shift):
-            yield item, shift
-    elif right is not None:
-        for item, shift in _compare_right(path, dst, right, shift):
-            yield item, shift
-
-
-def _compare_left(path, src, left, shift):
-    """Yields JSON patch ``remove`` operations for elements that are only
-    exists in the `src` list."""
-    start, end = left
-    if end == -1:
-        end = len(src)
-    # we need to `remove` elements from list tail to not deal with index shift
-    for idx in reversed(range(start + shift, end + shift)):
-        ptr = JsonPointer.from_parts(path + [str(idx)])
-        yield (
-            {'op': 'remove',
-             # yes, there should be any value field, but we'll use it
-             # to apply `move` optimization a bit later and will remove
-             # it in _optimize function.
-             'value': src[idx - shift],
-             'path': ptr.path,
-            },
-            shift - 1
-        )
-        shift -= 1
-
-
-def _compare_right(path, dst, right, shift):
-    """Yields JSON patch ``add`` operations for elements that are only
-    exists in the `dst` list"""
-    start, end = right
-    if end == -1:
-        end = len(dst)
-    for idx in range(start, end):
-        ptr = JsonPointer.from_parts(path + [str(idx)])
-        yield (
-            {'op': 'add', 'path': ptr.path, 'value': dst[idx]},
-            shift + 1
-        )
-        shift += 1
-
-
-def _optimize(operations):
-    """Optimizes operations which was produced by lists comparison.
-
-    Actually it does two kinds of optimizations:
-
-    1. Seeks pair of ``remove`` and ``add`` operations against the same path
-       and replaces them with ``replace`` operation.
-    2. Seeks pair of ``remove`` and ``add`` operations for the same value
-       and replaces them with ``move`` operation.
-    """
-    result = []
-    ops_by_path = {}
-    ops_by_value = {}
-    add_remove = set(['add', 'remove'])
-    for item in operations:
-        # could we apply "move" optimization for dict values?
-        hashable_value = not isinstance(item['value'],
-                                        (MutableMapping, MutableSequence))
-        if item['path'] in ops_by_path:
-            _optimize_using_replace(ops_by_path[item['path']], item)
-            continue
-        if hashable_value and item['value'] in ops_by_value:
-            prev_item = ops_by_value[item['value']]
-            # ensure that we processing pair of add-remove ops
-            if set([item['op'], prev_item['op']]) == add_remove:
-                _optimize_using_move(prev_item, item)
-                ops_by_value.pop(item['value'])
-                continue
-        result.append(item)
-        ops_by_path[item['path']] = item
-        if hashable_value:
-            ops_by_value[item['value']] = item
-
-    # cleanup
-    ops_by_path.clear()
-    ops_by_value.clear()
-    for item in result:
-        if item['op'] == 'remove':
-            item.pop('value')  # strip our hack
-        yield item
-
-
-def _optimize_using_replace(prev, cur):
-    """Optimises by replacing ``add``/``remove`` with ``replace`` on same path
-
-    For nested strucures, tries to recurse replacement, see #36 """
-    prev['op'] = 'replace'
-    if cur['op'] == 'add':
-        # make recursive patch
-        patch = make_patch(prev['value'], cur['value'])
-        # check case when dict "remove" is less than "add" and has a same key
-        if isinstance(prev['value'], dict) and isinstance(cur['value'], dict) and len(prev['value'].keys()) == 1:
-            prev_set = set(prev['value'].keys())
-            cur_set = set(cur['value'].keys())
-            if prev_set & cur_set == prev_set:
-                patch = make_patch(cur['value'], prev['value'])
-
-        if len(patch.patch) == 1 and \
-                patch.patch[0]['op'] != 'remove' and \
-                patch.patch[0]['path'] and patch.patch[0]['path'].split('/')[1] in prev['value']:
-            prev['path'] = prev['path'] + patch.patch[0]['path']
-            prev['value'] = patch.patch[0]['value']
         else:
-            prev['value'] = cur['value']
+            self.store_index(item, new_index, _ST_REMOVE)
+
+    def _item_replaced(self, path, key, item):
+        self.insert(ReplaceOperation({
+            'op': 'replace',
+            'path': _path_join(path, key),
+            'value': item,
+        }))
+
+    def _compare_dicts(self, path, src, dst):
+        src_keys = set(src.keys())
+        dst_keys = set(dst.keys())
+        added_keys = dst_keys - src_keys
+        removed_keys = src_keys - dst_keys
+
+        for key in removed_keys:
+            self._item_removed(path, str(key), src[key])
+
+        for key in added_keys:
+            self._item_added(path, str(key), dst[key])
+
+        for key in src_keys & dst_keys:
+            self._compare_values(path, key, src[key], dst[key])
+
+    def _compare_lists(self, path, src, dst):
+        len_src, len_dst = len(src), len(dst)
+        max_len = max(len_src, len_dst)
+        min_len = min(len_src, len_dst)
+        for key in range(max_len):
+            if key < min_len:
+                old, new = src[key], dst[key]
+                if old == new:
+                    continue
+
+                elif isinstance(old, MutableMapping) and \
+                    isinstance(new, MutableMapping):
+                    self._compare_dicts(_path_join(path, key), old, new)
+
+                elif isinstance(old, MutableSequence) and \
+                        isinstance(new, MutableSequence):
+                    self._compare_lists(_path_join(path, key), old, new)
+
+                else:
+                    self._item_removed(path, key, old)
+                    self._item_added(path, key, new)
+
+            elif len_src > len_dst:
+                self._item_removed(path, len_dst, src[key])
+
+            else:
+                self._item_added(path, key, dst[key])
+
+    def _compare_values(self, path, key, src, dst):
+        if src == dst:
+            return
+
+        elif isinstance(src, MutableMapping) and \
+                isinstance(dst, MutableMapping):
+            self._compare_dicts(_path_join(path, key), src, dst)
+
+        elif isinstance(src, MutableSequence) and \
+                isinstance(dst, MutableSequence):
+            self._compare_lists(_path_join(path, key), src, dst)
+
+        else:
+            self._item_replaced(path, key, dst)
 
 
-def _optimize_using_move(prev_item, item):
-    """Optimises JSON patch by using ``move`` operation instead of
-    ``remove` and ``add`` against the different paths but for the same value."""
-    prev_item['op'] = 'move'
-    move_from, move_to = [
-        (item['path'], prev_item['path']),
-        (prev_item['path'], item['path']),
-    ][item['op'] == 'add']
-    if item['op'] == 'add':  # first was remove then add
-        prev_item['from'] = move_from
-        prev_item['path'] = move_to
-    else:  # first was add then remove
-        head, move_from = move_from.rsplit('/', 1)
-        # since add operation was first it incremented
-        # overall index shift value. we have to fix this
-        move_from = int(move_from) - 1
-        prev_item['from'] = head + '/%d' % move_from
-        prev_item['path'] = move_to
+def _path_join(path, key):
+    if key is None:
+        return path
+
+    return path + '/' + str(key).replace('~', '~0').replace('/', '~1')
