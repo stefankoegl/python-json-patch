@@ -19,3 +19,17 @@ script:
 after_script:
 - coveralls
 sudo: false
+addons:
+  apt:
+    packages:
+    - pandoc
+before_deploy:
+- pip install -r requirements-dev.txt
+deploy:
+  provider: pypi
+  user: skoegl
+  password:
+    secure: ppMhKu82oIig1INyiNkt9veOd5FUUIKFUXj2TzxMSdzPtzAhQnScJMGPEtPfH8MwXng/CtJiDWS6zJzRFsW/3Ch+JHPkOtxOfkopBs1t1SpCyqNPSvf6Zxh83Dg6Bq6+8GyVW1RPuNIGflsvzY2C3z5i79FQXwZd8EQlg7Vu0Wo=
+  on:
+    tags: true
+  distributions: sdist bdist_wheel
