@@ -388,6 +388,17 @@ class MakePatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
+    def test_list_in_dict(self):
+        """ Test patch creation with a list within a dict, as reported in #74
+
+        https://github.com/stefankoegl/python-json-patch/issues/74 """
+        old = {'key': [{'someNumber': 0, 'someArray': [1, 2, 3]}]}
+        new = {'key': [{'someNumber': 0, 'someArray': [1, 2, 3, 4]}]}
+        patch = jsonpatch.make_patch(old, new)
+        new_from_patch = jsonpatch.apply_patch(old, patch)
+        self.assertEqual(new, new_from_patch)
+
+
 class OptimizationTests(unittest.TestCase):
     def test_use_replace_instead_of_remove_add(self):
         src = {'foo': [1, 2, 3]}
