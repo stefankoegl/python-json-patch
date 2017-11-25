@@ -103,25 +103,9 @@ def multidict(ordered_pairs):
     )
 
 
-def get_loadjson():
-    """ adds the object_pairs_hook parameter to json.load when possible
-
-    The "object_pairs_hook" parameter is used to handle duplicate keys when
-    loading a JSON object. This parameter does not exist in Python 2.6. This
-    methods returns an unmodified json.load for Python 2.6 and a partial
-    function with object_pairs_hook set to multidict for Python versions that
-    support the parameter. """
-
-    if sys.version_info >= (3, 3):
-        args = inspect.signature(json.load).parameters
-    else:
-        args = inspect.getargspec(json.load).args
-    if 'object_pairs_hook' not in args:
-        return json.load
-
-    return functools.partial(json.load, object_pairs_hook=multidict)
-
-json.load = get_loadjson()
+# The "object_pairs_hook" parameter is used to handle duplicate keys when
+# loading a JSON object.
+json.load = functools.partial(json.load, object_pairs_hook=multidict)
 
 
 def apply_patch(doc, patch, in_place=False):
