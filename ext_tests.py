@@ -115,24 +115,25 @@ runner = unittest.TextTestRunner(verbosity=1)
 
 try:
     import coverage
+    cov = coverage.Coverage()
 except ImportError:
-    coverage = None
+    cov = None
 
-if coverage is not None:
-    coverage.erase()
-    coverage.start()
+if cov is not None:
+    cov.erase()
+    cov.start()
 
 result = runner.run(suite)
 
 if not result.wasSuccessful():
     sys.exit(1)
 
-if coverage is not None:
-    coverage.stop()
-    coverage.report(coverage_modules)
-    coverage.erase()
+if cov is not None:
+    cov.stop()
+    cov.report(coverage_modules)
+    cov.erase()
 
-if coverage is None:
+if cov is None:
     sys.stderr.write("""
 No coverage reporting done (Python module "coverage" is missing)
 Please install the python-coverage package to get coverage reporting.
