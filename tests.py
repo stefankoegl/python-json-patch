@@ -398,6 +398,16 @@ class MakePatchTestCase(unittest.TestCase):
         new_from_patch = jsonpatch.apply_patch(old, patch)
         self.assertEqual(new, new_from_patch)
 
+    def test_nested(self):
+        """ Patch creation with nested dicts, as reported in #41
+
+        https://github.com/stefankoegl/python-json-patch/issues/41 """
+        old = {'school':{'names':['Kevin','Carl']}}
+        new = {'school':{'names':['Carl','Kate','Kevin','Jake']}}
+        patch = jsonpatch.JsonPatch.from_diff(old, new)
+        new_from_patch = jsonpatch.apply_patch(old, patch)
+        self.assertEqual(new, new_from_patch)
+
 
 class OptimizationTests(unittest.TestCase):
     def test_use_replace_instead_of_remove_add(self):
