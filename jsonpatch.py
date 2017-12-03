@@ -335,8 +335,14 @@ class PatchOperation(object):
     """A single operation inside a JSON Patch."""
 
     def __init__(self, operation):
-        self.location = operation['path']
-        self.pointer = JsonPointer(self.location)
+
+        if isinstance(operation['path'], JsonPointer):
+            self.location = operation['path'].path
+            self.pointer = operation['path']
+        else:
+            self.location = operation['path']
+            self.pointer = JsonPointer(self.location)
+
         self.operation = operation
 
     def apply(self, obj):
@@ -493,7 +499,10 @@ class MoveOperation(PatchOperation):
 
     def apply(self, obj):
         try:
-            from_ptr = JsonPointer(self.operation['from'])
+            if isinstance(self.operation['from'], JsonPointer):
+                from_ptr = self.operation['from']
+            else:
+                from_ptr = JsonPointer(self.operation['from'])
         except KeyError as ex:
             raise InvalidJsonPatch(
                 "The operation does not contain a 'from' member")
