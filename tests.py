@@ -368,6 +368,17 @@ class MakePatchTestCase(unittest.TestCase):
         dest = [7, 2, 1, 0, 9, 4, 3, 6, 5, 8]
         patch = jsonpatch.make_patch(src, dest)
 
+    def test_issue76(self):
+        """ Make sure op:remove does not include a 'value' field """
+
+        src = { "name": "fred", "friend": "barney", "spouse": "wilma" }
+        dst = { "name": "fred", "spouse": "wilma" }
+        expected = [{"path": "/friend", "op": "remove"}]
+        patch = jsonpatch.make_patch(src, dst)
+        self.assertEqual(patch.patch, expected)
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
+
     def test_json_patch(self):
         old = {
             'queue': {'teams_out': [{'id': 3, 'reason': 'If tied'}, {'id': 5, 'reason': 'If tied'}]},
@@ -424,7 +435,7 @@ class OptimizationTests(unittest.TestCase):
         dst = {'foo': [{'bar': 1}, {'bar': 2, 'baz': 3}]}
         patch = list(jsonpatch.make_patch(src, dst))
 
-        exp = [{'op': 'remove', 'value': 2, 'path': '/foo/0/baz'}]
+        exp = [{'op': 'remove', 'path': '/foo/0/baz'}]
         self.assertEqual(patch, exp)
 
         res = jsonpatch.apply_patch(src, patch)
@@ -481,11 +492,14 @@ class OptimizationTests(unittest.TestCase):
         src = [{"a": 1, "b": 2}]
         dst = [{"b": 2, "c": 2}]
         exp = [
-            {'path': '/0/a', 'op': 'remove', 'value': 1},
+            {'path': '/0/a', 'op': 'remove'},
             {'path': '/0/c', 'op': 'add', 'value': 2}
         ]
         patch = jsonpatch.make_patch(src, dst)
         self.assertEqual(patch.patch, exp)
+        # verify that this patch does what we expect
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
 
     def test_minimal_patch(self):
         """ Test whether a minimal patch is created, see #36 """
