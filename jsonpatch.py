@@ -730,7 +730,6 @@ class DiffBuilder(object):
         new_op = RemoveOperation({
             'op': 'remove',
             'path': _path_join(path, key),
-            'value': item,
         })
         index = self.take_index(item, _ST_ADD)
         new_index = self.insert(new_op)
