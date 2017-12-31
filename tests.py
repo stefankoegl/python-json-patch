@@ -9,6 +9,18 @@ import unittest
 import jsonpatch
 import jsonpointer
 import sys
+import string
+
+try:
+    import hypothesis
+    from hypothesis import strategies as st
+except ImportError:
+    hypothesis = None
+
+try:
+    unicode
+except NameError:
+    unicode = str
 
 
 class ApplyPatchTestCase(unittest.TestCase):
@@ -608,6 +620,28 @@ class ConflictTests(unittest.TestCase):
         self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
 
 
+if hypothesis is not None:
+    json_st = st.recursive(
+        st.one_of([
+            st.none(),
+            st.booleans(),
+            st.floats(allow_nan=False),
+            st.text(string.printable)]),
+        lambda children:
+        st.lists(children)
+        | st.dictionaries(st.text(string.printable), children))
+
+    class RoundtripTests(unittest.TestCase):
+        @hypothesis.example({}, {unicode('%20'): None})
+        @hypothesis.example({unicode('%20'): None}, {})
+        @hypothesis.given(json_st, json_st)
+        def test_roundtrip(self, src, dst):
+            patch = jsonpatch.JsonPatch.from_diff(src, dst, False)
+            hypothesis.note('Patch: %s' % (patch,))
+            res = patch.apply(src)
+            self.assertEqual(res, dst)
+
+
 if __name__ == '__main__':
     modules = ['jsonpatch']
 
@@ -622,6 +656,8 @@ if __name__ == '__main__':
         suite.addTest(unittest.makeSuite(InvalidInputTests))
         suite.addTest(unittest.makeSuite(ConflictTests))
         suite.addTest(unittest.makeSuite(OptimizationTests))
+        if hypothesis is not None:
+            suite.addTest(unittest.makeSuite(RoundtripTests))
         return suite
 
 
