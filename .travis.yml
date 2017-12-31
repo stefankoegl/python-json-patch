@@ -12,8 +12,8 @@ python:
 - pypy3
 install:
 - travis_retry pip install -r requirements.txt
+- travis_retry pip install -r requirements-dev.txt
 - travis_retry pip install coveralls
-- if [ "$TRAVIS_PYTHON_VERSION" != "3.3" ]; then travis_retry pip install hypothesis; fi
 script:
 - coverage run --source=jsonpointer tests.py
 after_script:
@@ -23,8 +23,6 @@ addons:
   apt:
     packages:
     - pandoc
-before_deploy:
-- pip install -r requirements-dev.txt
 deploy:
   provider: pypi
   user: skoegl
