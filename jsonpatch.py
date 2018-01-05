@@ -281,8 +281,7 @@ class JsonPatch(object):
         True
         """
 
-        builder = DiffBuilder()
-        builder._compare_values('', None, src, dst)
+        builder = DiffBuilder(src, dst)
         ops = list(builder.execute())
         return cls(ops)
 
@@ -625,7 +624,9 @@ class CopyOperation(PatchOperation):
 
 class DiffBuilder(object):
 
-    def __init__(self):
+    def __init__(self, src, dst):
+        self.src = src
+        self.dst = dst
         self.index_storage = [{}, {}]
         self.index_storage2 = [[], []]
         self.__root = root = []
@@ -682,6 +683,8 @@ class DiffBuilder(object):
             curr = curr[1]
 
     def execute(self):
+        self._compare_values('', None, self.src, self.dst)
+
         root = self.__root
         curr = root[1]
         while curr is not root:
