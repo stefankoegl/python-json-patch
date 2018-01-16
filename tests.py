@@ -366,7 +366,7 @@ class MakePatchTestCase(unittest.TestCase):
 
         src = [8, 7, 2, 1, 0, 9, 4, 3, 5, 6]
         dest = [7, 2, 1, 0, 9, 4, 3, 6, 5, 8]
-        patch = jsonpatch.make_patch(src, dest)
+        jsonpatch.make_patch(src, dest)
 
     def test_issue76(self):
         """ Make sure op:remove does not include a 'value' field """

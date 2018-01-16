@@ -34,7 +34,6 @@
 """ Script to run external tests, eg from
 https://github.com/json-patch/json-patch-tests """
 
-from functools import partial
 import doctest
 import unittest
 import jsonpatch

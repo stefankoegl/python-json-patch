@@ -1,10 +1,8 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import sys
 import io
 import re
-import warnings
 try:
     from setuptools import setup
     has_setuptools = True
