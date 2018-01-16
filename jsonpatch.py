@@ -37,8 +37,6 @@ from __future__ import unicode_literals
 import collections
 import copy
 import functools
-import inspect
-import itertools
 import json
 import sys
 
