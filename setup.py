@@ -58,7 +58,6 @@ CLASSIFIERS = [
     'Programming Language :: Python :: 2',
     'Programming Language :: Python :: 2.7',
     'Programming Language :: Python :: 3',
-    'Programming Language :: Python :: 3.3',
     'Programming Language :: Python :: 3.4',
     'Programming Language :: Python :: 3.5',
     'Programming Language :: Python :: 3.6',
@@ -81,5 +80,6 @@ setup(name=PACKAGE,
       package_data={'': ['requirements.txt']},
       scripts=['bin/jsondiff', 'bin/jsonpatch'],
       classifiers=CLASSIFIERS,
+      python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*',
       **OPTIONS
 )
