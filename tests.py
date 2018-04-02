@@ -639,7 +639,9 @@ if hypothesis is not None:
             patch = jsonpatch.JsonPatch.from_diff(src, dst, False)
             hypothesis.note('Patch: %s' % (patch,))
             res = patch.apply(src)
-            self.assertEqual(res, dst)
+            message = '{src} + {patch} resulted in {res}; {dst} was expected'.format(
+                src=repr(src), patch=repr(patch), res=repr(res), dst=repr(dst))
+            self.assertEqual(res, dst, message)
 
 
 if __name__ == '__main__':
