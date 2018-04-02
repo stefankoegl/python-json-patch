@@ -608,6 +608,27 @@ class ConflictTests(unittest.TestCase):
         self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
 
 
+class JsonPointerTests(unittest.TestCase):
+
+    def test_create_with_pointer(self):
+
+        patch = jsonpatch.JsonPatch([
+            {'op': 'add', 'path': jsonpointer.JsonPointer('/foo'), 'value': 'bar'},
+            {'op': 'add', 'path': jsonpointer.JsonPointer('/baz'), 'value': [1, 2, 3]},
+            {'op': 'remove', 'path': jsonpointer.JsonPointer('/baz/1')},
+            {'op': 'test', 'path': jsonpointer.JsonPointer('/baz'), 'value': [1, 3]},
+            {'op': 'replace', 'path': jsonpointer.JsonPointer('/baz/0'), 'value': 42},
+            {'op': 'remove', 'path': jsonpointer.JsonPointer('/baz/1')},
+            {'op': 'move', 'from': jsonpointer.JsonPointer('/foo'), 'path': jsonpointer.JsonPointer('/bar')},
+
+        ])
+        doc = {}
+        result = patch.apply(doc)
+        expected = {'bar': 'bar', 'baz': [42]}
+        self.assertEqual(result, expected)
+
+
+
 if __name__ == '__main__':
     modules = ['jsonpatch']
 
@@ -622,6 +643,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.makeSuite(InvalidInputTests))
         suite.addTest(unittest.makeSuite(ConflictTests))
         suite.addTest(unittest.makeSuite(OptimizationTests))
+        suite.addTest(unittest.makeSuite(JsonPointerTests))
         return suite
 
 
