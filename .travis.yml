@@ -11,6 +11,7 @@ python:
 - pypy3
 install:
 - travis_retry pip install -r requirements.txt
+- travis_retry pip install -r requirements-dev.txt
 - travis_retry pip install coveralls
 script:
 - coverage run --source=jsonpointer tests.py
@@ -21,8 +22,6 @@ addons:
   apt:
     packages:
     - pandoc
-before_deploy:
-- pip install -r requirements-dev.txt
 deploy:
   provider: pypi
   user: skoegl

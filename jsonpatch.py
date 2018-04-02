@@ -279,8 +279,7 @@ class JsonPatch(object):
         True
         """
 
-        builder = DiffBuilder()
-        builder._compare_values('', None, src, dst)
+        builder = DiffBuilder(src, dst)
         ops = list(builder.execute())
         return cls(ops)
 
@@ -623,134 +622,75 @@ class CopyOperation(PatchOperation):
 
 class DiffBuilder(object):
 
-    def __init__(self):
-        self.index_storage = [{}, {}]
-        self.index_storage2 = [[], []]
-        self.__root = root = []
-        root[:] = [root, root, None]
+    def __init__(self, src, dst):
+        self.src = src
+        self.dst = dst
 
-    def store_index(self, value, index, st):
-        try:
-            storage = self.index_storage[st]
-            stored = storage.get(value)
-            if stored is None:
-                storage[value] = [index]
-            else:
-                storage[value].append(index)
-
-        except TypeError:
-            self.index_storage2[st].append((value, index))
-
-    def take_index(self, value, st):
-        try:
-            stored = self.index_storage[st].get(value)
-            if stored:
-                return stored.pop()
-
-        except TypeError:
-            storage = self.index_storage2[st]
-            for i in range(len(storage)-1, -1, -1):
-                if storage[i][0] == value:
-                    return storage.pop(i)[1]
+        self.ops = []
+        self.index_changes = {}
 
     def insert(self, op):
-        root = self.__root
-        last = root[0]
-        last[1] = root[0] = [last, root, op]
-        return root[0]
-
-    def remove(self, index):
-        link_prev, link_next, _ = index
-        link_prev[1] = link_next
-        link_next[0] = link_prev
-        index[:] = []
-
-    def iter_from(self, start):
-        root = self.__root
-        curr = start[1]
-        while curr is not root:
-            yield curr[2]
-            curr = curr[1]
-
-    def __iter__(self):
-        root = self.__root
-        curr = root[1]
-        while curr is not root:
-            yield curr[2]
-            curr = curr[1]
+        self.ops.append(op)
 
     def execute(self):
-        root = self.__root
-        curr = root[1]
-        while curr is not root:
-            if curr[1] is not root:
-                op_first, op_second = curr[2], curr[1][2]
-                if op_first.location == op_second.location and \
-                        type(op_first) == RemoveOperation and \
-                        type(op_second) == AddOperation:
-                    yield ReplaceOperation({
-                        'op': 'replace',
-                        'path': op_second.location,
-                        'value': op_second.operation['value'],
-                    }).operation
-                    curr = curr[1][1]
-                    continue
+        self._compare_values('', None, self.src, self.dst)
+        return [op.operation for op in self.ops]
 
-            yield curr[2].operation
-            curr = curr[1]
+    def _item_added(self, path, key, item, is_sequence):
+        if is_sequence:
+            key = self.get_index_change(path, key)
 
-    def _item_added(self, path, key, item):
-        index = self.take_index(item, _ST_REMOVE)
-        if index is not None:
-            op = index[2]
-            if type(op.key) == int:
-                for v in self.iter_from(index):
-                    op.key = v._on_undo_remove(op.path, op.key)
+        new_op = AddOperation({
+            'op': 'add',
+            'path': _path_join(path, key),
+            'value': item,
+        })
+        self.insert(new_op)
 
-            self.remove(index)
-            if op.location != _path_join(path, key):
-                new_op = MoveOperation({
-                    'op': 'move',
-                    'from': op.location,
-                    'path': _path_join(path, key),
-                })
-                self.insert(new_op)
-        else:
-            new_op = AddOperation({
-                'op': 'add',
-                'path': _path_join(path, key),
-                'value': item,
-            })
-            new_index = self.insert(new_op)
-            self.store_index(item, new_index, _ST_ADD)
+        if is_sequence:
+            self.add_index_change(path, key, +1)
 
-    def _item_removed(self, path, key, item):
+    def _item_moved(self, path, key, item, newkey):
+        """ The `item` was moved from `key` to `newkey`
+
+        [a, b, c, d, e]
+         0  1, 2, 3, 4
+
+        case 1: move 1 to 3
+        [a, c, d, b, e]
+         0  1, 2, 3, 4
+
+        """
+
+        key = self.get_index_change(path, key)
+        newkey = self.get_index_change(path, newkey)
+
+        if key == newkey:
+            return
+
+        new_op = MoveOperation({
+            'op': 'move',
+            'from': _path_join(path, key),
+            'path': _path_join(path, newkey),
+        })
+        self.insert(new_op)
+
+        self.add_index_change(path, key+1, -1)
+        self.add_index_change(path, newkey+1, +1)
+
+
+    def _item_removed(self, path, key, item, is_sequence):
+        if is_sequence:
+            key = self.get_index_change(path, key)
+
         new_op = RemoveOperation({
             'op': 'remove',
             'path': _path_join(path, key),
         })
-        index = self.take_index(item, _ST_ADD)
-        new_index = self.insert(new_op)
-        if index is not None:
-            op = index[2]
-            if type(op.key) == int:
-                for v in self.iter_from(index):
-                    op.key = v._on_undo_add(op.path, op.key)
+        self.insert(new_op)
 
-            self.remove(index)
-            if new_op.location != op.location:
-                new_op = MoveOperation({
-                    'op': 'move',
-                    'from': new_op.location,
-                    'path': op.location,
-                })
-                new_index[2] = new_op
-
-            else:
-                self.remove(new_index)
-
-        else:
-            self.store_index(item, new_index, _ST_REMOVE)
+        if is_sequence:
+            self.add_index_change(path, key, -1)
 
     def _item_replaced(self, path, key, item):
         self.insert(ReplaceOperation({
@@ -766,10 +706,10 @@ class DiffBuilder(object):
         removed_keys = src_keys - dst_keys
 
         for key in removed_keys:
-            self._item_removed(path, str(key), src[key])
+            self._item_removed(path, str(key), src[key], False)
 
         for key in added_keys:
-            self._item_added(path, str(key), dst[key])
+            self._item_added(path, str(key), dst[key], False)
 
         for key in src_keys & dst_keys:
             self._compare_values(path, key, src[key], dst[key])
@@ -781,6 +721,7 @@ class DiffBuilder(object):
         for key in range(max_len):
             if key < min_len:
                 old, new = src[key], dst[key]
+
                 if old == new:
                     continue
 
@@ -793,14 +734,14 @@ class DiffBuilder(object):
                     self._compare_lists(_path_join(path, key), old, new)
 
                 else:
-                    self._item_removed(path, key, old)
-                    self._item_added(path, key, new)
+                    self._item_removed(path, key, old, True)
+                    self._item_added(path, key, new, True)
 
             elif len_src > len_dst:
-                self._item_removed(path, len_dst, src[key])
+                self._item_removed(path, len_dst, src[key], True)
 
             else:
-                self._item_added(path, key, dst[key])
+                self._item_added(path, key, dst[key], True)
 
     def _compare_values(self, path, key, src, dst):
         if src == dst:
@@ -816,6 +757,28 @@ class DiffBuilder(object):
 
         else:
             self._item_replaced(path, key, dst)
+
+    def add_index_change(self, path, key, change):
+        """ Store the index change of a certain path
+
+        [a, b, c]
+         0, 1, 2
+
+        When inserting d at position 1, the indexes of b and c change
+        [a, d, b, c]
+         0, 1, 2, 3
+
+        add_index_change('/', 1, +1)
+        """
+
+        path_changes = self.index_changes.get(path, {})
+        key_change = path_changes.get(key, 0)
+        key_change = key_change + change
+        path_changes[key] = key_change
+
+    def get_index_change(self, path, key):
+        path_changes = self.index_changes.get(path, {})
+        return path_changes.get(key, 0) + key
 
 
 def _path_join(path, key):
