@@ -79,5 +79,13 @@ setup(name=PACKAGE,
       scripts=['bin/jsondiff', 'bin/jsonpatch'],
       classifiers=CLASSIFIERS,
       python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*',
+      project_urls={
+          'Website': 'https://github.com/stefankoegl/python-json-patch',
+          'Repository': 'https://github.com/stefankoegl/python-json-patch.git',
+          'Documentation': "https://python-json-patch.readthedocs.org/",
+          'PyPI': 'https://pypi.org/pypi/jsonpatch',
+          'Tests': 'https://travis-ci.org/stefankoegl/python-json-patch',
+          'Test Coverage': 'https://coveralls.io/r/stefankoegl/python-json-patch',
+      },
       **OPTIONS
 )
