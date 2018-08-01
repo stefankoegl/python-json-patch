@@ -435,8 +435,10 @@ class AddOperation(PatchOperation):
                 subobj[part] = value
 
         else:
-            raise TypeError("invalid document type {0}".format(type(subobj)))
-
+            if part is None:
+                raise TypeError("invalid document type {0}".format(type(subobj)))
+            else:
+                raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part))
         return obj
 
     def _on_undo_remove(self, path, key):
@@ -480,7 +482,10 @@ class ReplaceOperation(PatchOperation):
                 msg = "can't replace non-existent object '{0}'".format(part)
                 raise JsonPatchConflict(msg)
         else:
-            raise TypeError("invalid document type {0}".format(type(subobj)))
+            if part is None:
+                raise TypeError("invalid document type {0}".format(type(subobj)))
+            else:
+                raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part))
 
         subobj[part] = value
         return obj
