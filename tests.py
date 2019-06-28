@@ -419,6 +419,15 @@ class MakePatchTestCase(unittest.TestCase):
         new_from_patch = jsonpatch.apply_patch(old, patch)
         self.assertEqual(new, new_from_patch)
 
+    def test_move_from_numeric_to_alpha_dict_key(self):
+        #https://github.com/stefankoegl/python-json-patch/issues/97
+        src = {'13': 'x'}
+        dst = {'A': 'a', 'b': 'x'}
+        patch = jsonpatch.make_patch(src, dst)
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
+
+
 
 class OptimizationTests(unittest.TestCase):
     def test_use_replace_instead_of_remove_add(self):

@@ -717,7 +717,7 @@ class DiffBuilder(object):
         index = self.take_index(item, _ST_REMOVE)
         if index is not None:
             op = index[2]
-            if type(op.key) == int:
+            if type(op.key) == int and type(key) == int:
                 for v in self.iter_from(index):
                     op.key = v._on_undo_remove(op.path, op.key)
 
