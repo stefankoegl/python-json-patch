@@ -56,7 +56,7 @@ except ImportError:
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
-__version__ = '1.22'
+__version__ = '1.24'
 __website__ = 'https://github.com/stefankoegl/python-json-patch'
 __license__ = 'Modified BSD License'
 
@@ -717,7 +717,7 @@ class DiffBuilder(object):
         index = self.take_index(item, _ST_REMOVE)
         if index is not None:
             op = index[2]
-            if type(op.key) == int:
+            if type(op.key) == int and type(key) == int:
                 for v in self.iter_from(index):
                     op.key = v._on_undo_remove(op.path, op.key)
 
