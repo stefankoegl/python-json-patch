@@ -2,15 +2,18 @@ dist: xenial
 language: python
 python:
 - '2.7'
-- '3.4'
 - '3.5'
 - '3.6'
 - '3.7'
-- 3.7-dev
+- '3.8'
 - 3.8-dev
 - nightly
 - pypy
 - pypy3
+addons:
+  apt:
+    packages:
+    - pandoc
 install:
 - travis_retry pip install -r requirements.txt
 - travis_retry pip install coveralls
@@ -18,11 +21,6 @@ script:
 - coverage run --source=jsonpointer tests.py
 after_script:
 - coveralls
-sudo: false
-addons:
-  apt:
-    packages:
-    - pandoc
 before_deploy:
 - pip install -r requirements-dev.txt
 deploy:
