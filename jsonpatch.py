@@ -817,16 +817,16 @@ class DiffBuilder(object):
                 self._item_added(path, key, dst[key])
 
     def _compare_values(self, path, key, src, dst):
-        if src == dst:
-            return
-
-        elif isinstance(src, MutableMapping) and \
+        if isinstance(src, MutableMapping) and \
                 isinstance(dst, MutableMapping):
             self._compare_dicts(_path_join(path, key), src, dst)
 
         elif isinstance(src, MutableSequence) and \
                 isinstance(dst, MutableSequence):
             self._compare_lists(_path_join(path, key), src, dst)
+
+        elif src == dst and type(src) == type(dst):
+            return
 
         else:
             self._item_replaced(path, key, dst)
