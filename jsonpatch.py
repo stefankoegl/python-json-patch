@@ -825,7 +825,7 @@ class DiffBuilder(object):
                 isinstance(dst, MutableSequence):
             self._compare_lists(_path_join(path, key), src, dst)
 
-        elif src == dst and type(src) == type(dst):
+        elif json.dumps(src) == json.dumps(dst):
             return
 
         else:
