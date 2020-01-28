@@ -474,7 +474,7 @@ class ReplaceOperation(PatchOperation):
             return value
 
         if isinstance(subobj, MutableSequence):
-            if part > len(subobj) or part < 0:
+            if part >= len(subobj) or part < 0:
                 raise JsonPatchConflict("can't replace outside of list")
 
         elif isinstance(subobj, MutableMapping):
