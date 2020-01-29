@@ -817,16 +817,23 @@ class DiffBuilder(object):
                 self._item_added(path, key, dst[key])
 
     def _compare_values(self, path, key, src, dst):
-        if src == dst:
-            return
-
-        elif isinstance(src, MutableMapping) and \
+        if isinstance(src, MutableMapping) and \
                 isinstance(dst, MutableMapping):
             self._compare_dicts(_path_join(path, key), src, dst)
 
         elif isinstance(src, MutableSequence) and \
                 isinstance(dst, MutableSequence):
             self._compare_lists(_path_join(path, key), src, dst)
+
+        # To ensure we catch changes to JSON, we can't rely on a simple
+        # src == dst, or it would not recognize the difference between
+        # 1 and True, among other things. Using json.dumps is the most
+        # fool-proof way to ensure we catch type changes that matter to JSON
+        # and ignore those that don't. The performance of this could be
+        # improved by doing more direct type checks, but we'd need to be
+        # careful to accept type changes that don't matter when JSONified.
+        elif json.dumps(src) == json.dumps(dst):
+            return
 
         else:
             self._item_replaced(path, key, dst)
