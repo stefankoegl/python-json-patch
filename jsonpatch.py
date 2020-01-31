@@ -258,7 +258,7 @@ class JsonPatch(object):
         return cls(patch)
 
     @classmethod
-    def from_diff(cls, src, dst, optimization=True):
+    def from_diff(cls, src, dst, optimization=True, dumps=json.dumps):
         """Creates JsonPatch instance based on comparing of two document
         objects. Json patch would be created for `src` argument against `dst`
         one.
@@ -268,6 +268,10 @@ class JsonPatch(object):
 
         :param dst: Data source document object.
         :type dst: dict
+
+        :param dumps: A function of one argument that produces a serialized
+                      JSON string.
+        :type dumps: function
 
         :return: :class:`JsonPatch` instance.
 
@@ -279,7 +283,7 @@ class JsonPatch(object):
         True
         """
 
-        builder = DiffBuilder()
+        builder = DiffBuilder(dumps)
         builder._compare_values('', None, src, dst)
         ops = list(builder.execute())
         return cls(ops)
@@ -637,7 +641,8 @@ class CopyOperation(PatchOperation):
 
 class DiffBuilder(object):
 
-    def __init__(self):
+    def __init__(self, dumps):
+        self.dumps = dumps
         self.index_storage = [{}, {}]
         self.index_storage2 = [[], []]
         self.__root = root = []
@@ -832,7 +837,7 @@ class DiffBuilder(object):
         # and ignore those that don't. The performance of this could be
         # improved by doing more direct type checks, but we'd need to be
         # careful to accept type changes that don't matter when JSONified.
-        elif json.dumps(src) == json.dumps(dst):
+        elif self.dumps(src) == self.dumps(dst):
             return
 
         else:

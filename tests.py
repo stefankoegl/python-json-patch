@@ -4,6 +4,7 @@
 from __future__ import unicode_literals
 
 import json
+import decimal
 import doctest
 import unittest
 import jsonpatch
@@ -445,6 +446,20 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(res, dst)
         self.assertIsInstance(res['A'], float)
 
+    def test_custom_types(self):
+        def default(obj):
+            if isinstance(obj, decimal.Decimal):
+                return str(obj)
+            raise TypeError('Unknown type')
+
+        def dumps(obj):
+            return json.dumps(obj, default=default)
+
+        old = {'value': decimal.Decimal('1.0')}
+        new = {'value': decimal.Decimal('1.00')}
+        patch = jsonpatch.JsonPatch.from_diff(old, new, dumps=dumps)
+        new_from_patch = jsonpatch.apply_patch(old, patch)
+        self.assertEqual(new, new_from_patch)
 
 
 class OptimizationTests(unittest.TestCase):
