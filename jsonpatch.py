@@ -76,9 +76,9 @@ class InvalidJsonPatch(JsonPatchException):
 
 class JsonPatchConflict(JsonPatchException):
     """Raised if patch could not be applied due to conflict situation such as:
-    - attempt to add object key then it already exists;
+    - attempt to add object key when it already exists;
     - attempt to operate with nonexistence object key;
-    - attempt to insert value to array at position beyond of it size;
+    - attempt to insert value to array at position beyond its size;
     - etc.
     """
 
@@ -144,7 +144,7 @@ def apply_patch(doc, patch, in_place=False):
 
 
 def make_patch(src, dst):
-    """Generates patch by comparing of two document objects. Actually is
+    """Generates patch by comparing two document objects. Actually is
     a proxy to :meth:`JsonPatch.from_diff` method.
 
     :param src: Data source document object.
@@ -184,8 +184,8 @@ class JsonPatch(object):
     >>> result == expected
     True
 
-    JsonPatch object is iterable, so you could easily access to each patch
-    statement in loop:
+    JsonPatch object is iterable, so you can easily access each patch
+    statement in a loop:
 
     >>> lpatch = list(patch)
     >>> expected = {'op': 'add', 'path': '/foo', 'value': 'bar'}
@@ -266,7 +266,7 @@ class JsonPatch(object):
 
     @classmethod
     def from_diff(cls, src, dst, optimization=True, dumps=None):
-        """Creates JsonPatch instance based on comparing of two document
+        """Creates JsonPatch instance based on comparison of two document
         objects. Json patch would be created for `src` argument against `dst`
         one.
 
@@ -305,13 +305,13 @@ class JsonPatch(object):
         return tuple(map(self._get_operation, self.patch))
 
     def apply(self, obj, in_place=False):
-        """Applies the patch to given object.
+        """Applies the patch to a given object.
 
         :param obj: Document object.
         :type obj: dict
 
-        :param in_place: Tweaks way how patch would be applied - directly to
-                         specified `obj` or to his copy.
+        :param in_place: Tweaks the way how patch would be applied - directly to
+                         specified `obj` or to its copy.
         :type in_place: bool
 
         :return: Modified `obj`.
@@ -356,8 +356,8 @@ class PatchOperation(object):
         self.operation = operation
 
     def apply(self, obj):
-        """Abstract method that applies patch operation to specified object."""
-        raise NotImplementedError('should implement patch operation.')
+        """Abstract method that applies a patch operation to the specified object."""
+        raise NotImplementedError('should implement the patch operation.')
 
     def __hash__(self):
         return hash(frozenset(self.operation.items()))
@@ -396,7 +396,7 @@ class RemoveOperation(PatchOperation):
         try:
             del subobj[part]
         except (KeyError, IndexError) as ex:
-            msg = "can't remove non-existent object '{0}'".format(part)
+            msg = "can't remove a non-existent object '{0}'".format(part)
             raise JsonPatchConflict(msg)
 
         return obj
@@ -471,7 +471,7 @@ class AddOperation(PatchOperation):
 
 
 class ReplaceOperation(PatchOperation):
-    """Replaces an object property or an array element by new value."""
+    """Replaces an object property or an array element by a new value."""
 
     def apply(self, obj):
         try:
@@ -491,7 +491,7 @@ class ReplaceOperation(PatchOperation):
 
         elif isinstance(subobj, MutableMapping):
             if part not in subobj:
-                msg = "can't replace non-existent object '{0}'".format(part)
+                msg = "can't replace a non-existent object '{0}'".format(part)
                 raise JsonPatchConflict(msg)
         else:
             if part is None:
@@ -510,7 +510,7 @@ class ReplaceOperation(PatchOperation):
 
 
 class MoveOperation(PatchOperation):
-    """Moves an object property or an array element to new location."""
+    """Moves an object property or an array element to a new location."""
 
     def apply(self, obj):
         try:
@@ -534,7 +534,7 @@ class MoveOperation(PatchOperation):
 
         if isinstance(subobj, MutableMapping) and \
                 self.pointer.contains(from_ptr):
-            raise JsonPatchConflict('Cannot move values into its own children')
+            raise JsonPatchConflict('Cannot move values into their own children')
 
         obj = RemoveOperation({
             'op': 'remove',
@@ -839,7 +839,7 @@ class DiffBuilder(object):
             self._compare_lists(_path_join(path, key), src, dst)
 
         # To ensure we catch changes to JSON, we can't rely on a simple
-        # src == dst, or it would not recognize the difference between
+        # src == dst, because it would not recognize the difference between
         # 1 and True, among other things. Using json.dumps is the most
         # fool-proof way to ensure we catch type changes that matter to JSON
         # and ignore those that don't. The performance of this could be
