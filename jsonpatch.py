@@ -649,7 +649,7 @@ class CopyOperation(PatchOperation):
 
 class DiffBuilder(object):
 
-    def __init__(self, dumps):
+    def __init__(self, dumps=json.dumps):
         self.dumps = dumps
         self.index_storage = [{}, {}]
         self.index_storage2 = [[], []]
