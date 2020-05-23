@@ -334,12 +334,18 @@ class PatchOperation(object):
 
     def __init__(self, operation):
 
+        if not operation.__contains__('path'):
+            raise InvalidJsonPatch("Operation must have a 'path' member")
+
         if isinstance(operation['path'], JsonPointer):
             self.location = operation['path'].path
             self.pointer = operation['path']
         else:
             self.location = operation['path']
-            self.pointer = JsonPointer(self.location)
+            try:
+                self.pointer = JsonPointer(self.location)
+            except TypeError as ex:
+                raise InvalidJsonPatch("Invalid 'path'")
 
         self.operation = operation
 
