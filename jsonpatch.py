@@ -473,6 +473,9 @@ class ReplaceOperation(PatchOperation):
         if part is None:
             return value
 
+        if part == "-":
+            raise InvalidJsonPatch("'path' with '-' can't be applied to 'replace' operation")
+
         if isinstance(subobj, MutableSequence):
             if part >= len(subobj) or part < 0:
                 raise JsonPatchConflict("can't replace outside of list")
