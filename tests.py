@@ -219,6 +219,17 @@ class ApplyPatchTestCase(unittest.TestCase):
             ])
         self.assertEqual(res['foo'], [1, 2, 3, 4])
 
+    def test_add_missing_path(self):
+        obj = {'bar': 'qux'}
+        self.assertRaises(jsonpatch.InvalidJsonPatch,
+                          jsonpatch.apply_patch,
+                          obj, [{'op': 'test', 'value': 'bar'}])
+
+    def test_path_with_null_value(self):
+        obj = {'bar': 'qux'}
+        self.assertRaises(jsonpatch.InvalidJsonPatch,
+                          jsonpatch.apply_patch,
+                          obj, '[{"op": "add", "path": null, "value": "bar"}]')
 
 
 class EqualityTestCase(unittest.TestCase):
