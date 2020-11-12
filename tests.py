@@ -671,6 +671,59 @@ class JsonPointerTests(unittest.TestCase):
         self.assertEqual(result, expected)
 
 
+class CustomJsonPointerTests(unittest.TestCase):
+
+    class CustomJsonPointer(jsonpointer.JsonPointer):
+        pass
+
+    def test_apply_patch_from_string(self):
+        obj = {'foo': 'bar'}
+        patch = '[{"op": "add", "path": "/baz", "value": "qux"}]'
+        res = jsonpatch.apply_patch(
+            obj, patch,
+            pointer_cls=self.CustomJsonPointer,
+        )
+        self.assertTrue(obj is not res)
+        self.assertTrue('baz' in res)
+        self.assertEqual(res['baz'], 'qux')
+
+    def test_apply_patch_from_object(self):
+        obj = {'foo': 'bar'}
+        res = jsonpatch.apply_patch(
+            obj, [{'op': 'add', 'path': '/baz', 'value': 'qux'}],
+            pointer_cls=self.CustomJsonPointer,
+        )
+        self.assertTrue(obj is not res)
+
+    def test_make_patch(self):
+        src = {'foo': 'bar', 'boo': 'qux'}
+        dst = {'baz': 'qux', 'foo': 'boo'}
+        patch = jsonpatch.make_patch(
+            src, dst, pointer_cls=self.CustomJsonPointer,
+        )
+        res = patch.apply(src)
+        self.assertTrue(src is not res)
+        self.assertEqual(patch.pointer_cls, self.CustomJsonPointer)
+        self.assertTrue(patch._ops)
+        for op in patch._ops:
+            self.assertEqual(op.pointer_cls, self.CustomJsonPointer)
+
+    def test_operations(self):
+        patch = jsonpatch.JsonPatch([
+            {'op': 'add', 'path': '/foo', 'value': [1, 2, 3]},
+            {'op': 'move', 'path': '/baz', 'from': '/foo'},
+            {'op': 'add', 'path': '/baz', 'value': [1, 2, 3]},
+            {'op': 'remove', 'path': '/baz/1'},
+            {'op': 'test', 'path': '/baz', 'value': [1, 3]},
+            {'op': 'replace', 'path': '/baz/0', 'value': 42},
+            {'op': 'remove', 'path': '/baz/1'},
+        ], pointer_cls=self.CustomJsonPointer)
+        self.assertEqual(patch.apply({}), {'baz': [42]})
+        self.assertEqual(patch.pointer_cls, self.CustomJsonPointer)
+        self.assertTrue(patch._ops)
+        for op in patch._ops:
+            self.assertEqual(op.pointer_cls, self.CustomJsonPointer)
+
 
 if __name__ == '__main__':
     modules = ['jsonpatch']
@@ -687,6 +740,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.makeSuite(ConflictTests))
         suite.addTest(unittest.makeSuite(OptimizationTests))
         suite.addTest(unittest.makeSuite(JsonPointerTests))
+        suite.addTest(unittest.makeSuite(CustomJsonPointerTests))
         return suite
 
 
