@@ -119,6 +119,9 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
                      By default patch will be applied to document copy.
     :type in_place: bool
 
+    :param pointer_cls: JSON pointer class to use.
+    :type pointer_cls: Type[JsonPointer]
+
     :return: Patched document object.
     :rtype: dict
 
@@ -153,7 +156,7 @@ def make_patch(src, dst, pointer_cls=JsonPointer):
     :param dst: Data source document object.
     :type dst: dict
 
-    :param pointer_cls: JSON pointer (sub)class.
+    :param pointer_cls: JSON pointer class to use.
     :type pointer_cls: Type[JsonPointer]
 
     >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
@@ -256,7 +259,7 @@ class JsonPatch(object):
         :param patch_str: JSON patch as raw string.
         :type pointer_cls: str
 
-        :param pointer_cls: JSON pointer (sub)class.
+        :param pointer_cls: JSON pointer class to use.
         :type pointer_cls: Type[JsonPointer]
 
         :return: :class:`JsonPatch` instance.
@@ -276,7 +279,7 @@ class JsonPatch(object):
         :param dst: Data source document object.
         :type dst: dict
 
-        :param pointer_cls: JSON pointer (sub)class.
+        :param pointer_cls: JSON pointer class to use.
         :type pointer_cls: Type[JsonPointer]
 
         :return: :class:`JsonPatch` instance.
