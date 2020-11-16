@@ -728,6 +728,7 @@ class CustomJsonPointerTests(unittest.TestCase):
         self.assertEqual(patch.pointer_cls, self.CustomJsonPointer)
         self.assertTrue(patch._ops)
         for op in patch._ops:
+            self.assertIsInstance(op.pointer, self.CustomJsonPointer)
             self.assertEqual(op.pointer_cls, self.CustomJsonPointer)
 
     def test_operations(self):
@@ -744,6 +745,7 @@ class CustomJsonPointerTests(unittest.TestCase):
         self.assertEqual(patch.pointer_cls, self.CustomJsonPointer)
         self.assertTrue(patch._ops)
         for op in patch._ops:
+            self.assertIsInstance(op.pointer, self.CustomJsonPointer)
             self.assertEqual(op.pointer_cls, self.CustomJsonPointer)
 
 
