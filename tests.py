@@ -671,39 +671,45 @@ class JsonPointerTests(unittest.TestCase):
         self.assertEqual(result, expected)
 
 
-class CustomJsonPointerTests(unittest.TestCase):
+class CustomJsonPointer(jsonpointer.JsonPointer):
+    pass
 
-    class CustomJsonPointer(jsonpointer.JsonPointer):
-        pass
+
+class PrefixJsonPointer(jsonpointer.JsonPointer):
+    def __init__(self, pointer):
+        super(PrefixJsonPointer, self).__init__('/foo/bar' + pointer)
+
+
+class CustomJsonPointerTests(unittest.TestCase):
 
     def test_json_patch_from_string(self):
         patch = '[{"op": "add", "path": "/baz", "value": "qux"}]'
         res = jsonpatch.JsonPatch.from_string(
-            patch, pointer_cls=self.CustomJsonPointer,
+            patch, pointer_cls=CustomJsonPointer,
         )
-        self.assertEqual(res.pointer_cls, self.CustomJsonPointer)
+        self.assertEqual(res.pointer_cls, CustomJsonPointer)
 
     def test_json_patch_from_object(self):
         patch = [{'op': 'add', 'path': '/baz', 'value': 'qux'}],
         res = jsonpatch.JsonPatch(
-            patch, pointer_cls=self.CustomJsonPointer,
+            patch, pointer_cls=CustomJsonPointer,
         )
-        self.assertEqual(res.pointer_cls, self.CustomJsonPointer)
+        self.assertEqual(res.pointer_cls, CustomJsonPointer)
 
     def test_json_patch_from_diff(self):
         old = {'foo': 'bar'}
         new = {'foo': 'baz'}
         res = jsonpatch.JsonPatch.from_diff(
-            old, new, pointer_cls=self.CustomJsonPointer,
+            old, new, pointer_cls=CustomJsonPointer,
         )
-        self.assertEqual(res.pointer_cls, self.CustomJsonPointer)
+        self.assertEqual(res.pointer_cls, CustomJsonPointer)
 
     def test_apply_patch_from_string(self):
         obj = {'foo': 'bar'}
         patch = '[{"op": "add", "path": "/baz", "value": "qux"}]'
         res = jsonpatch.apply_patch(
             obj, patch,
-            pointer_cls=self.CustomJsonPointer,
+            pointer_cls=CustomJsonPointer,
         )
         self.assertTrue(obj is not res)
         self.assertTrue('baz' in res)
@@ -713,7 +719,7 @@ class CustomJsonPointerTests(unittest.TestCase):
         obj = {'foo': 'bar'}
         res = jsonpatch.apply_patch(
             obj, [{'op': 'add', 'path': '/baz', 'value': 'qux'}],
-            pointer_cls=self.CustomJsonPointer,
+            pointer_cls=CustomJsonPointer,
         )
         self.assertTrue(obj is not res)
 
@@ -721,15 +727,15 @@ class CustomJsonPointerTests(unittest.TestCase):
         src = {'foo': 'bar', 'boo': 'qux'}
         dst = {'baz': 'qux', 'foo': 'boo'}
         patch = jsonpatch.make_patch(
-            src, dst, pointer_cls=self.CustomJsonPointer,
+            src, dst, pointer_cls=CustomJsonPointer,
         )
         res = patch.apply(src)
         self.assertTrue(src is not res)
-        self.assertEqual(patch.pointer_cls, self.CustomJsonPointer)
+        self.assertEqual(patch.pointer_cls, CustomJsonPointer)
         self.assertTrue(patch._ops)
         for op in patch._ops:
-            self.assertIsInstance(op.pointer, self.CustomJsonPointer)
-            self.assertEqual(op.pointer_cls, self.CustomJsonPointer)
+            self.assertIsInstance(op.pointer, CustomJsonPointer)
+            self.assertEqual(op.pointer_cls, CustomJsonPointer)
 
     def test_operations(self):
         patch = jsonpatch.JsonPatch([
@@ -740,22 +746,18 @@ class CustomJsonPointerTests(unittest.TestCase):
             {'op': 'test', 'path': '/baz', 'value': [1, 3]},
             {'op': 'replace', 'path': '/baz/0', 'value': 42},
             {'op': 'remove', 'path': '/baz/1'},
-        ], pointer_cls=self.CustomJsonPointer)
+        ], pointer_cls=CustomJsonPointer)
         self.assertEqual(patch.apply({}), {'baz': [42]})
-        self.assertEqual(patch.pointer_cls, self.CustomJsonPointer)
+        self.assertEqual(patch.pointer_cls, CustomJsonPointer)
         self.assertTrue(patch._ops)
         for op in patch._ops:
-            self.assertIsInstance(op.pointer, self.CustomJsonPointer)
-            self.assertEqual(op.pointer_cls, self.CustomJsonPointer)
-
-    class PrefixJsonPointer(jsonpointer.JsonPointer):
-        def __init__(self, pointer):
-            super().__init__('/foo/bar' + pointer)
+            self.assertIsInstance(op.pointer, CustomJsonPointer)
+            self.assertEqual(op.pointer_cls, CustomJsonPointer)
 
     def test_json_patch_wtih_prefix_pointer(self):
         res = jsonpatch.apply_patch(
             {'foo': {'bar': {}}}, [{'op': 'add', 'path': '/baz', 'value': 'qux'}],
-            pointer_cls=self.PrefixJsonPointer,
+            pointer_cls=PrefixJsonPointer,
         )
         self.assertEqual(res, {'foo': {'bar': {'baz': 'qux'}}})
 
