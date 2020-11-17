@@ -748,6 +748,17 @@ class CustomJsonPointerTests(unittest.TestCase):
             self.assertIsInstance(op.pointer, self.CustomJsonPointer)
             self.assertEqual(op.pointer_cls, self.CustomJsonPointer)
 
+    class PrefixJsonPointer(jsonpointer.JsonPointer):
+        def __init__(self, pointer):
+            super().__init__('/foo/bar' + pointer)
+
+    def test_json_patch_wtih_prefix_pointer(self):
+        res = jsonpatch.apply_patch(
+            {'foo': {'bar': {}}}, [{'op': 'add', 'path': '/baz', 'value': 'qux'}],
+            pointer_cls=self.PrefixJsonPointer,
+        )
+        self.assertEqual(res, {'foo': {'bar': {'baz': 'qux'}}})
+
 
 if __name__ == '__main__':
     modules = ['jsonpatch']
