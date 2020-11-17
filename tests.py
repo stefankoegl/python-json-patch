@@ -671,6 +671,22 @@ class JsonPointerTests(unittest.TestCase):
         self.assertEqual(result, expected)
 
 
+class JsonPatchCreationTest(unittest.TestCase):
+
+    def test_creation_fails_with_invalid_patch(self):
+        invalid_patches = [
+            {             'path': '/foo', 'value': 'bar'},
+            {'op': 0xADD, 'path': '/foo', 'value': 'bar'},
+            {'op': 'boo', 'path': '/foo', 'value': 'bar'},
+            {'op': 'add',                 'value': 'bar'},
+        ]
+        for patch in invalid_patches:
+            with self.assertRaises(jsonpatch.InvalidJsonPatch):
+                jsonpatch.JsonPatch([patch])
+
+        with self.assertRaises(jsonpointer.JsonPointerException):
+            jsonpatch.JsonPatch([{'op': 'add', 'path': 'foo', 'value': 'bar'}])
+
 
 if __name__ == '__main__':
     modules = ['jsonpatch']
@@ -687,6 +703,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.makeSuite(ConflictTests))
         suite.addTest(unittest.makeSuite(OptimizationTests))
         suite.addTest(unittest.makeSuite(JsonPointerTests))
+        suite.addTest(unittest.makeSuite(JsonPatchCreationTest))
         return suite
 
 

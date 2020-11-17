@@ -222,6 +222,9 @@ class JsonPatch(object):
             'copy': CopyOperation,
         }
 
+        for op in self.patch:
+            self._get_operation(op)
+
     def __str__(self):
         """str(self) -> self.to_string()"""
         return self.to_string()
