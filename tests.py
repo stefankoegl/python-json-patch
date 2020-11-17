@@ -738,6 +738,44 @@ class CustomJsonPointerTests(unittest.TestCase):
             self.assertEqual(op.pointer_cls, CustomJsonPointer)
 
     def test_operations(self):
+        operations =[
+            (
+                jsonpatch.AddOperation, {
+                    'op': 'add', 'path': '/foo', 'value': [1, 2, 3]
+                }
+            ),
+            (
+                jsonpatch.MoveOperation, {
+                    'op': 'move', 'path': '/baz', 'from': '/foo'
+                },
+            ),
+            (
+                jsonpatch.RemoveOperation, {
+                    'op': 'remove', 'path': '/baz/1'
+                },
+            ),
+            (
+                jsonpatch.TestOperation, {
+                    'op': 'test', 'path': '/baz', 'value': [1, 3]
+                },
+            ),
+            (
+                jsonpatch.ReplaceOperation, {
+                    'op': 'replace', 'path': '/baz/0', 'value': 42
+                },
+            ),
+            (
+                jsonpatch.RemoveOperation, {
+                    'op': 'remove', 'path': '/baz/1'
+                },
+            )
+        ]
+        for cls, patch in operations:
+            operation = cls(patch, pointer_cls=CustomJsonPointer)
+            self.assertEqual(operation.pointer_cls, CustomJsonPointer)
+            self.assertIsInstance(operation.pointer, CustomJsonPointer)
+
+    def test_operations_from_patch(self):
         patch = jsonpatch.JsonPatch([
             {'op': 'add', 'path': '/foo', 'value': [1, 2, 3]},
             {'op': 'move', 'path': '/baz', 'from': '/foo'},
