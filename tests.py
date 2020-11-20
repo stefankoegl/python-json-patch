@@ -729,6 +729,85 @@ class JsonPointerTests(unittest.TestCase):
         self.assertEqual(result, expected)
 
 
+class JsonPatchCreationTest(unittest.TestCase):
+
+    def test_creation_fails_with_invalid_patch(self):
+        invalid_patches = [
+            {             'path': '/foo', 'value': 'bar'},
+            {'op': 0xADD, 'path': '/foo', 'value': 'bar'},
+            {'op': 'boo', 'path': '/foo', 'value': 'bar'},
+            {'op': 'add',                 'value': 'bar'},
+        ]
+        for patch in invalid_patches:
+            with self.assertRaises(jsonpatch.InvalidJsonPatch):
+                jsonpatch.JsonPatch([patch])
+
+        with self.assertRaises(jsonpointer.JsonPointerException):
+            jsonpatch.JsonPatch([{'op': 'add', 'path': 'foo', 'value': 'bar'}])
+
+
+class UtilityMethodTests(unittest.TestCase):
+
+    def test_boolean_coercion(self):
+        empty_patch = jsonpatch.JsonPatch([])
+        self.assertFalse(empty_patch)
+
+    def test_patch_equality(self):
+        p = jsonpatch.JsonPatch([{'op': 'add', 'path': '/foo', 'value': 'bar'}])
+        q = jsonpatch.JsonPatch([{'op': 'add', 'path': '/foo', 'value': 'bar'}])
+        different_op = jsonpatch.JsonPatch([{'op': 'remove', 'path': '/foo'}])
+        different_path = jsonpatch.JsonPatch([{'op': 'add', 'path': '/bar', 'value': 'bar'}])
+        different_value = jsonpatch.JsonPatch([{'op': 'add', 'path': '/foo', 'value': 'foo'}])
+        self.assertNotEqual(p, different_op)
+        self.assertNotEqual(p, different_path)
+        self.assertNotEqual(p, different_value)
+        self.assertEqual(p, q)
+
+    def test_operation_equality(self):
+        add = jsonpatch.AddOperation({'path': '/new-element', 'value': 'new-value'})
+        add2 = jsonpatch.AddOperation({'path': '/new-element', 'value': 'new-value'})
+        rm = jsonpatch.RemoveOperation({'path': '/target'})
+        self.assertEqual(add, add2)
+        self.assertNotEqual(add, rm)
+
+    def test_add_operation_structure(self):
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.AddOperation({'path': '/'}).apply({})
+
+    def test_replace_operation_structure(self):
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.ReplaceOperation({'path': '/'}).apply({})
+
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.ReplaceOperation({'path': '/top/-', 'value': 'foo'}).apply({'top': {'inner': 'value'}})
+
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            jsonpatch.ReplaceOperation({'path': '/top/missing', 'value': 'foo'}).apply({'top': {'inner': 'value'}})
+
+    def test_move_operation_structure(self):
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.MoveOperation({'path': '/target'}).apply({})
+
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            jsonpatch.MoveOperation({'from': '/source', 'path': '/target'}).apply({})
+
+    def test_test_operation_structure(self):
+        with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+            jsonpatch.TestOperation({'path': '/target'}).apply({})
+
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.TestOperation({'path': '/target'}).apply({'target': 'value'})
+
+    def test_copy_operation_structure(self):
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.CopyOperation({'path': '/target'}).apply({})
+
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            jsonpatch.CopyOperation({'path': '/target', 'from': '/source'}).apply({})
+
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            jsonpatch.CopyOperation({'path': '/target', 'from': '/source'}).apply({})
+
 
 if __name__ == '__main__':
     modules = ['jsonpatch']
@@ -745,6 +824,8 @@ if __name__ == '__main__':
         suite.addTest(unittest.makeSuite(ConflictTests))
         suite.addTest(unittest.makeSuite(OptimizationTests))
         suite.addTest(unittest.makeSuite(JsonPointerTests))
+        suite.addTest(unittest.makeSuite(JsonPatchCreationTest))
+        suite.addTest(unittest.makeSuite(UtilityMethodTests))
         return suite
 
 
