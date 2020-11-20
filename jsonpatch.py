@@ -222,6 +222,10 @@ class JsonPatch(object):
             'copy': CopyOperation,
         }
 
+        # Verify that the structure of the patch document
+        # is correct by retrieving each patch element.
+        # Much of the validation is done in the initializer
+        # though some is delayed until the patch is applied.
         for op in self.patch:
             self._get_operation(op)
 
