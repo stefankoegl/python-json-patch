@@ -4,6 +4,7 @@
 from __future__ import unicode_literals
 
 import json
+import decimal
 import doctest
 import unittest
 import jsonpatch
@@ -278,6 +279,34 @@ class EqualityTestCase(unittest.TestCase):
         self.assertEqual(json.dumps(patch_obj), patch.to_string())
 
 
+def custom_types_dumps(obj):
+    def default(obj):
+        if isinstance(obj, decimal.Decimal):
+            return {'__decimal__': str(obj)}
+        raise TypeError('Unknown type')
+
+    return json.dumps(obj, default=default)
+
+
+def custom_types_loads(obj):
+    def as_decimal(dct):
+        if '__decimal__' in dct:
+            return decimal.Decimal(dct['__decimal__'])
+        return dct
+
+    return json.loads(obj, object_hook=as_decimal)
+
+
+class CustomTypesJsonPatch(jsonpatch.JsonPatch):
+    @staticmethod
+    def json_dumper(obj):
+        return custom_types_dumps(obj)
+
+    @staticmethod
+    def json_loader(obj):
+        return custom_types_loads(obj)
+
+
 class MakePatchTestCase(unittest.TestCase):
 
     def test_apply_patch_to_copy(self):
@@ -456,6 +485,35 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(res, dst)
         self.assertIsInstance(res['A'], float)
 
+    def test_custom_types_diff(self):
+        old = {'value': decimal.Decimal('1.0')}
+        new = {'value': decimal.Decimal('1.00')}
+        generated_patch = jsonpatch.JsonPatch.from_diff(
+            old, new,  dumps=custom_types_dumps)
+        str_patch = generated_patch.to_string(dumps=custom_types_dumps)
+        loaded_patch = jsonpatch.JsonPatch.from_string(
+            str_patch, loads=custom_types_loads)
+        self.assertEqual(generated_patch, loaded_patch)
+        new_from_patch = jsonpatch.apply_patch(old, generated_patch)
+        self.assertEqual(new, new_from_patch)
+
+    def test_custom_types_subclass(self):
+        old = {'value': decimal.Decimal('1.0')}
+        new = {'value': decimal.Decimal('1.00')}
+        generated_patch = CustomTypesJsonPatch.from_diff(old, new)
+        str_patch = generated_patch.to_string()
+        loaded_patch = CustomTypesJsonPatch.from_string(str_patch)
+        self.assertEqual(generated_patch, loaded_patch)
+        new_from_patch = jsonpatch.apply_patch(old, loaded_patch)
+        self.assertEqual(new, new_from_patch)
+
+    def test_custom_types_subclass_load(self):
+        old = {'value': decimal.Decimal('1.0')}
+        new = {'value': decimal.Decimal('1.00')}
+        patch = CustomTypesJsonPatch.from_string(
+            '[{"op": "replace", "path": "/value", "value": {"__decimal__": "1.00"}}]')
+        new_from_patch = jsonpatch.apply_patch(old, patch)
+        self.assertEqual(new, new_from_patch)
 
 
 class OptimizationTests(unittest.TestCase):

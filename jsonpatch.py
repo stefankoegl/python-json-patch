@@ -165,6 +165,9 @@ def make_patch(src, dst):
 
 
 class JsonPatch(object):
+    json_dumper = staticmethod(json.dumps)
+    json_loader = staticmethod(_jsonloads)
+
     """A JSON Patch is a list of Patch Operations.
 
     >>> patch = JsonPatch([
@@ -246,19 +249,23 @@ class JsonPatch(object):
         return not(self == other)
 
     @classmethod
-    def from_string(cls, patch_str):
+    def from_string(cls, patch_str, loads=None):
         """Creates JsonPatch instance from string source.
 
         :param patch_str: JSON patch as raw string.
         :type patch_str: str
+        :param loads: A function of one argument that loads a serialized
+                      JSON string.
+        :type loads: function
 
         :return: :class:`JsonPatch` instance.
         """
-        patch = _jsonloads(patch_str)
+        json_loader = loads or cls.json_loader
+        patch = json_loader(patch_str)
         return cls(patch)
 
     @classmethod
-    def from_diff(cls, src, dst, optimization=True):
+    def from_diff(cls, src, dst, optimization=True, dumps=None):
         """Creates JsonPatch instance based on comparison of two document
         objects. Json patch would be created for `src` argument against `dst`
         one.
@@ -269,6 +276,10 @@ class JsonPatch(object):
         :param dst: Data source document object.
         :type dst: dict
 
+        :param dumps: A function of one argument that produces a serialized
+                      JSON string.
+        :type dumps: function
+
         :return: :class:`JsonPatch` instance.
 
         >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
@@ -278,15 +289,16 @@ class JsonPatch(object):
         >>> new == dst
         True
         """
-
-        builder = DiffBuilder()
+        json_dumper = dumps or cls.json_dumper
+        builder = DiffBuilder(json_dumper)
         builder._compare_values('', None, src, dst)
         ops = list(builder.execute())
         return cls(ops)
 
-    def to_string(self):
+    def to_string(self, dumps=None):
         """Returns patch set as JSON string."""
-        return json.dumps(self.patch)
+        json_dumper = dumps or self.json_dumper
+        return json_dumper(self.patch)
 
     @property
     def _ops(self):
@@ -646,7 +658,8 @@ class CopyOperation(PatchOperation):
 
 class DiffBuilder(object):
 
-    def __init__(self):
+    def __init__(self, dumps=json.dumps):
+        self.dumps = dumps
         self.index_storage = [{}, {}]
         self.index_storage2 = [[], []]
         self.__root = root = []
@@ -841,7 +854,7 @@ class DiffBuilder(object):
         # and ignore those that don't. The performance of this could be
         # improved by doing more direct type checks, but we'd need to be
         # careful to accept type changes that don't matter when JSONified.
-        elif json.dumps(src) == json.dumps(dst):
+        elif self.dumps(src) == self.dumps(dst):
             return
 
         else:
