@@ -106,7 +106,7 @@ def multidict(ordered_pairs):
 _jsonloads = functools.partial(json.loads, object_pairs_hook=multidict)
 
 
-def apply_patch(doc, patch, in_place=False):
+def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
     """Apply list of patches to specified json document.
 
     :param doc: Document object.
@@ -118,6 +118,9 @@ def apply_patch(doc, patch, in_place=False):
     :param in_place: While :const:`True` patch will modify target document.
                      By default patch will be applied to document copy.
     :type in_place: bool
+
+    :param pointer_cls: JSON pointer class to use.
+    :type pointer_cls: Type[JsonPointer]
 
     :return: Patched document object.
     :rtype: dict
@@ -137,13 +140,13 @@ def apply_patch(doc, patch, in_place=False):
     """
 
     if isinstance(patch, basestring):
-        patch = JsonPatch.from_string(patch)
+        patch = JsonPatch.from_string(patch, pointer_cls=pointer_cls)
     else:
-        patch = JsonPatch(patch)
+        patch = JsonPatch(patch, pointer_cls=pointer_cls)
     return patch.apply(doc, in_place)
 
 
-def make_patch(src, dst):
+def make_patch(src, dst, pointer_cls=JsonPointer):
     """Generates patch by comparing two document objects. Actually is
     a proxy to :meth:`JsonPatch.from_diff` method.
 
@@ -153,6 +156,9 @@ def make_patch(src, dst):
     :param dst: Data source document object.
     :type dst: dict
 
+    :param pointer_cls: JSON pointer class to use.
+    :type pointer_cls: Type[JsonPointer]
+
     >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
     >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
     >>> patch = make_patch(src, dst)
@@ -161,7 +167,7 @@ def make_patch(src, dst):
     True
     """
 
-    return JsonPatch.from_diff(src, dst)
+    return JsonPatch.from_diff(src, dst, pointer_cls=pointer_cls)
 
 
 class JsonPatch(object):
@@ -213,8 +219,9 @@ class JsonPatch(object):
     ...     patch.apply(old)    #doctest: +ELLIPSIS
     {...}
     """
-    def __init__(self, patch):
+    def __init__(self, patch, pointer_cls=JsonPointer):
         self.patch = patch
+        self.pointer_cls = pointer_cls
 
         self.operations = {
             'remove': RemoveOperation,
@@ -256,23 +263,30 @@ class JsonPatch(object):
         return not(self == other)
 
     @classmethod
-    def from_string(cls, patch_str, loads=None):
+    def from_string(cls, patch_str, loads=None, pointer_cls=JsonPointer):
         """Creates JsonPatch instance from string source.
 
         :param patch_str: JSON patch as raw string.
         :type patch_str: str
+
         :param loads: A function of one argument that loads a serialized
                       JSON string.
         :type loads: function
+
+        :param pointer_cls: JSON pointer class to use.
+        :type pointer_cls: Type[JsonPointer]
 
         :return: :class:`JsonPatch` instance.
         """
         json_loader = loads or cls.json_loader
         patch = json_loader(patch_str)
-        return cls(patch)
+        return cls(patch, pointer_cls=pointer_cls)
 
     @classmethod
-    def from_diff(cls, src, dst, optimization=True, dumps=None):
+    def from_diff(
+            cls, src, dst, optimization=True, dumps=None,
+            pointer_cls=JsonPointer,
+    ):
         """Creates JsonPatch instance based on comparison of two document
         objects. Json patch would be created for `src` argument against `dst`
         one.
@@ -287,6 +301,9 @@ class JsonPatch(object):
                       JSON string.
         :type dumps: function
 
+        :param pointer_cls: JSON pointer class to use.
+        :type pointer_cls: Type[JsonPointer]
+
         :return: :class:`JsonPatch` instance.
 
         >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
@@ -297,10 +314,10 @@ class JsonPatch(object):
         True
         """
         json_dumper = dumps or cls.json_dumper
-        builder = DiffBuilder(json_dumper)
+        builder = DiffBuilder(json_dumper, pointer_cls=pointer_cls)
         builder._compare_values('', None, src, dst)
         ops = list(builder.execute())
-        return cls(ops)
+        return cls(ops, pointer_cls=pointer_cls)
 
     def to_string(self, dumps=None):
         """Returns patch set as JSON string."""
@@ -345,24 +362,25 @@ class JsonPatch(object):
             raise InvalidJsonPatch("Unknown operation {0!r}".format(op))
 
         cls = self.operations[op]
-        return cls(operation)
+        return cls(operation, pointer_cls=self.pointer_cls)
 
 
 class PatchOperation(object):
     """A single operation inside a JSON Patch."""
 
-    def __init__(self, operation):
+    def __init__(self, operation, pointer_cls=JsonPointer):
+        self.pointer_cls = pointer_cls
 
         if not operation.__contains__('path'):
             raise InvalidJsonPatch("Operation must have a 'path' member")
 
-        if isinstance(operation['path'], JsonPointer):
+        if isinstance(operation['path'], self.pointer_cls):
             self.location = operation['path'].path
             self.pointer = operation['path']
         else:
             self.location = operation['path']
             try:
-                self.pointer = JsonPointer(self.location)
+                self.pointer = self.pointer_cls(self.location)
             except TypeError as ex:
                 raise InvalidJsonPatch("Invalid 'path'")
 
@@ -530,10 +548,10 @@ class MoveOperation(PatchOperation):
 
     def apply(self, obj):
         try:
-            if isinstance(self.operation['from'], JsonPointer):
+            if isinstance(self.operation['from'], self.pointer_cls):
                 from_ptr = self.operation['from']
             else:
-                from_ptr = JsonPointer(self.operation['from'])
+                from_ptr = self.pointer_cls(self.operation['from'])
         except KeyError as ex:
             raise InvalidJsonPatch(
                 "The operation does not contain a 'from' member")
@@ -555,24 +573,24 @@ class MoveOperation(PatchOperation):
         obj = RemoveOperation({
             'op': 'remove',
             'path': self.operation['from']
-        }).apply(obj)
+        }, pointer_cls=self.pointer_cls).apply(obj)
 
         obj = AddOperation({
             'op': 'add',
             'path': self.location,
             'value': value
-        }).apply(obj)
+        }, pointer_cls=self.pointer_cls).apply(obj)
 
         return obj
 
     @property
     def from_path(self):
-        from_ptr = JsonPointer(self.operation['from'])
+        from_ptr = self.pointer_cls(self.operation['from'])
         return '/'.join(from_ptr.parts[:-1])
 
     @property
     def from_key(self):
-        from_ptr = JsonPointer(self.operation['from'])
+        from_ptr = self.pointer_cls(self.operation['from'])
         try:
             return int(from_ptr.parts[-1])
         except TypeError:
@@ -580,7 +598,7 @@ class MoveOperation(PatchOperation):
 
     @from_key.setter
     def from_key(self, value):
-        from_ptr = JsonPointer(self.operation['from'])
+        from_ptr = self.pointer_cls(self.operation['from'])
         from_ptr.parts[-1] = str(value)
         self.operation['from'] = from_ptr.path
 
@@ -643,7 +661,7 @@ class CopyOperation(PatchOperation):
 
     def apply(self, obj):
         try:
-            from_ptr = JsonPointer(self.operation['from'])
+            from_ptr = self.pointer_cls(self.operation['from'])
         except KeyError as ex:
             raise InvalidJsonPatch(
                 "The operation does not contain a 'from' member")
@@ -658,15 +676,16 @@ class CopyOperation(PatchOperation):
             'op': 'add',
             'path': self.location,
             'value': value
-        }).apply(obj)
+        }, pointer_cls=self.pointer_cls).apply(obj)
 
         return obj
 
 
 class DiffBuilder(object):
 
-    def __init__(self, dumps=json.dumps):
+    def __init__(self, dumps=json.dumps, pointer_cls=JsonPointer):
         self.dumps = dumps
+        self.pointer_cls = pointer_cls
         self.index_storage = [{}, {}]
         self.index_storage2 = [[], []]
         self.__root = root = []
@@ -735,7 +754,7 @@ class DiffBuilder(object):
                         'op': 'replace',
                         'path': op_second.location,
                         'value': op_second.operation['value'],
-                    }).operation
+                    }, pointer_cls=self.pointer_cls).operation
                     curr = curr[1][1]
                     continue
 
@@ -756,14 +775,14 @@ class DiffBuilder(object):
                     'op': 'move',
                     'from': op.location,
                     'path': _path_join(path, key),
-                })
+                }, pointer_cls=self.pointer_cls)
                 self.insert(new_op)
         else:
             new_op = AddOperation({
                 'op': 'add',
                 'path': _path_join(path, key),
                 'value': item,
-            })
+            }, pointer_cls=self.pointer_cls)
             new_index = self.insert(new_op)
             self.store_index(item, new_index, _ST_ADD)
 
@@ -771,7 +790,7 @@ class DiffBuilder(object):
         new_op = RemoveOperation({
             'op': 'remove',
             'path': _path_join(path, key),
-        })
+        }, pointer_cls=self.pointer_cls)
         index = self.take_index(item, _ST_ADD)
         new_index = self.insert(new_op)
         if index is not None:
@@ -786,7 +805,7 @@ class DiffBuilder(object):
                     'op': 'move',
                     'from': new_op.location,
                     'path': op.location,
-                })
+                }, pointer_cls=self.pointer_cls)
                 new_index[2] = new_op
 
             else:
@@ -800,7 +819,7 @@ class DiffBuilder(object):
             'op': 'replace',
             'path': _path_join(path, key),
             'value': item,
-        }))
+        }, pointer_cls=self.pointer_cls))
 
     def _compare_dicts(self, path, src, dst):
         src_keys = set(src.keys())
