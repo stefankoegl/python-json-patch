@@ -171,6 +171,9 @@ def make_patch(src, dst, pointer_cls=JsonPointer):
 
 
 class JsonPatch(object):
+    json_dumper = staticmethod(json.dumps)
+    json_loader = staticmethod(_jsonloads)
+
     """A JSON Patch is a list of Patch Operations.
 
     >>> patch = JsonPatch([
@@ -229,6 +232,13 @@ class JsonPatch(object):
             'copy': CopyOperation,
         }
 
+        # Verify that the structure of the patch document
+        # is correct by retrieving each patch element.
+        # Much of the validation is done in the initializer
+        # though some is delayed until the patch is applied.
+        for op in self.patch:
+            self._get_operation(op)
+
     def __str__(self):
         """str(self) -> self.to_string()"""
         return self.to_string()
@@ -253,22 +263,30 @@ class JsonPatch(object):
         return not(self == other)
 
     @classmethod
-    def from_string(cls, patch_str, pointer_cls=JsonPointer):
+    def from_string(cls, patch_str, loads=None, pointer_cls=JsonPointer):
         """Creates JsonPatch instance from string source.
 
         :param patch_str: JSON patch as raw string.
-        :type pointer_cls: str
+        :type patch_str: str
+
+        :param loads: A function of one argument that loads a serialized
+                      JSON string.
+        :type loads: function
 
         :param pointer_cls: JSON pointer class to use.
         :type pointer_cls: Type[JsonPointer]
 
         :return: :class:`JsonPatch` instance.
         """
-        patch = _jsonloads(patch_str)
+        json_loader = loads or cls.json_loader
+        patch = json_loader(patch_str)
         return cls(patch, pointer_cls=pointer_cls)
 
     @classmethod
-    def from_diff(cls, src, dst, optimization=True, pointer_cls=JsonPointer):
+    def from_diff(
+            cls, src, dst, optimization=True, dumps=None,
+            pointer_cls=JsonPointer,
+    ):
         """Creates JsonPatch instance based on comparison of two document
         objects. Json patch would be created for `src` argument against `dst`
         one.
@@ -278,6 +296,10 @@ class JsonPatch(object):
 
         :param dst: Data source document object.
         :type dst: dict
+
+        :param dumps: A function of one argument that produces a serialized
+                      JSON string.
+        :type dumps: function
 
         :param pointer_cls: JSON pointer class to use.
         :type pointer_cls: Type[JsonPointer]
@@ -291,15 +313,16 @@ class JsonPatch(object):
         >>> new == dst
         True
         """
-
-        builder = DiffBuilder(pointer_cls=pointer_cls)
+        json_dumper = dumps or cls.json_dumper
+        builder = DiffBuilder(json_dumper, pointer_cls=pointer_cls)
         builder._compare_values('', None, src, dst)
         ops = list(builder.execute())
         return cls(ops, pointer_cls=pointer_cls)
 
-    def to_string(self):
+    def to_string(self, dumps=None):
         """Returns patch set as JSON string."""
-        return json.dumps(self.patch)
+        json_dumper = dumps or self.json_dumper
+        return json_dumper(self.patch)
 
     @property
     def _ops(self):
@@ -660,7 +683,8 @@ class CopyOperation(PatchOperation):
 
 class DiffBuilder(object):
 
-    def __init__(self, pointer_cls=JsonPointer):
+    def __init__(self, dumps=json.dumps, pointer_cls=JsonPointer):
+        self.dumps = dumps
         self.pointer_cls = pointer_cls
         self.index_storage = [{}, {}]
         self.index_storage2 = [[], []]
@@ -856,7 +880,7 @@ class DiffBuilder(object):
         # and ignore those that don't. The performance of this could be
         # improved by doing more direct type checks, but we'd need to be
         # careful to accept type changes that don't matter when JSONified.
-        elif json.dumps(src) == json.dumps(dst):
+        elif self.dumps(src) == self.dumps(dst):
             return
 
         else:

@@ -4,6 +4,7 @@
 from __future__ import unicode_literals
 
 import json
+import decimal
 import doctest
 import unittest
 import jsonpatch
@@ -278,6 +279,34 @@ class EqualityTestCase(unittest.TestCase):
         self.assertEqual(json.dumps(patch_obj), patch.to_string())
 
 
+def custom_types_dumps(obj):
+    def default(obj):
+        if isinstance(obj, decimal.Decimal):
+            return {'__decimal__': str(obj)}
+        raise TypeError('Unknown type')
+
+    return json.dumps(obj, default=default)
+
+
+def custom_types_loads(obj):
+    def as_decimal(dct):
+        if '__decimal__' in dct:
+            return decimal.Decimal(dct['__decimal__'])
+        return dct
+
+    return json.loads(obj, object_hook=as_decimal)
+
+
+class CustomTypesJsonPatch(jsonpatch.JsonPatch):
+    @staticmethod
+    def json_dumper(obj):
+        return custom_types_dumps(obj)
+
+    @staticmethod
+    def json_loader(obj):
+        return custom_types_loads(obj)
+
+
 class MakePatchTestCase(unittest.TestCase):
 
     def test_apply_patch_to_copy(self):
@@ -456,6 +485,35 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(res, dst)
         self.assertIsInstance(res['A'], float)
 
+    def test_custom_types_diff(self):
+        old = {'value': decimal.Decimal('1.0')}
+        new = {'value': decimal.Decimal('1.00')}
+        generated_patch = jsonpatch.JsonPatch.from_diff(
+            old, new,  dumps=custom_types_dumps)
+        str_patch = generated_patch.to_string(dumps=custom_types_dumps)
+        loaded_patch = jsonpatch.JsonPatch.from_string(
+            str_patch, loads=custom_types_loads)
+        self.assertEqual(generated_patch, loaded_patch)
+        new_from_patch = jsonpatch.apply_patch(old, generated_patch)
+        self.assertEqual(new, new_from_patch)
+
+    def test_custom_types_subclass(self):
+        old = {'value': decimal.Decimal('1.0')}
+        new = {'value': decimal.Decimal('1.00')}
+        generated_patch = CustomTypesJsonPatch.from_diff(old, new)
+        str_patch = generated_patch.to_string()
+        loaded_patch = CustomTypesJsonPatch.from_string(str_patch)
+        self.assertEqual(generated_patch, loaded_patch)
+        new_from_patch = jsonpatch.apply_patch(old, loaded_patch)
+        self.assertEqual(new, new_from_patch)
+
+    def test_custom_types_subclass_load(self):
+        old = {'value': decimal.Decimal('1.0')}
+        new = {'value': decimal.Decimal('1.00')}
+        patch = CustomTypesJsonPatch.from_string(
+            '[{"op": "replace", "path": "/value", "value": {"__decimal__": "1.00"}}]')
+        new_from_patch = jsonpatch.apply_patch(old, patch)
+        self.assertEqual(new, new_from_patch)
 
 
 class OptimizationTests(unittest.TestCase):
@@ -671,6 +729,86 @@ class JsonPointerTests(unittest.TestCase):
         self.assertEqual(result, expected)
 
 
+class JsonPatchCreationTest(unittest.TestCase):
+
+    def test_creation_fails_with_invalid_patch(self):
+        invalid_patches = [
+            {             'path': '/foo', 'value': 'bar'},
+            {'op': 0xADD, 'path': '/foo', 'value': 'bar'},
+            {'op': 'boo', 'path': '/foo', 'value': 'bar'},
+            {'op': 'add',                 'value': 'bar'},
+        ]
+        for patch in invalid_patches:
+            with self.assertRaises(jsonpatch.InvalidJsonPatch):
+                jsonpatch.JsonPatch([patch])
+
+        with self.assertRaises(jsonpointer.JsonPointerException):
+            jsonpatch.JsonPatch([{'op': 'add', 'path': 'foo', 'value': 'bar'}])
+
+
+class UtilityMethodTests(unittest.TestCase):
+
+    def test_boolean_coercion(self):
+        empty_patch = jsonpatch.JsonPatch([])
+        self.assertFalse(empty_patch)
+
+    def test_patch_equality(self):
+        p = jsonpatch.JsonPatch([{'op': 'add', 'path': '/foo', 'value': 'bar'}])
+        q = jsonpatch.JsonPatch([{'op': 'add', 'path': '/foo', 'value': 'bar'}])
+        different_op = jsonpatch.JsonPatch([{'op': 'remove', 'path': '/foo'}])
+        different_path = jsonpatch.JsonPatch([{'op': 'add', 'path': '/bar', 'value': 'bar'}])
+        different_value = jsonpatch.JsonPatch([{'op': 'add', 'path': '/foo', 'value': 'foo'}])
+        self.assertNotEqual(p, different_op)
+        self.assertNotEqual(p, different_path)
+        self.assertNotEqual(p, different_value)
+        self.assertEqual(p, q)
+
+    def test_operation_equality(self):
+        add = jsonpatch.AddOperation({'path': '/new-element', 'value': 'new-value'})
+        add2 = jsonpatch.AddOperation({'path': '/new-element', 'value': 'new-value'})
+        rm = jsonpatch.RemoveOperation({'path': '/target'})
+        self.assertEqual(add, add2)
+        self.assertNotEqual(add, rm)
+
+    def test_add_operation_structure(self):
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.AddOperation({'path': '/'}).apply({})
+
+    def test_replace_operation_structure(self):
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.ReplaceOperation({'path': '/'}).apply({})
+
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.ReplaceOperation({'path': '/top/-', 'value': 'foo'}).apply({'top': {'inner': 'value'}})
+
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            jsonpatch.ReplaceOperation({'path': '/top/missing', 'value': 'foo'}).apply({'top': {'inner': 'value'}})
+
+    def test_move_operation_structure(self):
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.MoveOperation({'path': '/target'}).apply({})
+
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            jsonpatch.MoveOperation({'from': '/source', 'path': '/target'}).apply({})
+
+    def test_test_operation_structure(self):
+        with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+            jsonpatch.TestOperation({'path': '/target'}).apply({})
+
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.TestOperation({'path': '/target'}).apply({'target': 'value'})
+
+    def test_copy_operation_structure(self):
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.CopyOperation({'path': '/target'}).apply({})
+
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            jsonpatch.CopyOperation({'path': '/target', 'from': '/source'}).apply({})
+
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            jsonpatch.CopyOperation({'path': '/target', 'from': '/source'}).apply({})
+
+
 class CustomJsonPointer(jsonpointer.JsonPointer):
     pass
 
@@ -690,7 +828,7 @@ class CustomJsonPointerTests(unittest.TestCase):
         self.assertEqual(res.pointer_cls, CustomJsonPointer)
 
     def test_json_patch_from_object(self):
-        patch = [{'op': 'add', 'path': '/baz', 'value': 'qux'}],
+        patch = [{'op': 'add', 'path': '/baz', 'value': 'qux'}]
         res = jsonpatch.JsonPatch(
             patch, pointer_cls=CustomJsonPointer,
         )
@@ -815,6 +953,8 @@ if __name__ == '__main__':
         suite.addTest(unittest.makeSuite(ConflictTests))
         suite.addTest(unittest.makeSuite(OptimizationTests))
         suite.addTest(unittest.makeSuite(JsonPointerTests))
+        suite.addTest(unittest.makeSuite(JsonPatchCreationTest))
+        suite.addTest(unittest.makeSuite(UtilityMethodTests))
         suite.addTest(unittest.makeSuite(CustomJsonPointerTests))
         return suite
 
