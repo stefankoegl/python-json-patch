@@ -10,6 +10,11 @@ import unittest
 import jsonpatch
 import jsonpointer
 import sys
+try:
+    from types import MappingProxyType
+except ImportError:
+    # Python < 3.3
+    MappingProxyType = dict
 
 
 class ApplyPatchTestCase(unittest.TestCase):
@@ -938,6 +943,26 @@ class CustomJsonPointerTests(unittest.TestCase):
         self.assertEqual(res, {'foo': {'bar': {'baz': 'qux'}}})
 
 
+class CustomOperationTests(unittest.TestCase):
+
+    def test_custom_operation(self):
+
+        class IdentityOperation(jsonpatch.PatchOperation):
+            def apply(self, obj):
+                return obj
+
+        class JsonPatch(jsonpatch.JsonPatch):
+            operations = MappingProxyType(
+                identity=IdentityOperation,
+                **jsonpatch.JsonPatch.operations
+            )
+
+        patch = JsonPatch([{'op': 'identity', 'path': '/'}])
+        self.assertIn('identity', patch.operations)
+        res = patch.apply({})
+        self.assertEqual(res, {})
+
+
 if __name__ == '__main__':
     modules = ['jsonpatch']
 
@@ -956,6 +981,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.makeSuite(JsonPatchCreationTest))
         suite.addTest(unittest.makeSuite(UtilityMethodTests))
         suite.addTest(unittest.makeSuite(CustomJsonPointerTests))
+        suite.addTest(unittest.makeSuite(CustomOperationTests))
         return suite
 
 
