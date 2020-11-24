@@ -953,8 +953,10 @@ class CustomOperationTests(unittest.TestCase):
 
         class JsonPatch(jsonpatch.JsonPatch):
             operations = MappingProxyType(
-                identity=IdentityOperation,
-                **jsonpatch.JsonPatch.operations
+                dict(
+                    identity=IdentityOperation,
+                    **jsonpatch.JsonPatch.operations
+                )
             )
 
         patch = JsonPatch([{'op': 'identity', 'path': '/'}])
