@@ -635,7 +635,7 @@ class JsonPatch(object):
         True
         """
         json_dumper = dumps or cls.json_dumper
-        builder = DiffBuilder(json_dumper, pointer_cls=pointer_cls)
+        builder = DiffBuilder(src, dst, json_dumper, pointer_cls=pointer_cls)
         builder._compare_values('', None, src, dst)
         ops = list(builder.execute())
         return cls(ops, pointer_cls=pointer_cls)
@@ -688,12 +688,14 @@ class JsonPatch(object):
 
 class DiffBuilder(object):
 
-    def __init__(self, dumps=json.dumps, pointer_cls=JsonPointer):
+    def __init__(self, src_doc, dst_doc, dumps=json.dumps, pointer_cls=JsonPointer):
         self.dumps = dumps
         self.pointer_cls = pointer_cls
         self.index_storage = [{}, {}]
         self.index_storage2 = [[], []]
         self.__root = root = []
+        self.src_doc = src_doc
+        self.dst_doc = dst_doc
         root[:] = [root, root, None]
 
     def store_index(self, value, index, st):
@@ -800,7 +802,8 @@ class DiffBuilder(object):
         new_index = self.insert(new_op)
         if index is not None:
             op = index[2]
-            if type(op.key) == int:
+            added_item = op.pointer.to_last(self.dst_doc)[0]
+            if type(added_item) == list:
                 for v in self.iter_from(index):
                     op.key = v._on_undo_add(op.path, op.key)
 

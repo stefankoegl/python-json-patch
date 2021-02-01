@@ -490,6 +490,61 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(res, dst)
         self.assertIsInstance(res['A'], float)
 
+    def test_issue119(self):
+        """Make sure it avoids casting numeric str dict key to int"""
+        src = [
+            {'foobar': {u'1': [u'lettuce', u'cabbage', u'bok choy', u'broccoli'], u'3': [u'ibex'], u'2': [u'apple'], u'5': [], u'4': [u'gerenuk', u'duiker'], u'10_1576156603109': [], u'6': [], u'8_1572034252560': [u'thompson', u'gravie', u'mango', u'coconut'], u'7_1572034204585': []}},
+            {'foobar':{u'description': u'', u'title': u''}}
+        ]
+        dst = [
+            {'foobar': {u'9': [u'almond'], u'10': u'yes', u'12': u'', u'16_1598876845275': [], u'7': [u'pecan']}},
+            {'foobar': {u'1': [u'lettuce', u'cabbage', u'bok choy', u'broccoli'], u'3': [u'ibex'], u'2': [u'apple'], u'5': [], u'4': [u'gerenuk', u'duiker'], u'10_1576156603109': [], u'6': [], u'8_1572034252560': [u'thompson', u'gravie', u'mango', u'coconut'], u'7_1572034204585': []}},
+            {'foobar': {u'description': u'', u'title': u''}}
+        ]
+        patch = jsonpatch.make_patch(src, dst)
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
+
+    def test_issue120(self):
+        """Make sure it avoids casting numeric str dict key to int"""
+        src = [{'foobar': {'821b7213_b9e6_2b73_2e9c_cf1526314553': ['Open Work'],
+                '6e3d1297_0c5a_88f9_576b_ad9216611c94': ['Many Things'],
+                '1987bcf0_dc97_59a1_4c62_ce33e51651c7': ['Product']}},
+            {'foobar': {'2a7624e_0166_4d75_a92c_06b3f': []}},
+            {'foobar': {'10': [],
+                '11': ['bee',
+                'ant',
+                'wasp'],
+                '13': ['phobos',
+                'titan',
+                'gaea'],
+                '14': [],
+                '15': 'run3',
+                '16': 'service',
+                '2': ['zero', 'enable']}}]
+        dst = [{'foobar': {'1': [], '2': []}},
+            {'foobar': {'821b7213_b9e6_2b73_2e9c_cf1526314553': ['Open Work'],
+                '6e3d1297_0c5a_88f9_576b_ad9216611c94': ['Many Things'],
+                '1987bcf0_dc97_59a1_4c62_ce33e51651c7': ['Product']}},
+            {'foobar': {'2a7624e_0166_4d75_a92c_06b3f': []}},
+            {'foobar': {'b238d74d_dcf4_448c_9794_c13a2f7b3c0a': [],
+                'dcb0387c2_f7ae_b8e5bab_a2b1_94deb7c': []}},
+            {'foobar': {'10': [],
+                '11': ['bee',
+                'ant',
+                'fly'],
+                '13': ['titan',
+                'phobos',
+                'gaea'],
+                '14': [],
+                '15': 'run3',
+                '16': 'service',
+                '2': ['zero', 'enable']}}
+        ]
+        patch = jsonpatch.make_patch(src, dst)
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
+
     def test_custom_types_diff(self):
         old = {'value': decimal.Decimal('1.0')}
         new = {'value': decimal.Decimal('1.00')}
