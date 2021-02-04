@@ -82,6 +82,11 @@ class ApplyPatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(obj, [{'op': 'remove', 'path': '/baz'}])
         self.assertTrue('baz' not in res)
 
+    def test_remove_object_key_does_not_raise(self):
+        obj = {'foo': 'bar', 'baz': 'qux'}
+        res = jsonpatch.apply_patch(obj, [{'op': 'remove', 'path': '/bar'}], idempotent=True)
+        self.assertTrue('bar' not in res)
+
     def test_remove_array_item(self):
         obj = {'foo': ['bar', 'qux', 'baz']}
         res = jsonpatch.apply_patch(obj, [{'op': 'remove', 'path': '/foo/1'}])

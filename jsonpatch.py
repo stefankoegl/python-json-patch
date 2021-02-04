@@ -111,7 +111,9 @@ def multidict(ordered_pairs):
 _jsonloads = functools.partial(json.loads, object_pairs_hook=multidict)
 
 
-def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
+def apply_patch(
+    doc, patch, in_place=False, pointer_cls=JsonPointer, idempotent=False
+):
     """Apply list of patches to specified json document.
 
     :param doc: Document object.
@@ -123,6 +125,10 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
     :param in_place: While :const:`True` patch will modify target document.
                      By default patch will be applied to document copy.
     :type in_place: bool
+
+    :param idempotent: Whether or not the patch will cause errors on
+                        `RemoveOperation`'s.
+    :type idempotent: bool
 
     :param pointer_cls: JSON pointer class to use.
     :type pointer_cls: Type[JsonPointer]
@@ -148,7 +154,7 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
         patch = JsonPatch.from_string(patch, pointer_cls=pointer_cls)
     else:
         patch = JsonPatch(patch, pointer_cls=pointer_cls)
-    return patch.apply(doc, in_place)
+    return patch.apply(doc, in_place, idempotent=idempotent)
 
 
 def make_patch(src, dst, pointer_cls=JsonPointer):
@@ -196,7 +202,7 @@ class PatchOperation(object):
 
         self.operation = operation
 
-    def apply(self, obj):
+    def apply(self, obj, idempotent=False):
         """Abstract method that applies a patch operation to the specified object."""
         raise NotImplementedError('should implement the patch operation.')
 
@@ -232,13 +238,14 @@ class PatchOperation(object):
 class RemoveOperation(PatchOperation):
     """Removes an object property or an array element."""
 
-    def apply(self, obj):
+    def apply(self, obj, idempotent):
         subobj, part = self.pointer.to_last(obj)
         try:
             del subobj[part]
         except (KeyError, IndexError) as ex:
-            msg = "can't remove a non-existent object '{0}'".format(part)
-            raise JsonPatchConflict(msg)
+            if not idempotent:
+                msg = "can't remove a non-existent object '{0}'".format(part)
+                raise JsonPatchConflict(msg)
 
         return obj
 
@@ -649,7 +656,7 @@ class JsonPatch(object):
     def _ops(self):
         return tuple(map(self._get_operation, self.patch))
 
-    def apply(self, obj, in_place=False):
+    def apply(self, obj, in_place=False, idempotent=False):
         """Applies the patch to a given object.
 
         :param obj: Document object.
@@ -659,6 +666,10 @@ class JsonPatch(object):
                          specified `obj` or to its copy.
         :type in_place: bool
 
+        :param idempotent: Whether or not the patch will cause errors on 
+                           `RemoveOperation`'s.
+        :type idempotent: bool
+
         :return: Modified `obj`.
         """
 
@@ -666,7 +677,7 @@ class JsonPatch(object):
             obj = copy.deepcopy(obj)
 
         for operation in self._ops:
-            obj = operation.apply(obj)
+            obj = operation.apply(obj, idempotent=idempotent)
 
         return obj
 
