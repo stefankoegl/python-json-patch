@@ -269,7 +269,7 @@ class RemoveOperation(PatchOperation):
 class AddOperation(PatchOperation):
     """Adds an object property or an array element."""
 
-    def apply(self, obj):
+    def apply(self, obj, idempotent=False):
         try:
             value = self.operation["value"]
         except KeyError as ex:
@@ -321,7 +321,7 @@ class AddOperation(PatchOperation):
 class ReplaceOperation(PatchOperation):
     """Replaces an object property or an array element by a new value."""
 
-    def apply(self, obj):
+    def apply(self, obj, idempotent=False):
         try:
             value = self.operation["value"]
         except KeyError as ex:
@@ -363,7 +363,7 @@ class ReplaceOperation(PatchOperation):
 class MoveOperation(PatchOperation):
     """Moves an object property or an array element to a new location."""
 
-    def apply(self, obj):
+    def apply(self, obj, idempotent=False):
         try:
             if isinstance(self.operation['from'], self.pointer_cls):
                 from_ptr = self.operation['from']
@@ -449,7 +449,7 @@ class MoveOperation(PatchOperation):
 class TestOperation(PatchOperation):
     """Test value by specified location."""
 
-    def apply(self, obj):
+    def apply(self, obj, idempotent=False):
         try:
             subobj, part = self.pointer.to_last(obj)
             if part is None:
@@ -476,7 +476,7 @@ class TestOperation(PatchOperation):
 class CopyOperation(PatchOperation):
     """ Copies an object property or an array element to a new location """
 
-    def apply(self, obj):
+    def apply(self, obj, idempotent=False):
         try:
             from_ptr = self.pointer_cls(self.operation['from'])
         except KeyError as ex:
