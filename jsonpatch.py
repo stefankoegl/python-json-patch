@@ -802,6 +802,10 @@ class DiffBuilder(object):
         new_index = self.insert(new_op)
         if index is not None:
             op = index[2]
+            # We can't rely on the op.key property type since PatchOperation casts
+            # the .key property to int and this path wrongly ends up being taken
+            # for numeric string dict keys while the intention is to only handle lists.
+            # So we do an explicit check on the item affected by the op instead.
             added_item = op.pointer.to_last(self.dst_doc)[0]
             if type(added_item) == list:
                 for v in self.iter_from(index):
