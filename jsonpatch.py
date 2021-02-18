@@ -802,7 +802,7 @@ class DiffBuilder(object):
         new_index = self.insert(new_op)
         if index is not None:
             op = index[2]
-            # We can't rely on the op.key property type since PatchOperation casts
+            # We can't rely on the op.key type since PatchOperation casts
             # the .key property to int and this path wrongly ends up being taken
             # for numeric string dict keys while the intention is to only handle lists.
             # So we do an explicit check on the item affected by the op instead.
