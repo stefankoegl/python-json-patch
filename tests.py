@@ -481,6 +481,15 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(res, dst)
         self.assertIsInstance(res['A'], bool)
 
+    def test_issue129(self):
+        """In JSON 1 is different from True even though in python 1 == True Take Two"""
+        src = {'A': {'D': 1.0}, 'B': {'E': 'a'}}
+        dst = {'A': {'C': 'a'}, 'B': {'C': True}}
+        patch = jsonpatch.make_patch(src, dst)
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
+        self.assertIsInstance(res['B']['C'], bool)
+
     def test_issue103(self):
         """In JSON 1 is different from 1.0 even though in python 1 == 1.0"""
         src = {'A': 1}

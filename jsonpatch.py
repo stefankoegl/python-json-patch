@@ -699,27 +699,29 @@ class DiffBuilder(object):
         root[:] = [root, root, None]
 
     def store_index(self, value, index, st):
+        typed_key = (value, type(value))
         try:
             storage = self.index_storage[st]
-            stored = storage.get(value)
+            stored = storage.get(typed_key)
             if stored is None:
-                storage[value] = [index]
+                storage[typed_key] = [index]
             else:
-                storage[value].append(index)
+                storage[typed_key].append(index)
 
         except TypeError:
-            self.index_storage2[st].append((value, index))
+            self.index_storage2[st].append((typed_key, index))
 
     def take_index(self, value, st):
+        typed_key = (value, type(value))
         try:
-            stored = self.index_storage[st].get(value)
+            stored = self.index_storage[st].get(typed_key)
             if stored:
                 return stored.pop()
 
         except TypeError:
             storage = self.index_storage2[st]
             for i in range(len(storage)-1, -1, -1):
-                if storage[i][0] == value:
+                if storage[i][0] == typed_key:
                     return storage.pop(i)[1]
 
     def insert(self, op):
