@@ -558,6 +558,19 @@ class JsonPatch(object):
         # Much of the validation is done in the initializer
         # though some is delayed until the patch is applied.
         for op in self.patch:
+            # We're only checking for basestring in the following check
+            # for two reasons:
+            #
+            # - It should come from JSON, which only allows strings as
+            #   dictionary keys, so having a string here unambiguously means
+            #   someone used: {"op": ..., ...} instead of [{"op": ..., ...}].
+            #
+            # - There's no possible false positive: if someone give a sequence
+            #   of mappings, this won't raise.
+            if isinstance(op, basestring):
+                raise InvalidJsonPatch("Document is expected to be sequence of "
+                                       "operations, got a sequence of strings.")
+
             self._get_operation(op)
 
     def __str__(self):
@@ -677,7 +690,7 @@ class JsonPatch(object):
         op = operation['op']
 
         if not isinstance(op, basestring):
-            raise InvalidJsonPatch("Operation must be a string")
+            raise InvalidJsonPatch("Operation's op must be a string")
 
         if op not in self.operations:
             raise InvalidJsonPatch("Unknown operation {0!r}".format(op))
