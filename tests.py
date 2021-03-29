@@ -190,6 +190,12 @@ class ApplyPatchTestCase(unittest.TestCase):
                           obj, [{'op': 'test', 'path': '/baz', 'value': 'bar'}])
 
 
+    def test_forgetting_surrounding_list(self):
+        obj =  {'bar': 'qux'}
+        self.assertRaises(jsonpatch.InvalidJsonPatch,
+                          jsonpatch.apply_patch,
+                          obj, {'op': 'test', 'path': '/bar'})
+
     def test_test_noval_existing(self):
         obj =  {'bar': 'qux'}
         self.assertRaises(jsonpatch.InvalidJsonPatch,
