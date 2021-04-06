@@ -41,9 +41,9 @@ import json
 import sys
 
 try:
-    from collections.abc import Mapping, Sequence
+    from collections.abc import Sequence
 except ImportError:  # Python 3
-    from collections import Mapping, Sequence
+    from collections import Sequence
 
 try:
     from types import MappingProxyType
