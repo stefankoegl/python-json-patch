@@ -87,6 +87,12 @@ class ApplyPatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(obj, [{'op': 'remove', 'path': '/foo/1'}])
         self.assertEqual(res['foo'], ['bar', 'baz'])
 
+    def test_remove_invalid_item(self):
+        obj = {'foo': ['bar', 'qux', 'baz']}
+        with self.assertRaises(jsonpointer.JsonPointerException):
+            jsonpatch.apply_patch(obj, [{'op': 'remove', 'path': '/foo/-'}])
+
+
     def test_replace_object_key(self):
         obj = {'foo': 'bar', 'baz': 'qux'}
         res = jsonpatch.apply_patch(obj, [{'op': 'replace', 'path': '/baz', 'value': 'boo'}])

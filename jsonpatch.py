@@ -39,6 +39,12 @@ import copy
 import functools
 import json
 import sys
+
+try:
+    from collections.abc import Mapping, Sequence
+except ImportError:  # Python 3
+    from collections import Mapping, Sequence
+
 try:
     from types import MappingProxyType
 except ImportError:
@@ -234,6 +240,10 @@ class RemoveOperation(PatchOperation):
 
     def apply(self, obj):
         subobj, part = self.pointer.to_last(obj)
+
+        if isinstance(subobj, Sequence) and not isinstance(part, int):
+            raise JsonPointerException("invalid array index '{0}'".format(part))
+
         try:
             del subobj[part]
         except (KeyError, IndexError) as ex:
