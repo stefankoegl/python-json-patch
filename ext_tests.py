@@ -65,7 +65,7 @@ class TestCaseTemplate(unittest.TestCase):
                 raise Exception(test.get('comment', '')) from jpe
 
             # if there is no 'expected' we only verify that applying the patch
-            # does not raises an exception
+            # does not raise an exception
             if 'expected' in test:
                 self.assertEquals(res, test['expected'], test.get('comment', ''))
 
@@ -86,7 +86,7 @@ def add_test_method(cls, name, test):
 
 
 
-modules = ['jsonpatch']
+modules = ['jsonpatch']F
 coverage_modules = []
 
 
