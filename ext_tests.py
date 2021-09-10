@@ -86,7 +86,7 @@ def add_test_method(cls, name, test):
 
 
 
-modules = ['jsonpatch']F
+modules = ['jsonpatch']
 coverage_modules = []
 
 
