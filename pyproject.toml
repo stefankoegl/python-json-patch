@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools>=44", "wheel", "setuptools_scm[toml]>=3.4.3", "read_version[toml] >= 0.3.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
+write_to = "jsonpatch/version.py"
+write_to_template = "__version__ = '{version}'\n"
+
+[tool.read_version]
+author = "jsonpatch.__init__:__author__"
+author_email = "jsonpatch.__init__:__email__"
+url = "jsonpatch.__init__:__website__"
+license = "jsonpatch.__init__:__license__"

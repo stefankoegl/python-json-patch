@@ -1,4 +1,5 @@
-*.pyc
+/jsonpatch/version.py
+*.py[co]
 build
 .coverage
 dist
