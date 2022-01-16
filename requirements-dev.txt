@@ -1,3 +1,7 @@
+build
+setuptools
+setuptools_scm
+read_version
 coverage
 wheel
 pypandoc

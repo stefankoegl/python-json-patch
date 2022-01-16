@@ -5,8 +5,9 @@ from __future__ import print_function
 
 import sys
 import json
-import jsonpatch
 import argparse
+
+from .. import __version__, make_patch
 
 
 parser = argparse.ArgumentParser(description='Diff two JSON files')
@@ -15,7 +16,7 @@ parser.add_argument('FILE2', type=argparse.FileType('r'))
 parser.add_argument('--indent', type=int, default=None,
                     help='Indent output by n spaces')
 parser.add_argument('-v', '--version', action='version',
-                    version='%(prog)s ' + jsonpatch.__version__)
+                    version='%(prog)s ' + __version__)
 
 
 def main():
@@ -30,7 +31,7 @@ def diff_files():
     args = parser.parse_args()
     doc1 = json.load(args.FILE1)
     doc2 = json.load(args.FILE2)
-    patch = jsonpatch.make_patch(doc1, doc2)
+    patch = make_patch(doc1, doc2)
     if patch.patch:
         print(json.dumps(patch.patch, indent=args.indent))
         sys.exit(1)

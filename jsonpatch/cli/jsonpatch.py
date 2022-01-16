@@ -4,9 +4,10 @@
 import sys
 import os.path
 import json
-import jsonpatch
 import tempfile
 import argparse
+
+from .. import __version__, apply_patch
 
 
 parser = argparse.ArgumentParser(
@@ -23,7 +24,7 @@ parser.add_argument('-b', '--backup', action='store_true',
 parser.add_argument('-i', '--in-place', action='store_true',
                     help='Modify ORIGINAL in-place instead of to stdout')
 parser.add_argument('-v', '--version', action='version',
-                    version='%(prog)s ' + jsonpatch.__version__)
+                    version='%(prog)s ' + __version__)
 parser.add_argument('-u', '--preserve-unicode', action='store_true',
                     help='Output Unicode character as-is without using Code Point')
 
@@ -39,7 +40,7 @@ def patch_files():
     args = parser.parse_args()
     doc = json.load(args.ORIGINAL)
     patch = json.load(args.PATCH)
-    result = jsonpatch.apply_patch(doc, patch)
+    result = apply_patch(doc, patch)
 
     if args.in_place:
         dirname = os.path.abspath(os.path.dirname(args.ORIGINAL.name))
