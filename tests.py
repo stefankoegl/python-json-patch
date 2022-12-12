@@ -10,6 +10,11 @@ import unittest
 import jsonpatch
 import jsonpointer
 import sys
+try:
+    from types import MappingProxyType
+except ImportError:
+    # Python < 3.3
+    MappingProxyType = dict
 
 
 class ApplyPatchTestCase(unittest.TestCase):
@@ -81,6 +86,12 @@ class ApplyPatchTestCase(unittest.TestCase):
         obj = {'foo': ['bar', 'qux', 'baz']}
         res = jsonpatch.apply_patch(obj, [{'op': 'remove', 'path': '/foo/1'}])
         self.assertEqual(res['foo'], ['bar', 'baz'])
+
+    def test_remove_invalid_item(self):
+        obj = {'foo': ['bar', 'qux', 'baz']}
+        with self.assertRaises(jsonpointer.JsonPointerException):
+            jsonpatch.apply_patch(obj, [{'op': 'remove', 'path': '/foo/-'}])
+
 
     def test_replace_object_key(self):
         obj = {'foo': 'bar', 'baz': 'qux'}
@@ -184,6 +195,12 @@ class ApplyPatchTestCase(unittest.TestCase):
                           jsonpatch.apply_patch,
                           obj, [{'op': 'test', 'path': '/baz', 'value': 'bar'}])
 
+
+    def test_forgetting_surrounding_list(self):
+        obj =  {'bar': 'qux'}
+        self.assertRaises(jsonpatch.InvalidJsonPatch,
+                          jsonpatch.apply_patch,
+                          obj, {'op': 'test', 'path': '/bar'})
 
     def test_test_noval_existing(self):
         obj =  {'bar': 'qux'}
@@ -476,6 +493,15 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(res, dst)
         self.assertIsInstance(res['A'], bool)
 
+    def test_issue129(self):
+        """In JSON 1 is different from True even though in python 1 == True Take Two"""
+        src = {'A': {'D': 1.0}, 'B': {'E': 'a'}}
+        dst = {'A': {'C': 'a'}, 'B': {'C': True}}
+        patch = jsonpatch.make_patch(src, dst)
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
+        self.assertIsInstance(res['B']['C'], bool)
+
     def test_issue103(self):
         """In JSON 1 is different from 1.0 even though in python 1 == 1.0"""
         src = {'A': 1}
@@ -484,6 +510,61 @@ class MakePatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
         self.assertIsInstance(res['A'], float)
+
+    def test_issue119(self):
+        """Make sure it avoids casting numeric str dict key to int"""
+        src = [
+            {'foobar': {u'1': [u'lettuce', u'cabbage', u'bok choy', u'broccoli'], u'3': [u'ibex'], u'2': [u'apple'], u'5': [], u'4': [u'gerenuk', u'duiker'], u'10_1576156603109': [], u'6': [], u'8_1572034252560': [u'thompson', u'gravie', u'mango', u'coconut'], u'7_1572034204585': []}},
+            {'foobar':{u'description': u'', u'title': u''}}
+        ]
+        dst = [
+            {'foobar': {u'9': [u'almond'], u'10': u'yes', u'12': u'', u'16_1598876845275': [], u'7': [u'pecan']}},
+            {'foobar': {u'1': [u'lettuce', u'cabbage', u'bok choy', u'broccoli'], u'3': [u'ibex'], u'2': [u'apple'], u'5': [], u'4': [u'gerenuk', u'duiker'], u'10_1576156603109': [], u'6': [], u'8_1572034252560': [u'thompson', u'gravie', u'mango', u'coconut'], u'7_1572034204585': []}},
+            {'foobar': {u'description': u'', u'title': u''}}
+        ]
+        patch = jsonpatch.make_patch(src, dst)
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
+
+    def test_issue120(self):
+        """Make sure it avoids casting numeric str dict key to int"""
+        src = [{'foobar': {'821b7213_b9e6_2b73_2e9c_cf1526314553': ['Open Work'],
+                '6e3d1297_0c5a_88f9_576b_ad9216611c94': ['Many Things'],
+                '1987bcf0_dc97_59a1_4c62_ce33e51651c7': ['Product']}},
+            {'foobar': {'2a7624e_0166_4d75_a92c_06b3f': []}},
+            {'foobar': {'10': [],
+                '11': ['bee',
+                'ant',
+                'wasp'],
+                '13': ['phobos',
+                'titan',
+                'gaea'],
+                '14': [],
+                '15': 'run3',
+                '16': 'service',
+                '2': ['zero', 'enable']}}]
+        dst = [{'foobar': {'1': [], '2': []}},
+            {'foobar': {'821b7213_b9e6_2b73_2e9c_cf1526314553': ['Open Work'],
+                '6e3d1297_0c5a_88f9_576b_ad9216611c94': ['Many Things'],
+                '1987bcf0_dc97_59a1_4c62_ce33e51651c7': ['Product']}},
+            {'foobar': {'2a7624e_0166_4d75_a92c_06b3f': []}},
+            {'foobar': {'b238d74d_dcf4_448c_9794_c13a2f7b3c0a': [],
+                'dcb0387c2_f7ae_b8e5bab_a2b1_94deb7c': []}},
+            {'foobar': {'10': [],
+                '11': ['bee',
+                'ant',
+                'fly'],
+                '13': ['titan',
+                'phobos',
+                'gaea'],
+                '14': [],
+                '15': 'run3',
+                '16': 'service',
+                '2': ['zero', 'enable']}}
+        ]
+        patch = jsonpatch.make_patch(src, dst)
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
 
     def test_custom_types_diff(self):
         old = {'value': decimal.Decimal('1.0')}
@@ -938,6 +1019,28 @@ class CustomJsonPointerTests(unittest.TestCase):
         self.assertEqual(res, {'foo': {'bar': {'baz': 'qux'}}})
 
 
+class CustomOperationTests(unittest.TestCase):
+
+    def test_custom_operation(self):
+
+        class IdentityOperation(jsonpatch.PatchOperation):
+            def apply(self, obj):
+                return obj
+
+        class JsonPatch(jsonpatch.JsonPatch):
+            operations = MappingProxyType(
+                dict(
+                    identity=IdentityOperation,
+                    **jsonpatch.JsonPatch.operations
+                )
+            )
+
+        patch = JsonPatch([{'op': 'identity', 'path': '/'}])
+        self.assertIn('identity', patch.operations)
+        res = patch.apply({})
+        self.assertEqual(res, {})
+
+
 if __name__ == '__main__':
     modules = ['jsonpatch']
 
@@ -956,6 +1059,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.makeSuite(JsonPatchCreationTest))
         suite.addTest(unittest.makeSuite(UtilityMethodTests))
         suite.addTest(unittest.makeSuite(CustomJsonPointerTests))
+        suite.addTest(unittest.makeSuite(CustomOperationTests))
         return suite
 
 

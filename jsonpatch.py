@@ -40,6 +40,17 @@ import functools
 import json
 import sys
 
+try:
+    from collections.abc import Sequence
+except ImportError:  # Python 3
+    from collections import Sequence
+
+try:
+    from types import MappingProxyType
+except ImportError:
+    # Python < 3.3
+    MappingProxyType = dict
+
 from jsonpointer import JsonPointer, JsonPointerException
 
 
@@ -56,7 +67,7 @@ except ImportError:
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
-__version__ = '1.24'
+__version__ = '1.32'
 __website__ = 'https://github.com/stefankoegl/python-json-patch'
 __license__ = 'Modified BSD License'
 
@@ -170,201 +181,6 @@ def make_patch(src, dst, pointer_cls=JsonPointer):
     return JsonPatch.from_diff(src, dst, pointer_cls=pointer_cls)
 
 
-class JsonPatch(object):
-    json_dumper = staticmethod(json.dumps)
-    json_loader = staticmethod(_jsonloads)
-
-    """A JSON Patch is a list of Patch Operations.
-
-    >>> patch = JsonPatch([
-    ...     {'op': 'add', 'path': '/foo', 'value': 'bar'},
-    ...     {'op': 'add', 'path': '/baz', 'value': [1, 2, 3]},
-    ...     {'op': 'remove', 'path': '/baz/1'},
-    ...     {'op': 'test', 'path': '/baz', 'value': [1, 3]},
-    ...     {'op': 'replace', 'path': '/baz/0', 'value': 42},
-    ...     {'op': 'remove', 'path': '/baz/1'},
-    ... ])
-    >>> doc = {}
-    >>> result = patch.apply(doc)
-    >>> expected = {'foo': 'bar', 'baz': [42]}
-    >>> result == expected
-    True
-
-    JsonPatch object is iterable, so you can easily access each patch
-    statement in a loop:
-
-    >>> lpatch = list(patch)
-    >>> expected = {'op': 'add', 'path': '/foo', 'value': 'bar'}
-    >>> lpatch[0] == expected
-    True
-    >>> lpatch == patch.patch
-    True
-
-    Also JsonPatch could be converted directly to :class:`bool` if it contains
-    any operation statements:
-
-    >>> bool(patch)
-    True
-    >>> bool(JsonPatch([]))
-    False
-
-    This behavior is very handy with :func:`make_patch` to write more readable
-    code:
-
-    >>> old = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
-    >>> new = {'baz': 'qux', 'numbers': [1, 4, 7]}
-    >>> patch = make_patch(old, new)
-    >>> if patch:
-    ...     # document have changed, do something useful
-    ...     patch.apply(old)    #doctest: +ELLIPSIS
-    {...}
-    """
-    def __init__(self, patch, pointer_cls=JsonPointer):
-        self.patch = patch
-        self.pointer_cls = pointer_cls
-
-        self.operations = {
-            'remove': RemoveOperation,
-            'add': AddOperation,
-            'replace': ReplaceOperation,
-            'move': MoveOperation,
-            'test': TestOperation,
-            'copy': CopyOperation,
-        }
-
-        # Verify that the structure of the patch document
-        # is correct by retrieving each patch element.
-        # Much of the validation is done in the initializer
-        # though some is delayed until the patch is applied.
-        for op in self.patch:
-            self._get_operation(op)
-
-    def __str__(self):
-        """str(self) -> self.to_string()"""
-        return self.to_string()
-
-    def __bool__(self):
-        return bool(self.patch)
-
-    __nonzero__ = __bool__
-
-    def __iter__(self):
-        return iter(self.patch)
-
-    def __hash__(self):
-        return hash(tuple(self._ops))
-
-    def __eq__(self, other):
-        if not isinstance(other, JsonPatch):
-            return False
-        return self._ops == other._ops
-
-    def __ne__(self, other):
-        return not(self == other)
-
-    @classmethod
-    def from_string(cls, patch_str, loads=None, pointer_cls=JsonPointer):
-        """Creates JsonPatch instance from string source.
-
-        :param patch_str: JSON patch as raw string.
-        :type patch_str: str
-
-        :param loads: A function of one argument that loads a serialized
-                      JSON string.
-        :type loads: function
-
-        :param pointer_cls: JSON pointer class to use.
-        :type pointer_cls: Type[JsonPointer]
-
-        :return: :class:`JsonPatch` instance.
-        """
-        json_loader = loads or cls.json_loader
-        patch = json_loader(patch_str)
-        return cls(patch, pointer_cls=pointer_cls)
-
-    @classmethod
-    def from_diff(
-            cls, src, dst, optimization=True, dumps=None,
-            pointer_cls=JsonPointer,
-    ):
-        """Creates JsonPatch instance based on comparison of two document
-        objects. Json patch would be created for `src` argument against `dst`
-        one.
-
-        :param src: Data source document object.
-        :type src: dict
-
-        :param dst: Data source document object.
-        :type dst: dict
-
-        :param dumps: A function of one argument that produces a serialized
-                      JSON string.
-        :type dumps: function
-
-        :param pointer_cls: JSON pointer class to use.
-        :type pointer_cls: Type[JsonPointer]
-
-        :return: :class:`JsonPatch` instance.
-
-        >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
-        >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
-        >>> patch = JsonPatch.from_diff(src, dst)
-        >>> new = patch.apply(src)
-        >>> new == dst
-        True
-        """
-        json_dumper = dumps or cls.json_dumper
-        builder = DiffBuilder(json_dumper, pointer_cls=pointer_cls)
-        builder._compare_values('', None, src, dst)
-        ops = list(builder.execute())
-        return cls(ops, pointer_cls=pointer_cls)
-
-    def to_string(self, dumps=None):
-        """Returns patch set as JSON string."""
-        json_dumper = dumps or self.json_dumper
-        return json_dumper(self.patch)
-
-    @property
-    def _ops(self):
-        return tuple(map(self._get_operation, self.patch))
-
-    def apply(self, obj, in_place=False):
-        """Applies the patch to a given object.
-
-        :param obj: Document object.
-        :type obj: dict
-
-        :param in_place: Tweaks the way how patch would be applied - directly to
-                         specified `obj` or to its copy.
-        :type in_place: bool
-
-        :return: Modified `obj`.
-        """
-
-        if not in_place:
-            obj = copy.deepcopy(obj)
-
-        for operation in self._ops:
-            obj = operation.apply(obj)
-
-        return obj
-
-    def _get_operation(self, operation):
-        if 'op' not in operation:
-            raise InvalidJsonPatch("Operation does not contain 'op' member")
-
-        op = operation['op']
-
-        if not isinstance(op, basestring):
-            raise InvalidJsonPatch("Operation must be a string")
-
-        if op not in self.operations:
-            raise InvalidJsonPatch("Unknown operation {0!r}".format(op))
-
-        cls = self.operations[op]
-        return cls(operation, pointer_cls=self.pointer_cls)
-
-
 class PatchOperation(object):
     """A single operation inside a JSON Patch."""
 
@@ -424,6 +240,10 @@ class RemoveOperation(PatchOperation):
 
     def apply(self, obj):
         subobj, part = self.pointer.to_last(obj)
+
+        if isinstance(subobj, Sequence) and not isinstance(part, int):
+            raise JsonPointerException("invalid array index '{0}'".format(part))
+
         try:
             del subobj[part]
         except (KeyError, IndexError) as ex:
@@ -681,38 +501,250 @@ class CopyOperation(PatchOperation):
         return obj
 
 
+class JsonPatch(object):
+    json_dumper = staticmethod(json.dumps)
+    json_loader = staticmethod(_jsonloads)
+
+    operations = MappingProxyType({
+        'remove': RemoveOperation,
+        'add': AddOperation,
+        'replace': ReplaceOperation,
+        'move': MoveOperation,
+        'test': TestOperation,
+        'copy': CopyOperation,
+    })
+
+    """A JSON Patch is a list of Patch Operations.
+
+    >>> patch = JsonPatch([
+    ...     {'op': 'add', 'path': '/foo', 'value': 'bar'},
+    ...     {'op': 'add', 'path': '/baz', 'value': [1, 2, 3]},
+    ...     {'op': 'remove', 'path': '/baz/1'},
+    ...     {'op': 'test', 'path': '/baz', 'value': [1, 3]},
+    ...     {'op': 'replace', 'path': '/baz/0', 'value': 42},
+    ...     {'op': 'remove', 'path': '/baz/1'},
+    ... ])
+    >>> doc = {}
+    >>> result = patch.apply(doc)
+    >>> expected = {'foo': 'bar', 'baz': [42]}
+    >>> result == expected
+    True
+
+    JsonPatch object is iterable, so you can easily access each patch
+    statement in a loop:
+
+    >>> lpatch = list(patch)
+    >>> expected = {'op': 'add', 'path': '/foo', 'value': 'bar'}
+    >>> lpatch[0] == expected
+    True
+    >>> lpatch == patch.patch
+    True
+
+    Also JsonPatch could be converted directly to :class:`bool` if it contains
+    any operation statements:
+
+    >>> bool(patch)
+    True
+    >>> bool(JsonPatch([]))
+    False
+
+    This behavior is very handy with :func:`make_patch` to write more readable
+    code:
+
+    >>> old = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
+    >>> new = {'baz': 'qux', 'numbers': [1, 4, 7]}
+    >>> patch = make_patch(old, new)
+    >>> if patch:
+    ...     # document have changed, do something useful
+    ...     patch.apply(old)    #doctest: +ELLIPSIS
+    {...}
+    """
+    def __init__(self, patch, pointer_cls=JsonPointer):
+        self.patch = patch
+        self.pointer_cls = pointer_cls
+
+        # Verify that the structure of the patch document
+        # is correct by retrieving each patch element.
+        # Much of the validation is done in the initializer
+        # though some is delayed until the patch is applied.
+        for op in self.patch:
+            # We're only checking for basestring in the following check
+            # for two reasons:
+            #
+            # - It should come from JSON, which only allows strings as
+            #   dictionary keys, so having a string here unambiguously means
+            #   someone used: {"op": ..., ...} instead of [{"op": ..., ...}].
+            #
+            # - There's no possible false positive: if someone give a sequence
+            #   of mappings, this won't raise.
+            if isinstance(op, basestring):
+                raise InvalidJsonPatch("Document is expected to be sequence of "
+                                       "operations, got a sequence of strings.")
+
+            self._get_operation(op)
+
+    def __str__(self):
+        """str(self) -> self.to_string()"""
+        return self.to_string()
+
+    def __bool__(self):
+        return bool(self.patch)
+
+    __nonzero__ = __bool__
+
+    def __iter__(self):
+        return iter(self.patch)
+
+    def __hash__(self):
+        return hash(tuple(self._ops))
+
+    def __eq__(self, other):
+        if not isinstance(other, JsonPatch):
+            return False
+        return self._ops == other._ops
+
+    def __ne__(self, other):
+        return not(self == other)
+
+    @classmethod
+    def from_string(cls, patch_str, loads=None, pointer_cls=JsonPointer):
+        """Creates JsonPatch instance from string source.
+
+        :param patch_str: JSON patch as raw string.
+        :type patch_str: str
+
+        :param loads: A function of one argument that loads a serialized
+                      JSON string.
+        :type loads: function
+
+        :param pointer_cls: JSON pointer class to use.
+        :type pointer_cls: Type[JsonPointer]
+
+        :return: :class:`JsonPatch` instance.
+        """
+        json_loader = loads or cls.json_loader
+        patch = json_loader(patch_str)
+        return cls(patch, pointer_cls=pointer_cls)
+
+    @classmethod
+    def from_diff(
+            cls, src, dst, optimization=True, dumps=None,
+            pointer_cls=JsonPointer,
+    ):
+        """Creates JsonPatch instance based on comparison of two document
+        objects. Json patch would be created for `src` argument against `dst`
+        one.
+
+        :param src: Data source document object.
+        :type src: dict
+
+        :param dst: Data source document object.
+        :type dst: dict
+
+        :param dumps: A function of one argument that produces a serialized
+                      JSON string.
+        :type dumps: function
+
+        :param pointer_cls: JSON pointer class to use.
+        :type pointer_cls: Type[JsonPointer]
+
+        :return: :class:`JsonPatch` instance.
+
+        >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
+        >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
+        >>> patch = JsonPatch.from_diff(src, dst)
+        >>> new = patch.apply(src)
+        >>> new == dst
+        True
+        """
+        json_dumper = dumps or cls.json_dumper
+        builder = DiffBuilder(src, dst, json_dumper, pointer_cls=pointer_cls)
+        builder._compare_values('', None, src, dst)
+        ops = list(builder.execute())
+        return cls(ops, pointer_cls=pointer_cls)
+
+    def to_string(self, dumps=None):
+        """Returns patch set as JSON string."""
+        json_dumper = dumps or self.json_dumper
+        return json_dumper(self.patch)
+
+    @property
+    def _ops(self):
+        return tuple(map(self._get_operation, self.patch))
+
+    def apply(self, obj, in_place=False):
+        """Applies the patch to a given object.
+
+        :param obj: Document object.
+        :type obj: dict
+
+        :param in_place: Tweaks the way how patch would be applied - directly to
+                         specified `obj` or to its copy.
+        :type in_place: bool
+
+        :return: Modified `obj`.
+        """
+
+        if not in_place:
+            obj = copy.deepcopy(obj)
+
+        for operation in self._ops:
+            obj = operation.apply(obj)
+
+        return obj
+
+    def _get_operation(self, operation):
+        if 'op' not in operation:
+            raise InvalidJsonPatch("Operation does not contain 'op' member")
+
+        op = operation['op']
+
+        if not isinstance(op, basestring):
+            raise InvalidJsonPatch("Operation's op must be a string")
+
+        if op not in self.operations:
+            raise InvalidJsonPatch("Unknown operation {0!r}".format(op))
+
+        cls = self.operations[op]
+        return cls(operation, pointer_cls=self.pointer_cls)
+
+
 class DiffBuilder(object):
 
-    def __init__(self, dumps=json.dumps, pointer_cls=JsonPointer):
+    def __init__(self, src_doc, dst_doc, dumps=json.dumps, pointer_cls=JsonPointer):
         self.dumps = dumps
         self.pointer_cls = pointer_cls
         self.index_storage = [{}, {}]
         self.index_storage2 = [[], []]
         self.__root = root = []
+        self.src_doc = src_doc
+        self.dst_doc = dst_doc
         root[:] = [root, root, None]
 
     def store_index(self, value, index, st):
+        typed_key = (value, type(value))
         try:
             storage = self.index_storage[st]
-            stored = storage.get(value)
+            stored = storage.get(typed_key)
             if stored is None:
-                storage[value] = [index]
+                storage[typed_key] = [index]
             else:
-                storage[value].append(index)
+                storage[typed_key].append(index)
 
         except TypeError:
-            self.index_storage2[st].append((value, index))
+            self.index_storage2[st].append((typed_key, index))
 
     def take_index(self, value, st):
+        typed_key = (value, type(value))
         try:
-            stored = self.index_storage[st].get(value)
+            stored = self.index_storage[st].get(typed_key)
             if stored:
                 return stored.pop()
 
         except TypeError:
             storage = self.index_storage2[st]
             for i in range(len(storage)-1, -1, -1):
-                if storage[i][0] == value:
+                if storage[i][0] == typed_key:
                     return storage.pop(i)[1]
 
     def insert(self, op):
@@ -795,7 +827,12 @@ class DiffBuilder(object):
         new_index = self.insert(new_op)
         if index is not None:
             op = index[2]
-            if type(op.key) == int:
+            # We can't rely on the op.key type since PatchOperation casts
+            # the .key property to int and this path wrongly ends up being taken
+            # for numeric string dict keys while the intention is to only handle lists.
+            # So we do an explicit check on the item affected by the op instead.
+            added_item = op.pointer.to_last(self.dst_doc)[0]
+            if type(added_item) == list:
                 for v in self.iter_from(index):
                     op.key = v._on_undo_add(op.path, op.key)
 

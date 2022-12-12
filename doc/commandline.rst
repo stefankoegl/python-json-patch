@@ -74,10 +74,12 @@ The program ``jsonpatch`` is used to apply JSON patches on JSON files. ::
       PATCH            Patch file
 
     optional arguments:
-      -h, --help       show this help message and exit
-      --indent INDENT  Indent output by n spaces
-      -v, --version    show program's version number and exit
-
+     -h, --help             show this help message and exit
+     --indent INDENT        Indent output by n spaces
+     -b, --backup           Back up ORIGINAL if modifying in-place
+     -i, --in-place         Modify ORIGINAL in-place instead of to stdout
+     -v, --version          show program's version number and exit
+     -u, --preserve-unicode Output Unicode character as-is without using Code Point
 
 Example
 ^^^^^^^
