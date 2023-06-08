@@ -14,6 +14,8 @@ parser.add_argument('FILE1', type=argparse.FileType('r'))
 parser.add_argument('FILE2', type=argparse.FileType('r'))
 parser.add_argument('--indent', type=int, default=None,
                     help='Indent output by n spaces')
+parser.add_argument('-u', '--preserve-unicode', action='store_true',
+                    help='Output Unicode character as-is without using Code Point')
 parser.add_argument('-v', '--version', action='version',
                     version='%(prog)s ' + jsonpatch.__version__)
 
@@ -32,7 +34,7 @@ def diff_files():
     doc2 = json.load(args.FILE2)
     patch = jsonpatch.make_patch(doc1, doc2)
     if patch.patch:
-        print(json.dumps(patch.patch, indent=args.indent))
+        print(json.dumps(patch.patch, indent=args.indent, ensure_ascii=not(args.preserve_unicode)))
         sys.exit(1)
 
 if __name__ == "__main__":

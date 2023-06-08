@@ -10,7 +10,7 @@ The JSON patch package contains the commandline utilities ``jsondiff`` and
 The program ``jsondiff`` can be used to create a JSON patch by comparing two
 JSON files ::
 
-    usage: jsondiff [-h] [--indent INDENT] [-v] FILE1 FILE2
+    usage: jsondiff [-h] [--indent INDENT] [-u] [-v] FILE1 FILE2
 
     Diff two JSON files
 
@@ -19,9 +19,10 @@ JSON files ::
       FILE2
 
     optional arguments:
-      -h, --help       show this help message and exit
-      --indent INDENT  Indent output by n spaces
-      -v, --version    show program's version number and exit
+      -h, --help             show this help message and exit
+      --indent INDENT        Indent output by n spaces
+      -u, --preserve-unicode Output Unicode character as-is without using Code Point
+      -v, --version          show program's version number and exit
 
 Example
 ^^^^^^^
