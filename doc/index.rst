@@ -6,7 +6,8 @@
 python-json-patch
 =================
 
-*`python-json-patch<https://github.com/stefankoegl/python-json-patch>`* is a Python library for applying JSON patches (`RFC 6902
+*`python-json-patch <https://github.com/stefankoegl/python-json-patch>`_* is
+a Python library for applying JSON patches (`RFC 6902
 <http://tools.ietf.org/html/rfc6902>`_). Python 2.7 and 3.4+ are
 supported. Tests are run on both CPython and PyPy.
 
