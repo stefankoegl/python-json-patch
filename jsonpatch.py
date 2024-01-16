@@ -157,7 +157,7 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
     return patch.apply(doc, in_place)
 
 
-def make_patch(src, dst, pointer_cls=JsonPointer):
+def make_patch(src, dst, generate_test_ops=False, pointer_cls=JsonPointer):
     """Generates patch by comparing two document objects. Actually is
     a proxy to :meth:`JsonPatch.from_diff` method.
 
@@ -170,6 +170,12 @@ def make_patch(src, dst, pointer_cls=JsonPointer):
     :param pointer_cls: JSON pointer class to use.
     :type pointer_cls: Type[JsonPointer]
 
+    :param generate_test_ops: While :const:`True` generate test operations
+                              capturing previous values of `replace`/`remove`
+                              operations. By default do not generate these
+                              operations.
+    :type generate_test_ops: bool
+
     >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
     >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
     >>> patch = make_patch(src, dst)
@@ -178,7 +184,7 @@ def make_patch(src, dst, pointer_cls=JsonPointer):
     True
     """
 
-    return JsonPatch.from_diff(src, dst, pointer_cls=pointer_cls)
+    return JsonPatch.from_diff(src, dst, generate_test_ops=generate_test_ops, pointer_cls=pointer_cls)
 
 
 class PatchOperation(object):
@@ -475,6 +481,11 @@ class TestOperation(PatchOperation):
 
         return obj
 
+    def _on_undo_add(self, path, key):
+        return key
+
+    def _on_undo_remove(self, path, key):
+        return key
 
 class CopyOperation(PatchOperation):
     """ Copies an object property or an array element to a new location """
@@ -628,7 +639,7 @@ class JsonPatch(object):
 
     @classmethod
     def from_diff(
-            cls, src, dst, optimization=True, dumps=None,
+            cls, src, dst, generate_test_ops=False, dumps=None,
             pointer_cls=JsonPointer,
     ):
         """Creates JsonPatch instance based on comparison of two document
@@ -640,6 +651,12 @@ class JsonPatch(object):
 
         :param dst: Data source document object.
         :type dst: dict
+
+        :param generate_test_ops: While :const:`True` generate test operations
+                                  capturing previous values of `replace`/`remove`
+                                  operations. By default do not generate these
+                                  operations.
+        :type generate_test_ops: bool
 
         :param dumps: A function of one argument that produces a serialized
                       JSON string.
@@ -658,7 +675,7 @@ class JsonPatch(object):
         True
         """
         json_dumper = dumps or cls.json_dumper
-        builder = DiffBuilder(src, dst, json_dumper, pointer_cls=pointer_cls)
+        builder = DiffBuilder(src, dst, json_dumper, generate_test_ops=generate_test_ops, pointer_cls=pointer_cls)
         builder._compare_values('', None, src, dst)
         ops = list(builder.execute())
         return cls(ops, pointer_cls=pointer_cls)
@@ -711,9 +728,10 @@ class JsonPatch(object):
 
 class DiffBuilder(object):
 
-    def __init__(self, src_doc, dst_doc, dumps=json.dumps, pointer_cls=JsonPointer):
+    def __init__(self, src_doc, dst_doc, dumps=json.dumps, generate_test_ops=False, pointer_cls=JsonPointer):
         self.dumps = dumps
         self.pointer_cls = pointer_cls
+        self.generate_test_ops = generate_test_ops
         self.index_storage = [{}, {}]
         self.index_storage2 = [[], []]
         self.__root = root = []
@@ -819,6 +837,13 @@ class DiffBuilder(object):
             self.store_index(item, new_index, _ST_ADD)
 
     def _item_removed(self, path, key, item):
+        if self.generate_test_ops:
+            test_index = self.insert(TestOperation({
+                'op': 'test',
+                'path': _path_join(path, key),
+                'value': item,
+            }, pointer_cls=self.pointer_cls))
+
         new_op = RemoveOperation({
             'op': 'remove',
             'path': _path_join(path, key),
@@ -847,11 +872,20 @@ class DiffBuilder(object):
 
             else:
                 self.remove(new_index)
+                if self.generate_test_ops:
+                    self.remove(test_index)
 
         else:
             self.store_index(item, new_index, _ST_REMOVE)
 
-    def _item_replaced(self, path, key, item):
+    def _item_replaced(self, path, key, item, old_item):
+        if self.generate_test_ops:
+            self.insert(TestOperation({
+                'op': 'test',
+                'path': _path_join(path, key),
+                'value': old_item,
+            }, pointer_cls=self.pointer_cls))
+
         self.insert(ReplaceOperation({
             'op': 'replace',
             'path': _path_join(path, key),
@@ -921,7 +955,7 @@ class DiffBuilder(object):
             return
 
         else:
-            self._item_replaced(path, key, dst)
+            self._item_replaced(path, key, dst, src)
 
 
 def _path_join(path, key):
