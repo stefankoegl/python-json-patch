@@ -98,7 +98,7 @@ def get_suite(filenames):
             # we use the (potentially) patched version of json.load here
             tests = jsonpatch.json.load(f)
             cls = make_test_case(tests)
-            suite.addTest(unittest.makeSuite(cls))
+            suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(cls))
 
     return suite
 
