@@ -874,6 +874,8 @@ class DiffBuilder(object):
                     'path': op.location,
                 }, pointer_cls=self.pointer_cls)
                 new_index[2] = new_op
+                if self.generate_test_ops:
+                    self.remove(test_index)
 
             else:
                 self.remove(new_index)
