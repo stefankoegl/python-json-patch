@@ -819,6 +819,11 @@ class DiffBuilder(object):
                 for v in self.iter_from(index):
                     op.key = v._on_undo_remove(op.path, op.key)
 
+            if self.generate_test_ops:
+                prev_op_index = index[0]
+                if isinstance(prev_op_index[2], TestOperation):
+                    self.remove(prev_op_index)
+
             self.remove(index)
             if op.location != _path_join(path, key):
                 new_op = MoveOperation({
