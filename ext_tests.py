@@ -67,7 +67,7 @@ class TestCaseTemplate(unittest.TestCase):
             # if there is no 'expected' we only verify that applying the patch
             # does not raise an exception
             if 'expected' in test:
-                self.assertEquals(res, test['expected'], test.get('comment', ''))
+                self.assertEqual(res, test['expected'], test.get('comment', ''))
 
 
 def make_test_case(tests):
