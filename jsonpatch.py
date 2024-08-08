@@ -859,10 +859,9 @@ class DiffBuilder(object):
         }, pointer_cls=self.pointer_cls))
 
     def _compare_dicts(self, path, src, dst):
-        src_keys = set(src.keys())
-        dst_keys = set(dst.keys())
-        added_keys = dst_keys - src_keys
-        removed_keys = src_keys - dst_keys
+        added_keys = [key for key in dst.keys() if key not in src.keys()]
+        removed_keys = [key for key in src.keys() if key not in dst.keys()]
+        intersection = [key for key in src.keys() if key in dst.keys()]
 
         for key in removed_keys:
             self._item_removed(path, str(key), src[key])
@@ -870,7 +869,7 @@ class DiffBuilder(object):
         for key in added_keys:
             self._item_added(path, str(key), dst[key])
 
-        for key in src_keys & dst_keys:
+        for key in intersection:
             self._compare_values(path, key, src[key], dst[key])
 
     def _compare_lists(self, path, src, dst):
