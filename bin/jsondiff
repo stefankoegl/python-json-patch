@@ -18,6 +18,8 @@ parser.add_argument('-u', '--preserve-unicode', action='store_true',
                     help='Output Unicode character as-is without using Code Point')
 parser.add_argument('-v', '--version', action='version',
                     version='%(prog)s ' + jsonpatch.__version__)
+parser.add_argument('-t', '--test-ops', action='store_true',
+                    help='Generate before-state test ops for remove/replace')
 
 
 def main():
@@ -32,7 +34,7 @@ def diff_files():
     args = parser.parse_args()
     doc1 = json.load(args.FILE1)
     doc2 = json.load(args.FILE2)
-    patch = jsonpatch.make_patch(doc1, doc2)
+    patch = jsonpatch.make_patch(doc1, doc2, generate_test_ops=args.test_ops)
     if patch.patch:
         print(json.dumps(patch.patch, indent=args.indent, ensure_ascii=not(args.preserve_unicode)))
         sys.exit(1)

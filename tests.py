@@ -325,32 +325,33 @@ class CustomTypesJsonPatch(jsonpatch.JsonPatch):
 
 
 class MakePatchTestCase(unittest.TestCase):
+    generate_test_ops = False
 
     def test_apply_patch_to_copy(self):
         src = {'foo': 'bar', 'boo': 'qux'}
         dst = {'baz': 'qux', 'foo': 'boo'}
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         res = patch.apply(src)
         self.assertTrue(src is not res)
 
     def test_apply_patch_to_same_instance(self):
         src = {'foo': 'bar', 'boo': 'qux'}
         dst = {'baz': 'qux', 'foo': 'boo'}
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         res = patch.apply(src, in_place=True)
         self.assertTrue(src is res)
 
     def test_objects(self):
         src = {'foo': 'bar', 'boo': 'qux'}
         dst = {'baz': 'qux', 'foo': 'boo'}
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
     def test_arrays(self):
         src = {'numbers': [1, 2, 3], 'other': [1, 3, 4, 5]}
         dst = {'numbers': [1, 3, 4, 5], 'other': [1, 3, 4]}
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
@@ -361,7 +362,7 @@ class MakePatchTestCase(unittest.TestCase):
         dst = {'data': [
             {'foo': [42]}, {'bar': []}, {'baz': {'boo': 'oom!'}}
         ]}
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
@@ -369,7 +370,7 @@ class MakePatchTestCase(unittest.TestCase):
         # see https://github.com/stefankoegl/python-json-patch/issues/4
         src = {'numbers': [], 'other': [1, 5, 3, 4]}
         dst = {'numbers': [1, 3, 4, 5], 'other': []}
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
@@ -388,7 +389,7 @@ class MakePatchTestCase(unittest.TestCase):
     def _test_should_just_add_new_item_not_rebuild_all_list(self):
         src = {'foo': [1, 2, 3]}
         dst = {'foo': [3, 1, 2, 3]}
-        patch = list(jsonpatch.make_patch(src, dst))
+        patch = list(jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops))
         self.assertEqual(len(patch), 1)
         self.assertEqual(patch[0]['op'], 'add')
         res = jsonpatch.apply_patch(src, patch)
@@ -397,8 +398,14 @@ class MakePatchTestCase(unittest.TestCase):
     def test_escape(self):
         src = {"x/y": 1}
         dst = {"x/y": 2}
-        patch = jsonpatch.make_patch(src, dst)
-        self.assertEqual([{"path": "/x~1y", "value": 2, "op": "replace"}], patch.patch)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
+
+        if self.generate_test_ops:
+            self.assertEqual([{"path": "/x~1y", "value": 1, "op": "test"},
+                              {"path": "/x~1y", "value": 2, "op": "replace"}], patch.patch)
+        else:
+            self.assertEqual([{"path": "/x~1y", "value": 2, "op": "replace"}], patch.patch)
+
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
@@ -406,7 +413,7 @@ class MakePatchTestCase(unittest.TestCase):
         """ Test making and applying a patch of the root is a list """
         src = [{'foo': 'bar', 'boo': 'qux'}]
         dst = [{'baz': 'qux', 'foo': 'boo'}]
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
@@ -414,7 +421,7 @@ class MakePatchTestCase(unittest.TestCase):
         """ Test if unicode keys and values are handled correctly """
         src = {}
         dst = {'\xee': '\xee'}
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
@@ -423,15 +430,21 @@ class MakePatchTestCase(unittest.TestCase):
 
         src = [8, 7, 2, 1, 0, 9, 4, 3, 5, 6]
         dest = [7, 2, 1, 0, 9, 4, 3, 6, 5, 8]
-        jsonpatch.make_patch(src, dest)
+        jsonpatch.make_patch(src, dest, generate_test_ops=self.generate_test_ops)
 
     def test_issue76(self):
         """ Make sure op:remove does not include a 'value' field """
 
         src = { "name": "fred", "friend": "barney", "spouse": "wilma" }
         dst = { "name": "fred", "spouse": "wilma" }
-        expected = [{"path": "/friend", "op": "remove"}]
-        patch = jsonpatch.make_patch(src, dst)
+
+        if self.generate_test_ops:
+            expected = [{"path": "/friend", "op": "test", "value": "barney"},
+                        {"path": "/friend", "op": "remove"}]
+        else:
+            expected = [{"path": "/friend", "op": "remove"}]
+
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         self.assertEqual(patch.patch, expected)
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
@@ -443,7 +456,7 @@ class MakePatchTestCase(unittest.TestCase):
         new = {
             'queue': {'teams_out': [{'id': 5, 'reason': 'If lose'}]}
         }
-        patch = jsonpatch.make_patch(old, new)
+        patch = jsonpatch.make_patch(old, new, generate_test_ops=self.generate_test_ops)
         new_from_patch = jsonpatch.apply_patch(old, patch)
         self.assertEqual(new, new_from_patch)
 
@@ -452,7 +465,7 @@ class MakePatchTestCase(unittest.TestCase):
         # see https://github.com/stefankoegl/python-json-patch/issues/30#issuecomment-155070128
         src = [1,2,3]
         dst = [3,1,4,2]
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
@@ -462,7 +475,7 @@ class MakePatchTestCase(unittest.TestCase):
         https://github.com/stefankoegl/python-json-patch/issues/74 """
         old = {'key': [{'someNumber': 0, 'someArray': [1, 2, 3]}]}
         new = {'key': [{'someNumber': 0, 'someArray': [1, 2, 3, 4]}]}
-        patch = jsonpatch.make_patch(old, new)
+        patch = jsonpatch.make_patch(old, new, generate_test_ops=self.generate_test_ops)
         new_from_patch = jsonpatch.apply_patch(old, patch)
         self.assertEqual(new, new_from_patch)
 
@@ -472,7 +485,7 @@ class MakePatchTestCase(unittest.TestCase):
         https://github.com/stefankoegl/python-json-patch/issues/41 """
         old = {'school':{'names':['Kevin','Carl']}}
         new = {'school':{'names':['Carl','Kate','Kevin','Jake']}}
-        patch = jsonpatch.JsonPatch.from_diff(old, new)
+        patch = jsonpatch.JsonPatch.from_diff(old, new, generate_test_ops=self.generate_test_ops)
         new_from_patch = jsonpatch.apply_patch(old, patch)
         self.assertEqual(new, new_from_patch)
 
@@ -480,7 +493,7 @@ class MakePatchTestCase(unittest.TestCase):
         #https://github.com/stefankoegl/python-json-patch/issues/97
         src = {'13': 'x'}
         dst = {'A': 'a', 'b': 'x'}
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
@@ -488,7 +501,7 @@ class MakePatchTestCase(unittest.TestCase):
         """In JSON 1 is different from True even though in python 1 == True"""
         src = {'A': 1}
         dst = {'A': True}
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
         self.assertIsInstance(res['A'], bool)
@@ -497,7 +510,7 @@ class MakePatchTestCase(unittest.TestCase):
         """In JSON 1 is different from True even though in python 1 == True Take Two"""
         src = {'A': {'D': 1.0}, 'B': {'E': 'a'}}
         dst = {'A': {'C': 'a'}, 'B': {'C': True}}
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
         self.assertIsInstance(res['B']['C'], bool)
@@ -506,7 +519,7 @@ class MakePatchTestCase(unittest.TestCase):
         """In JSON 1 is different from 1.0 even though in python 1 == 1.0"""
         src = {'A': 1}
         dst = {'A': 1.0}
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
         self.assertIsInstance(res['A'], float)
@@ -522,7 +535,7 @@ class MakePatchTestCase(unittest.TestCase):
             {'foobar': {u'1': [u'lettuce', u'cabbage', u'bok choy', u'broccoli'], u'3': [u'ibex'], u'2': [u'apple'], u'5': [], u'4': [u'gerenuk', u'duiker'], u'10_1576156603109': [], u'6': [], u'8_1572034252560': [u'thompson', u'gravie', u'mango', u'coconut'], u'7_1572034204585': []}},
             {'foobar': {u'description': u'', u'title': u''}}
         ]
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
@@ -562,7 +575,7 @@ class MakePatchTestCase(unittest.TestCase):
                 '16': 'service',
                 '2': ['zero', 'enable']}}
         ]
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
@@ -597,22 +610,39 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(new, new_from_patch)
 
 
+class MakePatchWithTestOpsTestCase(MakePatchTestCase):
+    generate_test_ops = True
+
+
 class OptimizationTests(unittest.TestCase):
+    generate_test_ops = False
+
     def test_use_replace_instead_of_remove_add(self):
         src = {'foo': [1, 2, 3]}
         dst = {'foo': [3, 2, 3]}
-        patch = list(jsonpatch.make_patch(src, dst))
-        self.assertEqual(len(patch), 1)
-        self.assertEqual(patch[0]['op'], 'replace')
+        patch = list(jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops))
+
+        if self.generate_test_ops:
+            self.assertEqual(len(patch), 2)
+            self.assertEqual(patch[0]['op'], 'test')
+            self.assertEqual(patch[1]['op'], 'replace')
+        else:
+            self.assertEqual(len(patch), 1)
+            self.assertEqual(patch[0]['op'], 'replace')
+
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
     def test_use_replace_instead_of_remove_add_nested(self):
         src = {'foo': [{'bar': 1, 'baz': 2}, {'bar': 2, 'baz': 3}]}
         dst = {'foo': [{'bar': 1}, {'bar': 2, 'baz': 3}]}
-        patch = list(jsonpatch.make_patch(src, dst))
+        patch = list(jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops))
 
         exp = [{'op': 'remove', 'path': '/foo/0/baz'}]
+
+        if self.generate_test_ops:
+            exp.insert(0, {'path': '/foo/0/baz', 'value': 2, 'op': 'test'})
+
         self.assertEqual(patch, exp)
 
         res = jsonpatch.apply_patch(src, patch)
@@ -621,7 +651,7 @@ class OptimizationTests(unittest.TestCase):
     def test_use_move_instead_of_remove_add(self):
         src = {'foo': [4, 1, 2, 3]}
         dst = {'foo': [1, 2, 3, 4]}
-        patch = list(jsonpatch.make_patch(src, dst))
+        patch = list(jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops))
         self.assertEqual(len(patch), 1)
         self.assertEqual(patch[0]['op'], 'move')
         res = jsonpatch.apply_patch(src, patch)
@@ -629,7 +659,7 @@ class OptimizationTests(unittest.TestCase):
 
     def test_use_move_instead_of_add_remove(self):
         def fn(_src, _dst):
-            patch = list(jsonpatch.make_patch(_src, _dst))
+            patch = list(jsonpatch.make_patch(_src, _dst, generate_test_ops=self.generate_test_ops))
             # Check if there are only 'move' operations
             for p in patch:
                 self.assertEqual(p['op'], 'move')
@@ -644,25 +674,25 @@ class OptimizationTests(unittest.TestCase):
     def test_success_if_replace_inside_dict(self):
         src = [{'a': 1, 'foo': {'b': 2, 'd': 5}}]
         dst = [{'a': 1, 'foo': {'b': 3, 'd': 6}}]
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         self.assertEqual(patch.apply(src), dst)
 
     def test_success_if_replace_single_value(self):
         src = [{'a': 1, 'b': 2, 'd': 5}]
         dst = [{'a': 1, 'c': 3, 'd': 5}]
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         self.assertEqual(patch.apply(src), dst)
 
     def test_success_if_replaced_by_object(self):
         src = [{'a': 1, 'b': 2, 'd': 5}]
         dst = [{'d': 6}]
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         self.assertEqual(patch.apply(src), dst)
 
     def test_success_if_correct_patch_appied(self):
         src = [{'a': 1}, {'b': 2}]
         dst = [{'a': 1, 'b': 2}]
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
         self.assertEqual(patch.apply(src), dst)
 
     def test_success_if_correct_expected_patch_appied(self):
@@ -672,7 +702,9 @@ class OptimizationTests(unittest.TestCase):
             {'path': '/0/a', 'op': 'remove'},
             {'path': '/0/c', 'op': 'add', 'value': 2}
         ]
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
+        if self.generate_test_ops:
+            exp.insert(0, {'path': '/0/a', 'value': 1, 'op': 'test'})
         self.assertEqual(patch.patch, exp)
         # verify that this patch does what we expect
         res = jsonpatch.apply_patch(src, patch)
@@ -683,7 +715,7 @@ class OptimizationTests(unittest.TestCase):
         src = [{"foo": 1, "bar": 2}]
         dst = [{"foo": 2, "bar": 2}]
 
-        patch = jsonpatch.make_patch(src, dst)
+        patch = jsonpatch.make_patch(src, dst, generate_test_ops=self.generate_test_ops)
 
         exp = [
             {
@@ -693,7 +725,14 @@ class OptimizationTests(unittest.TestCase):
             }
         ]
 
+        if self.generate_test_ops:
+            exp.insert(0, {"path": "/0/foo", "value": 1, "op": "test"})
+
         self.assertEqual(patch.patch, exp)
+
+
+class OptimizationWithTestOpsTests(OptimizationTests):
+    generate_test_ops = True
 
 
 class ListTests(unittest.TestCase):
@@ -1051,10 +1090,12 @@ if __name__ == '__main__':
         suite.addTest(unittest.makeSuite(ApplyPatchTestCase))
         suite.addTest(unittest.makeSuite(EqualityTestCase))
         suite.addTest(unittest.makeSuite(MakePatchTestCase))
+        suite.addTest(unittest.makeSuite(MakePatchWithTestOpsTestCase))
         suite.addTest(unittest.makeSuite(ListTests))
         suite.addTest(unittest.makeSuite(InvalidInputTests))
         suite.addTest(unittest.makeSuite(ConflictTests))
         suite.addTest(unittest.makeSuite(OptimizationTests))
+        suite.addTest(unittest.makeSuite(OptimizationWithTestOpsTests))
         suite.addTest(unittest.makeSuite(JsonPointerTests))
         suite.addTest(unittest.makeSuite(JsonPatchCreationTest))
         suite.addTest(unittest.makeSuite(UtilityMethodTests))
