@@ -526,6 +526,16 @@ class MakePatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
+    def test_numeric_string_dict_keys(self):
+        """Test the reported issue with numeric string dict keys"""
+        src = {'1': 'def'}
+        dst = {'test': '1', 'b': 'def'}
+        # This should not raise an exception
+        patch = jsonpatch.make_patch(src, dst)
+        # Verify the patch works as expected
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
+
     def test_issue120(self):
         """Make sure it avoids casting numeric str dict key to int"""
         src = [{'foobar': {'821b7213_b9e6_2b73_2e9c_cf1526314553': ['Open Work'],
