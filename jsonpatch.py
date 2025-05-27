@@ -797,9 +797,18 @@ class DiffBuilder(object):
         index = self.take_index(item, _ST_REMOVE)
         if index is not None:
             op = index[2]
-            if type(op.key) == int and type(key) == int:
-                for v in self.iter_from(index):
-                    op.key = v._on_undo_remove(op.path, op.key)
+            # We can't rely on the op.key type since PatchOperation casts
+            # the .key property to int and this path wrongly ends up being taken
+            # for numeric string dict keys while the intention is to only handle lists.
+            # So we do an explicit check on the data structure type instead.
+            try:
+                src_item = op.pointer.to_last(self.src_doc)[0]
+                if type(src_item) == list:
+                    for v in self.iter_from(index):
+                        op.key = v._on_undo_remove(op.path, op.key)
+            except (KeyError, IndexError):
+                # If the path doesn't exist, assume it's not a list operation
+                pass
 
             self.remove(index)
             if op.location != _path_join(path, key):
