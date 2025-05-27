@@ -455,6 +455,24 @@ class MakePatchTestCase(unittest.TestCase):
         patch = jsonpatch.make_patch(src, dst)
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
+        
+    def test_move_operations_order(self):
+        """Test that move operations are properly ordered to ensure correct application"""
+        src_obj = {'a': [{'id': [1]}, {'id': [2]}], 'b': [{'id': 5}]}
+        tgt_obj = {'a': [{'id': []}, {'id': [1]}], 'b': [{'id': 5, 'newKey': 2}]}
+        
+        # Generate patch
+        patch = jsonpatch.make_patch(src_obj, tgt_obj)
+        
+        # Apply patch forward and check result
+        result = jsonpatch.apply_patch(src_obj, patch)
+        self.assertEqual(result, tgt_obj, "Patch application should produce the expected target object")
+        
+        # Apply patch in reverse and verify it fails (to confirm we're testing the right scenario)
+        patch_ops = list(patch)
+        reverse_patch = jsonpatch.JsonPatch(patch_ops[::-1])
+        reverse_result = jsonpatch.apply_patch(src_obj, reverse_patch)
+        self.assertNotEqual(reverse_result, tgt_obj, "Reverse patch should not work - confirms we're testing the right issue")
 
     def test_list_in_dict(self):
         """ Test patch creation with a list within a dict, as reported in #74

@@ -774,24 +774,91 @@ class DiffBuilder(object):
             curr = curr[1]
 
     def execute(self):
+        # First, collect all operations
+        operations = []
         root = self.__root
         curr = root[1]
+        
+        # First pass: collect operations and handle replace optimizations
         while curr is not root:
             if curr[1] is not root:
                 op_first, op_second = curr[2], curr[1][2]
                 if op_first.location == op_second.location and \
                         type(op_first) == RemoveOperation and \
                         type(op_second) == AddOperation:
-                    yield ReplaceOperation({
+                    operations.append(ReplaceOperation({
                         'op': 'replace',
                         'path': op_second.location,
                         'value': op_second.operation['value'],
-                    }, pointer_cls=self.pointer_cls).operation
+                    }, pointer_cls=self.pointer_cls).operation)
                     curr = curr[1][1]
                     continue
-
-            yield curr[2].operation
+            
+            operations.append(curr[2].operation)
             curr = curr[1]
+        
+        # Second pass: identify and sort move operations
+        move_indices = []
+        move_ops = []
+        
+        for i, op in enumerate(operations):
+            if op['op'] == 'move':
+                move_indices.append(i)
+                move_ops.append(op)
+        
+        # Sort move operations based on dependencies
+        if move_ops:
+            # Create dependency graph: if op1's target is op2's source, op2 depends on op1
+            dependencies = {}
+            for i, op1 in enumerate(move_ops):
+                dependencies[i] = []
+                src1 = op1['from']
+                tgt1 = op1['path']
+                
+                for j, op2 in enumerate(move_ops):
+                    if i == j:
+                        continue  # Skip self-comparison
+                    
+                    src2 = op2['from']
+                    
+                    # If op2's source is the same as op1's target, op2 should come after op1
+                    if src2 == tgt1 or src2.startswith(tgt1 + '/'):
+                        dependencies[i].append(j)
+            
+            # Topological sort to determine execution order
+            # We're using a simple approach: if op1 depends on op2, op2 should be executed first
+            sorted_indices = []
+            visited = set()
+            temp_visited = set()
+            
+            def visit(i):
+                if i in temp_visited:
+                    # Cyclic dependency - maintain original order
+                    return
+                if i in visited:
+                    return
+                
+                temp_visited.add(i)
+                
+                for j in dependencies.get(i, []):
+                    visit(j)
+                
+                temp_visited.remove(i)
+                visited.add(i)
+                sorted_indices.append(i)
+            
+            for i in range(len(move_ops)):
+                if i not in visited:
+                    visit(i)
+            
+            # Replace original move operations with sorted ones
+            sorted_move_ops = [move_ops[i] for i in sorted_indices]
+            for idx, op in zip(move_indices, sorted_move_ops):
+                operations[idx] = op
+        
+        # Yield operations
+        for op in operations:
+            yield op
 
     def _item_added(self, path, key, item):
         index = self.take_index(item, _ST_REMOVE)
