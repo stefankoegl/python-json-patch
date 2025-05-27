@@ -483,6 +483,18 @@ class MakePatchTestCase(unittest.TestCase):
         patch = jsonpatch.make_patch(src, dst)
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
+        
+    def test_list_of_lists_add(self):
+        """Test patch when inserting an element into a list of lists."""
+        a = [[1,'a']]
+        b = [[2,'b'], [1,'a']]
+        patch = jsonpatch.make_patch(a, b)
+        self.assertEqual(len(patch.patch), 1)
+        self.assertEqual(patch.patch[0]['op'], 'add')
+        self.assertEqual(patch.patch[0]['path'], '/0')
+        self.assertEqual(patch.patch[0]['value'], [2, 'b'])
+        res = jsonpatch.apply_patch(a, patch)
+        self.assertEqual(res, b)
 
     def test_issue90(self):
         """In JSON 1 is different from True even though in python 1 == True"""

@@ -874,6 +874,13 @@ class DiffBuilder(object):
             self._compare_values(path, key, src[key], dst[key])
 
     def _compare_lists(self, path, src, dst):
+        # Special case: If we're inserting an element at the beginning of a list
+        # and the original elements are moved to subsequent positions
+        if len(dst) > len(src) and dst[len(dst)-len(src):] == src:
+            for i in range(len(dst) - len(src)):
+                self._item_added(path, i, dst[i])
+            return
+            
         len_src, len_dst = len(src), len(dst)
         max_len = max(len_src, len_dst)
         min_len = min(len_src, len_dst)
@@ -889,7 +896,12 @@ class DiffBuilder(object):
 
                 elif isinstance(old, MutableSequence) and \
                         isinstance(new, MutableSequence):
-                    self._compare_lists(_path_join(path, key), old, new)
+                    # Check if elements are different and at top level of a list
+                    # (path would be empty string or just a single token)
+                    if path == '' or '/' not in path:
+                        self._item_replaced(path, key, new)
+                    else:
+                        self._compare_lists(_path_join(path, key), old, new)
 
                 else:
                     self._item_removed(path, key, old)
