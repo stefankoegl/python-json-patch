@@ -236,6 +236,69 @@ class ApplyPatchTestCase(unittest.TestCase):
                 {'op': 'add', 'path': '/foo/-', 'value': 4},
             ])
         self.assertEqual(res['foo'], [1, 2, 3, 4])
+    
+    def test_append_string(self):
+        obj = {'message': {'content': {'parts': ['H']}}}
+        res = jsonpatch.apply_patch(obj, [
+            {'op': 'append', 'path': '/message/content/parts/0', 'value': 'E'},
+            {'op': 'append', 'path': '/message/content/parts/0', 'value': 'O'},
+            {'op': 'append', 'path': '/message/content/parts/0', 'value': 'O'},
+            {'op': 'append', 'path': '/message/content/parts/0', 'value': 'L'},
+        ])
+        self.assertEqual(res['message']['content']['parts'][0], 'HELLO')
+    
+    def test_append_string_with_short_notation(self):
+        obj = {'message': {'content': {'parts': ['H']}}}
+        res = jsonpatch.apply_patch(obj, [
+            {'p': '/message/content/parts/0', 'o': 'append', 'v': 'E'},
+            {'p': '/message/content/parts/0', 'o': 'append', 'v': 'L'},
+            {'p': '/message/content/parts/0', 'o': 'append', 'v': 'L'},
+            {'p': '/message/content/parts/0', 'o': 'append', 'v': 'O'},
+        ])
+        self.assertEqual(res['message']['content']['parts'][0], 'HELLO')
+        
+    def test_append_string_optimized(self):
+        obj = {'message': {'content': {'parts': ['H']}}}
+        res = jsonpatch.apply_patch(obj, [
+            {'p': '/message/content/parts/0', 'o': 'append', 'v': 'E'},
+            {'v': 'L'},  # p, o omitted
+            {'v': 'L'},  # p, o omitted
+            {'v': 'L'},  # p, o omitted
+        ])
+        self.assertEqual(res['message']['content']['parts'][0], 'HELLO')
+        
+    def test_append_to_non_string_fails(self):
+        obj = {'foo': 123}
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            jsonpatch.apply_patch(obj, [{'op': 'append', 'path': '/foo', 'value': 'bar'}])
+            
+    def test_append_to_root_fails(self):
+        obj = 'hello'
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            jsonpatch.apply_patch(obj, [{'op': 'append', 'path': '', 'value': 'world'}])
+            
+    def test_append_optimized_without_preceding_fails(self):
+        obj = {'message': 'hello'}
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.apply_patch(obj, [{'v': 'world'}])
+            
+    def test_make_patch_generates_append(self):
+        src = {'message': 'Hello'}
+        dst = {'message': 'Hello World'}
+        patch = jsonpatch.make_patch(src, dst)
+        self.assertEqual(len(patch.patch), 1)
+        self.assertEqual(patch.patch[0]['op'], 'append')
+        self.assertEqual(patch.patch[0]['path'], '/message')
+        self.assertEqual(patch.patch[0]['value'], ' World')
+        
+    def test_make_patch_not_append_for_replacement(self):
+        src = {'message': 'Hello'}
+        dst = {'message': 'Goodbye'}
+        patch = jsonpatch.make_patch(src, dst)
+        self.assertEqual(len(patch.patch), 1)
+        self.assertEqual(patch.patch[0]['op'], 'replace')
+        self.assertEqual(patch.patch[0]['path'], '/message')
+        self.assertEqual(patch.patch[0]['value'], 'Goodbye')
 
     def test_add_missing_path(self):
         obj = {'bar': 'qux'}

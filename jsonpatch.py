@@ -501,6 +501,26 @@ class CopyOperation(PatchOperation):
         return obj
 
 
+class AppendOperation(PatchOperation):
+    """ Appends text to a string value at the specified location """
+
+    def apply(self, obj):
+        subobj, part = self.pointer.to_last(obj)
+        
+        if part is None:
+            raise JsonPatchConflict("Cannot append to root document")
+            
+        try:
+            if isinstance(subobj[part], basestring):
+                subobj[part] += self.operation['value']
+            else:
+                raise JsonPatchConflict("Cannot append to non-string value")
+        except (KeyError, IndexError) as ex:
+            raise JsonPatchConflict(str(ex))
+            
+        return obj
+
+
 class JsonPatch(object):
     json_dumper = staticmethod(json.dumps)
     json_loader = staticmethod(_jsonloads)
@@ -512,6 +532,7 @@ class JsonPatch(object):
         'move': MoveOperation,
         'test': TestOperation,
         'copy': CopyOperation,
+        'append': AppendOperation,
     })
 
     """A JSON Patch is a list of Patch Operations.
@@ -567,7 +588,7 @@ class JsonPatch(object):
         # is correct by retrieving each patch element.
         # Much of the validation is done in the initializer
         # though some is delayed until the patch is applied.
-        for op in self.patch:
+        for i, op in enumerate(self.patch):
             # We're only checking for basestring in the following check
             # for two reasons:
             #
@@ -581,7 +602,21 @@ class JsonPatch(object):
                 raise InvalidJsonPatch("Document is expected to be sequence of "
                                        "operations, got a sequence of strings.")
 
-            self._get_operation(op)
+            # Skip validation for optimized append operations (only 'value' or 'v' field)
+            if isinstance(op, dict) and len(op) == 1 and ('value' in op or 'v' in op):
+                continue
+                
+            # Handle shortened notation during validation
+            if isinstance(op, dict) and 'v' in op:
+                op_copy = dict(op)
+                op_copy['value'] = op_copy.pop('v')
+                if 'p' in op_copy:
+                    op_copy['path'] = op_copy.pop('p')
+                if 'o' in op_copy:
+                    op_copy['op'] = op_copy.pop('o')
+                self._get_operation(op_copy)
+            else:
+                self._get_operation(op)
 
     def __str__(self):
         """str(self) -> self.to_string()"""
@@ -688,8 +723,39 @@ class JsonPatch(object):
         if not in_place:
             obj = copy.deepcopy(obj)
 
-        for operation in self._ops:
-            obj = operation.apply(obj)
+        last_append_path = None
+        
+        for i, operation in enumerate(self.patch):
+            # Make a copy to avoid modifying the original
+            if isinstance(operation, dict):
+                operation = dict(operation)
+                
+            # Handle shortened notation where 'v' is used instead of 'value'
+            if isinstance(operation, dict) and 'v' in operation:
+                operation['value'] = operation.pop('v')
+                if 'p' in operation:
+                    operation['path'] = operation.pop('p')
+                if 'o' in operation:
+                    operation['op'] = operation.pop('o')
+                    
+            # Handle optimized append operations (only 'value' field present)
+            if isinstance(operation, dict) and len(operation) == 1 and 'value' in operation:
+                # This is a continuation of the previous append operation
+                if last_append_path is not None:
+                    operation = {
+                        'op': 'append',
+                        'path': last_append_path,
+                        'value': operation['value']
+                    }
+                else:
+                    raise InvalidJsonPatch("Standalone 'value' field without preceding append operation")
+            elif isinstance(operation, dict) and operation.get('op') == 'append':
+                last_append_path = operation.get('path')
+            else:
+                last_append_path = None
+                    
+            op = self._get_operation(operation)
+            obj = op.apply(obj)
 
         return obj
 
@@ -921,7 +987,19 @@ class DiffBuilder(object):
             return
 
         else:
-            self._item_replaced(path, key, dst)
+            # Check if this is a string append operation
+            if isinstance(src, basestring) and isinstance(dst, basestring) and dst.startswith(src):
+                appended_text = dst[len(src):]
+                if appended_text:  # Only create append op if there's actual text to append
+                    self.insert(AppendOperation({
+                        'op': 'append',
+                        'path': _path_join(path, key),
+                        'value': appended_text,
+                    }, pointer_cls=self.pointer_cls))
+                else:
+                    self._item_replaced(path, key, dst)
+            else:
+                self._item_replaced(path, key, dst)
 
 
 def _path_join(path, key):
