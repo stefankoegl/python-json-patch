@@ -53,16 +53,15 @@ except ImportError:
 
 from jsonpointer import JsonPointer, JsonPointerException
 
-
 _ST_ADD = 0
 _ST_REMOVE = 1
-
 
 try:
     from collections.abc import MutableMapping, MutableSequence
 
 except ImportError:
     from collections import MutableMapping, MutableSequence
+
     str = unicode
 
 # Will be parsed by setup.py to determine package metadata
@@ -70,7 +69,6 @@ __author__ = 'Stefan Kögl <stefan@skoegl.net>'
 __version__ = '1.33'
 __website__ = 'https://github.com/stefankoegl/python-json-patch'
 __license__ = 'Modified BSD License'
-
 
 # pylint: disable=E0611,W0404
 if sys.version_info >= (3, 0):
@@ -117,7 +115,7 @@ def multidict(ordered_pairs):
 _jsonloads = functools.partial(json.loads, object_pairs_hook=multidict)
 
 
-def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
+def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer, use_append_ops=False):
     """Apply list of patches to specified json document.
 
     :param doc: Document object.
@@ -132,6 +130,9 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
 
     :param pointer_cls: JSON pointer class to use.
     :type pointer_cls: Type[JsonPointer]
+
+    :param use_append_ops: Enable 'append' operation for string concatenation (not part of RFC 6902).
+    :type use_append_ops: bool
 
     :return: Patched document object.
     :rtype: dict
@@ -151,13 +152,13 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
     """
 
     if isinstance(patch, basestring):
-        patch = JsonPatch.from_string(patch, pointer_cls=pointer_cls)
+        patch = JsonPatch.from_string(patch, pointer_cls=pointer_cls, use_append_ops=use_append_ops)
     else:
-        patch = JsonPatch(patch, pointer_cls=pointer_cls)
+        patch = JsonPatch(patch, pointer_cls=pointer_cls, use_append_ops=use_append_ops)
     return patch.apply(doc, in_place)
 
 
-def make_patch(src, dst, pointer_cls=JsonPointer):
+def make_patch(src, dst, pointer_cls=JsonPointer, use_append_ops=False):
     """Generates patch by comparing two document objects. Actually is
     a proxy to :meth:`JsonPatch.from_diff` method.
 
@@ -170,6 +171,9 @@ def make_patch(src, dst, pointer_cls=JsonPointer):
     :param pointer_cls: JSON pointer class to use.
     :type pointer_cls: Type[JsonPointer]
 
+    :param use_append_ops: Enable 'append' operation for string concatenation (not part of RFC 6902).
+    :type use_append_ops: bool
+
     >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
     >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
     >>> patch = make_patch(src, dst)
@@ -178,7 +182,7 @@ def make_patch(src, dst, pointer_cls=JsonPointer):
     True
     """
 
-    return JsonPatch.from_diff(src, dst, pointer_cls=pointer_cls)
+    return JsonPatch.from_diff(src, dst, pointer_cls=pointer_cls, use_append_ops=use_append_ops)
 
 
 class PatchOperation(object):
@@ -215,7 +219,7 @@ class PatchOperation(object):
         return self.operation == other.operation
 
     def __ne__(self, other):
-        return not(self == other)
+        return not (self == other)
 
     @property
     def path(self):
@@ -301,7 +305,8 @@ class AddOperation(PatchOperation):
             if part is None:
                 raise TypeError("invalid document type {0}".format(type(subobj)))
             else:
-                raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part))
+                raise JsonPatchConflict(
+                    "unable to fully resolve json pointer {0}, part {1}".format(self.location, part))
         return obj
 
     def _on_undo_remove(self, path, key):
@@ -351,7 +356,8 @@ class ReplaceOperation(PatchOperation):
             if part is None:
                 raise TypeError("invalid document type {0}".format(type(subobj)))
             else:
-                raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part))
+                raise JsonPatchConflict(
+                    "unable to fully resolve json pointer {0}, part {1}".format(self.location, part))
 
         subobj[part] = value
         return obj
@@ -387,7 +393,7 @@ class MoveOperation(PatchOperation):
             return obj
 
         if isinstance(subobj, MutableMapping) and \
-                self.pointer.contains(from_ptr):
+            self.pointer.contains(from_ptr):
             raise JsonPatchConflict('Cannot move values into their own children')
 
         obj = RemoveOperation({
@@ -501,17 +507,43 @@ class CopyOperation(PatchOperation):
         return obj
 
 
+class AppendOperation(PatchOperation):
+    """ Appends text to a string value at the specified location """
+
+    def apply(self, obj):
+        subobj, part = self.pointer.to_last(obj)
+
+        if part is None:
+            raise JsonPatchConflict("Cannot append to root document")
+
+        try:
+            if isinstance(subobj[part], basestring):
+                subobj[part] += self.operation['value']
+            else:
+                raise JsonPatchConflict("Cannot append to non-string value")
+        except (KeyError, IndexError) as ex:
+            raise JsonPatchConflict(str(ex))
+
+        return obj
+
+
 class JsonPatch(object):
     json_dumper = staticmethod(json.dumps)
     json_loader = staticmethod(_jsonloads)
 
-    operations = MappingProxyType({
+    # RFC 6902 standard operations
+    standard_operations = MappingProxyType({
         'remove': RemoveOperation,
         'add': AddOperation,
         'replace': ReplaceOperation,
         'move': MoveOperation,
         'test': TestOperation,
         'copy': CopyOperation,
+    })
+
+    # Extended operations (not part of RFC 6902)
+    extended_operations = MappingProxyType({
+        'append': AppendOperation,
     })
 
     """A JSON Patch is a list of Patch Operations.
@@ -559,15 +591,24 @@ class JsonPatch(object):
     ...     patch.apply(old)    #doctest: +ELLIPSIS
     {...}
     """
-    def __init__(self, patch, pointer_cls=JsonPointer):
+
+    def __init__(self, patch, pointer_cls=JsonPointer, use_append_ops=False):
         self.patch = patch
         self.pointer_cls = pointer_cls
+        self.use_append_ops = use_append_ops
+
+        # Set operations based on whether append ops are enabled
+        if use_append_ops:
+            self.operations = dict(self.standard_operations)
+            self.operations.update(self.extended_operations)
+        else:
+            self.operations = self.standard_operations
 
         # Verify that the structure of the patch document
         # is correct by retrieving each patch element.
         # Much of the validation is done in the initializer
         # though some is delayed until the patch is applied.
-        for op in self.patch:
+        for i, op in enumerate(self.patch):
             # We're only checking for basestring in the following check
             # for two reasons:
             #
@@ -581,7 +622,22 @@ class JsonPatch(object):
                 raise InvalidJsonPatch("Document is expected to be sequence of "
                                        "operations, got a sequence of strings.")
 
-            self._get_operation(op)
+            # Skip validation for optimized append operations (only 'value' or 'v' field)
+            # Only skip if append ops are enabled
+            if use_append_ops and isinstance(op, dict) and len(op) == 1 and ('value' in op or 'v' in op):
+                continue
+
+            # Handle shortened notation during validation
+            if isinstance(op, dict) and 'v' in op:
+                op_copy = dict(op)
+                op_copy['value'] = op_copy.pop('v')
+                if 'p' in op_copy:
+                    op_copy['path'] = op_copy.pop('p')
+                if 'o' in op_copy:
+                    op_copy['op'] = op_copy.pop('o')
+                self._get_operation(op_copy)
+            else:
+                self._get_operation(op)
 
     def __str__(self):
         """str(self) -> self.to_string()"""
@@ -604,10 +660,10 @@ class JsonPatch(object):
         return self._ops == other._ops
 
     def __ne__(self, other):
-        return not(self == other)
+        return not (self == other)
 
     @classmethod
-    def from_string(cls, patch_str, loads=None, pointer_cls=JsonPointer):
+    def from_string(cls, patch_str, loads=None, pointer_cls=JsonPointer, use_append_ops=False):
         """Creates JsonPatch instance from string source.
 
         :param patch_str: JSON patch as raw string.
@@ -620,16 +676,19 @@ class JsonPatch(object):
         :param pointer_cls: JSON pointer class to use.
         :type pointer_cls: Type[JsonPointer]
 
+        :param use_append_ops: Enable 'append' operation for string concatenation (not part of RFC 6902).
+        :type use_append_ops: bool
+
         :return: :class:`JsonPatch` instance.
         """
         json_loader = loads or cls.json_loader
         patch = json_loader(patch_str)
-        return cls(patch, pointer_cls=pointer_cls)
+        return cls(patch, pointer_cls=pointer_cls, use_append_ops=use_append_ops)
 
     @classmethod
     def from_diff(
-            cls, src, dst, optimization=True, dumps=None,
-            pointer_cls=JsonPointer,
+        cls, src, dst, optimization=True, dumps=None,
+        pointer_cls=JsonPointer, use_append_ops=False,
     ):
         """Creates JsonPatch instance based on comparison of two document
         objects. Json patch would be created for `src` argument against `dst`
@@ -648,6 +707,9 @@ class JsonPatch(object):
         :param pointer_cls: JSON pointer class to use.
         :type pointer_cls: Type[JsonPointer]
 
+        :param use_append_ops: Enable 'append' operation for string concatenation (not part of RFC 6902).
+        :type use_append_ops: bool
+
         :return: :class:`JsonPatch` instance.
 
         >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
@@ -658,10 +720,10 @@ class JsonPatch(object):
         True
         """
         json_dumper = dumps or cls.json_dumper
-        builder = DiffBuilder(src, dst, json_dumper, pointer_cls=pointer_cls)
+        builder = DiffBuilder(src, dst, json_dumper, pointer_cls=pointer_cls, use_append_ops=use_append_ops)
         builder._compare_values('', None, src, dst)
         ops = list(builder.execute())
-        return cls(ops, pointer_cls=pointer_cls)
+        return cls(ops, pointer_cls=pointer_cls, use_append_ops=use_append_ops)
 
     def to_string(self, dumps=None):
         """Returns patch set as JSON string."""
@@ -688,8 +750,40 @@ class JsonPatch(object):
         if not in_place:
             obj = copy.deepcopy(obj)
 
-        for operation in self._ops:
-            obj = operation.apply(obj)
+        last_append_path = None
+
+        for i, operation in enumerate(self.patch):
+            # Make a copy to avoid modifying the original
+            if isinstance(operation, dict):
+                operation = dict(operation)
+
+            # Handle shortened notation where 'v' is used instead of 'value'
+            if isinstance(operation, dict) and 'v' in operation:
+                operation['value'] = operation.pop('v')
+                if 'p' in operation:
+                    operation['path'] = operation.pop('p')
+                if 'o' in operation:
+                    operation['op'] = operation.pop('o')
+
+            # Handle optimized append operations (only 'value' field present)
+            # Only process these if append ops are enabled
+            if self.use_append_ops and isinstance(operation, dict) and len(operation) == 1 and 'value' in operation:
+                # This is a continuation of the previous append operation
+                if last_append_path is not None:
+                    operation = {
+                        'op': 'append',
+                        'path': last_append_path,
+                        'value': operation['value']
+                    }
+                else:
+                    raise InvalidJsonPatch("Standalone 'value' field without preceding append operation")
+            elif self.use_append_ops and isinstance(operation, dict) and operation.get('op') == 'append':
+                last_append_path = operation.get('path')
+            else:
+                last_append_path = None
+
+            op = self._get_operation(operation)
+            obj = op.apply(obj)
 
         return obj
 
@@ -711,9 +805,10 @@ class JsonPatch(object):
 
 class DiffBuilder(object):
 
-    def __init__(self, src_doc, dst_doc, dumps=json.dumps, pointer_cls=JsonPointer):
+    def __init__(self, src_doc, dst_doc, dumps=json.dumps, pointer_cls=JsonPointer, use_append_ops=False):
         self.dumps = dumps
         self.pointer_cls = pointer_cls
+        self.use_append_ops = use_append_ops
         self.index_storage = [{}, {}]
         self.index_storage2 = [[], []]
         self.__root = root = []
@@ -743,7 +838,7 @@ class DiffBuilder(object):
 
         except TypeError:
             storage = self.index_storage2[st]
-            for i in range(len(storage)-1, -1, -1):
+            for i in range(len(storage) - 1, -1, -1):
                 if storage[i][0] == typed_key:
                     return storage.pop(i)[1]
 
@@ -780,8 +875,8 @@ class DiffBuilder(object):
             if curr[1] is not root:
                 op_first, op_second = curr[2], curr[1][2]
                 if op_first.location == op_second.location and \
-                        type(op_first) == RemoveOperation and \
-                        type(op_second) == AddOperation:
+                    type(op_first) == RemoveOperation and \
+                    type(op_second) == AddOperation:
                     yield ReplaceOperation({
                         'op': 'replace',
                         'path': op_second.location,
@@ -888,7 +983,7 @@ class DiffBuilder(object):
                     self._compare_dicts(_path_join(path, key), old, new)
 
                 elif isinstance(old, MutableSequence) and \
-                        isinstance(new, MutableSequence):
+                    isinstance(new, MutableSequence):
                     self._compare_lists(_path_join(path, key), old, new)
 
                 else:
@@ -903,11 +998,11 @@ class DiffBuilder(object):
 
     def _compare_values(self, path, key, src, dst):
         if isinstance(src, MutableMapping) and \
-                isinstance(dst, MutableMapping):
+            isinstance(dst, MutableMapping):
             self._compare_dicts(_path_join(path, key), src, dst)
 
         elif isinstance(src, MutableSequence) and \
-                isinstance(dst, MutableSequence):
+            isinstance(dst, MutableSequence):
             self._compare_lists(_path_join(path, key), src, dst)
 
         # To ensure we catch changes to JSON, we can't rely on a simple
@@ -921,7 +1016,20 @@ class DiffBuilder(object):
             return
 
         else:
-            self._item_replaced(path, key, dst)
+            # Check if this is a string append operation (only if append ops are enabled)
+            if self.use_append_ops and isinstance(src, basestring) and isinstance(dst, basestring) and dst.startswith(
+                src):
+                appended_text = dst[len(src):]
+                if appended_text:  # Only create append op if there's actual text to append
+                    self.insert(AppendOperation({
+                        'op': 'append',
+                        'path': _path_join(path, key),
+                        'value': appended_text,
+                    }, pointer_cls=self.pointer_cls))
+                else:
+                    self._item_replaced(path, key, dst)
+            else:
+                self._item_replaced(path, key, dst)
 
 
 def _path_join(path, key):
