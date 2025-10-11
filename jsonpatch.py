@@ -223,16 +223,28 @@ class PatchOperation(object):
 
     @property
     def key(self):
-        try:
-            return int(self.pointer.parts[-1])
-        except ValueError:
-            return self.pointer.parts[-1]
+        return self.get_part(-1)
 
     @key.setter
     def key(self, value):
-        self.pointer.parts[-1] = str(value)
+        self.set_part(-1, value)
+
+    def get_part(self, index):
+        try:
+            return int(self.pointer.parts[index])
+        except ValueError:
+            return self.pointer.parts[index]
+
+    def set_part(self, index, value):
+        self.pointer.parts[index] = str(value)
         self.location = self.pointer.path
         self.operation['path'] = self.location
+
+    def _increment_part(self, index):
+        self.set_part(index, self.get_part(index) + 1)
+
+    def _decrement_part(self, index):
+        self.set_part(index, self.get_part(index) - 1)
 
 
 class RemoveOperation(PatchOperation):
@@ -253,17 +265,19 @@ class RemoveOperation(PatchOperation):
         return obj
 
     def _on_undo_remove(self, path, key):
-        if self.path == path:
-            if self.key >= key:
-                self.key += 1
+        if self.path.startswith(path):
+            part_index = len(path.split("/")) if path else 0
+            if self.get_part(part_index) >= key:
+                self._increment_part(part_index)
             else:
                 key -= 1
         return key
 
     def _on_undo_add(self, path, key):
-        if self.path == path:
-            if self.key > key:
-                self.key -= 1
+        if self.path.startswith(path):
+            part_index = len(path.split("/")) if path else 0
+            if self.get_part(part_index) > key:
+                self._decrement_part(part_index)
             else:
                 key -= 1
         return key
@@ -305,17 +319,19 @@ class AddOperation(PatchOperation):
         return obj
 
     def _on_undo_remove(self, path, key):
-        if self.path == path:
-            if self.key > key:
-                self.key += 1
+        if self.path.startswith(path):
+            part_index = len(path.split("/")) if path else 0
+            if self.get_part(part_index) > key:
+                self._increment_part(part_index)
             else:
                 key += 1
         return key
 
     def _on_undo_add(self, path, key):
-        if self.path == path:
-            if self.key > key:
-                self.key -= 1
+        if self.path.startswith(path):
+            part_index = len(path.split("/")) if path else 0
+            if self.get_part(part_index) > key:
+                self._decrement_part(part_index)
             else:
                 key += 1
         return key
@@ -410,40 +426,56 @@ class MoveOperation(PatchOperation):
 
     @property
     def from_key(self):
-        from_ptr = self.pointer_cls(self.operation['from'])
-        try:
-            return int(from_ptr.parts[-1])
-        except TypeError:
-            return from_ptr.parts[-1]
+        return self.get_from_part(-1)
 
     @from_key.setter
     def from_key(self, value):
+        self.set_from_part(-1, value)
+
+    def get_from_part(self, index):
         from_ptr = self.pointer_cls(self.operation['from'])
-        from_ptr.parts[-1] = str(value)
+        try:
+            return int(from_ptr.parts[index])
+        except ValueError:
+            return from_ptr.parts[index]
+
+    def set_from_part(self, index, value):
+        from_ptr = self.pointer_cls(self.operation['from'])
+        from_ptr.parts[index] = str(value)
         self.operation['from'] = from_ptr.path
 
+    def _increment_from_part(self, index):
+        self.set_from_part(index, self.get_from_part(index) + 1)
+
+    def _decrement_from_part(self, index):
+        self.set_from_part(index, self.get_from_part(index) - 1)
+
     def _on_undo_remove(self, path, key):
-        if self.from_path == path:
-            if self.from_key >= key:
-                self.from_key += 1
+        if self.from_path.startswith(path):
+            part_index = len(path.split("/")) if path else 0
+            if self.get_from_part(part_index) >= key:
+                self._increment_from_part(part_index)
             else:
                 key -= 1
-        if self.path == path:
-            if self.key > key:
-                self.key += 1
+        if self.path.startswith(path):
+            part_index = len(path.split("/")) if path else 0
+            if self.get_part(part_index) > key:
+                self._increment_part(part_index)
             else:
                 key += 1
         return key
 
     def _on_undo_add(self, path, key):
-        if self.from_path == path:
-            if self.from_key > key:
-                self.from_key -= 1
+        if self.from_path.startswith(path):
+            part_index = len(path.split("/")) if path else 0
+            if self.get_from_part(part_index) > key:
+                self._decrement_from_part(part_index)
             else:
                 key -= 1
-        if self.path == path:
-            if self.key > key:
-                self.key -= 1
+        if self.path.startswith(path):
+            part_index = len(path.split("/")) if path else 0
+            if self.get_part(part_index) > key:
+                self._decrement_part(part_index)
             else:
                 key += 1
         return key
