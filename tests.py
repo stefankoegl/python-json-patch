@@ -566,6 +566,14 @@ class MakePatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
+    def test_issue_160(self):
+        """Removal of an operation to an array should trigger _on_undo_add."""
+        old = {'a': [{'id': [1]}, {'id': [2]}], 'b': [{'id': 5}]}
+        new = {'a': [{'id': []}, {'id': [1]}], 'b': [{'id': 5, 'newKey': 2}]}
+        patch = jsonpatch.make_patch(old, new)
+        result = jsonpatch.apply_patch(old, patch)
+        self.assertEqual(result, new)
+
     def test_custom_types_diff(self):
         old = {'value': decimal.Decimal('1.0')}
         new = {'value': decimal.Decimal('1.00')}
