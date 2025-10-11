@@ -797,7 +797,8 @@ class DiffBuilder(object):
         index = self.take_index(item, _ST_REMOVE)
         if index is not None:
             op = index[2]
-            if type(op.key) == int and type(key) == int:
+            parent_collection = op.pointer.to_last(self.dst_doc)[0]
+            if type(parent_collection) == list:
                 for v in self.iter_from(index):
                     op.key = v._on_undo_remove(op.path, op.key)
 
@@ -831,8 +832,8 @@ class DiffBuilder(object):
             # the .key property to int and this path wrongly ends up being taken
             # for numeric string dict keys while the intention is to only handle lists.
             # So we do an explicit check on the item affected by the op instead.
-            added_item = op.pointer.to_last(self.dst_doc)[0]
-            if type(added_item) == list:
+            parent_collection = op.pointer.to_last(self.dst_doc)[0]
+            if type(parent_collection) == list:
                 for v in self.iter_from(index):
                     op.key = v._on_undo_add(op.path, op.key)
 
