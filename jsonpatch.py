@@ -264,18 +264,18 @@ class RemoveOperation(PatchOperation):
 
         return obj
 
-    def _on_undo_remove(self, path, key):
-        if _is_path_prefix(prefix=path, path=self.path):
-            part_index = _path_len(path)
+    def _on_undo_remove(self, sub_parts, key):
+        if _is_prefix(prefix_parts=sub_parts, parts=self.pointer.parts):
+            part_index = len(sub_parts)
             if self.get_part(part_index) >= key:
                 self._increment_part(part_index)
             else:
                 key -= 1
         return key
 
-    def _on_undo_add(self, path, key):
-        if _is_path_prefix(prefix=path, path=self.path):
-            part_index = _path_len(path)
+    def _on_undo_add(self, sub_parts, key):
+        if _is_prefix(prefix_parts=sub_parts, parts=self.pointer.parts):
+            part_index = len(sub_parts)
             if self.get_part(part_index) > key:
                 self._decrement_part(part_index)
             else:
@@ -318,18 +318,18 @@ class AddOperation(PatchOperation):
                 raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part))
         return obj
 
-    def _on_undo_remove(self, path, key):
-        if _is_path_prefix(prefix=path, path=self.path):
-            part_index = _path_len(path)
+    def _on_undo_remove(self, sub_parts, key):
+        if _is_prefix(prefix_parts=sub_parts, parts=self.pointer.parts):
+            part_index = len(sub_parts)
             if self.get_part(part_index) > key:
                 self._increment_part(part_index)
             else:
                 key += 1
         return key
 
-    def _on_undo_add(self, path, key):
-        if _is_path_prefix(prefix=path, path=self.path):
-            part_index = _path_len(path)
+    def _on_undo_add(self, sub_parts, key):
+        if _is_prefix(prefix_parts=sub_parts, parts=self.pointer.parts):
+            part_index = len(sub_parts)
             if self.get_part(part_index) > key:
                 self._decrement_part(part_index)
             else:
@@ -450,30 +450,32 @@ class MoveOperation(PatchOperation):
     def _decrement_from_part(self, index):
         self.set_from_part(index, self.get_from_part(index) - 1)
 
-    def _on_undo_remove(self, path, key):
-        if _is_path_prefix(prefix=path, path=self.from_path):
-            part_index = _path_len(path)
+    def _on_undo_remove(self, sub_parts, key):
+        from_ptr = self.pointer_cls(self.operation['from'])
+        if _is_prefix(prefix_parts=sub_parts, parts=from_ptr.parts):
+            part_index = len(sub_parts)
             if self.get_from_part(part_index) >= key:
                 self._increment_from_part(part_index)
             else:
                 key -= 1
-        if _is_path_prefix(prefix=path, path=self.path):
-            part_index = _path_len(path)
+        if _is_prefix(prefix_parts=sub_parts, parts=self.pointer.parts):
+            part_index = len(sub_parts)
             if self.get_part(part_index) > key:
                 self._increment_part(part_index)
             else:
                 key += 1
         return key
 
-    def _on_undo_add(self, path, key):
-        if _is_path_prefix(prefix=path, path=self.from_path):
-            part_index = _path_len(path)
+    def _on_undo_add(self, sub_parts, key):
+        from_ptr = self.pointer_cls(self.operation['from'])
+        if _is_prefix(prefix_parts=sub_parts, parts=from_ptr.parts):
+            part_index = len(sub_parts)
             if self.get_from_part(part_index) > key:
                 self._decrement_from_part(part_index)
             else:
                 key -= 1
-        if _is_path_prefix(prefix=path, path=self.path):
-            part_index = _path_len(path)
+        if _is_prefix(prefix_parts=sub_parts, parts=self.pointer.parts):
+            part_index = len(sub_parts)
             if self.get_part(part_index) > key:
                 self._decrement_part(part_index)
             else:
@@ -831,7 +833,7 @@ class DiffBuilder(object):
             op = index[2]
             if type(op.key) == int and type(key) == int:
                 for v in self.iter_from(index):
-                    op.key = v._on_undo_remove(op.path, op.key)
+                    op.key = v._on_undo_remove(op.pointer.parts[:-1], op.key)
 
             self.remove(index)
             if op.location != _path_join(path, key):
@@ -866,7 +868,7 @@ class DiffBuilder(object):
             added_item = op.pointer.to_last(self.dst_doc)[0]
             if type(added_item) == list:
                 for v in self.iter_from(index):
-                    op.key = v._on_undo_add(op.path, op.key)
+                    op.key = v._on_undo_add(op.pointer.parts[:-1], op.key)
 
             self.remove(index)
             if new_op.location != op.location:
@@ -962,8 +964,5 @@ def _path_join(path, key):
 
     return path + '/' + str(key).replace('~', '~0').replace('/', '~1')
 
-def _is_path_prefix(prefix, path):
-    return prefix == path or path.startswith(prefix + "/") or not prefix
-
-def _path_len(path):
-    return len(path.split("/")) if path else 0
+def _is_prefix(prefix_parts, parts):
+    return prefix_parts == parts[:len(prefix_parts)]

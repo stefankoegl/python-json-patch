@@ -585,7 +585,7 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(result, new)
 
     def test_issue_138b(self):
-        """Similar to issue 138 but additionally tests escaping"""
+        """Additionally tests escaping special characters."""
         old = {"/":
             [
                 {"x": ["a", {"y": ["b"]}], "z": "a"},
