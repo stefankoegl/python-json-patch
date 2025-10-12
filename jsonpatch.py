@@ -265,8 +265,8 @@ class RemoveOperation(PatchOperation):
         return obj
 
     def _on_undo_remove(self, path, key):
-        if self.path.startswith(path):
-            part_index = len(path.split("/")) if path else 0
+        if _is_path_prefix(prefix=path, path=self.path):
+            part_index = _path_len(path)
             if self.get_part(part_index) >= key:
                 self._increment_part(part_index)
             else:
@@ -274,8 +274,8 @@ class RemoveOperation(PatchOperation):
         return key
 
     def _on_undo_add(self, path, key):
-        if self.path.startswith(path):
-            part_index = len(path.split("/")) if path else 0
+        if _is_path_prefix(prefix=path, path=self.path):
+            part_index = _path_len(path)
             if self.get_part(part_index) > key:
                 self._decrement_part(part_index)
             else:
@@ -319,8 +319,8 @@ class AddOperation(PatchOperation):
         return obj
 
     def _on_undo_remove(self, path, key):
-        if self.path.startswith(path):
-            part_index = len(path.split("/")) if path else 0
+        if _is_path_prefix(prefix=path, path=self.path):
+            part_index = _path_len(path)
             if self.get_part(part_index) > key:
                 self._increment_part(part_index)
             else:
@@ -328,8 +328,8 @@ class AddOperation(PatchOperation):
         return key
 
     def _on_undo_add(self, path, key):
-        if self.path.startswith(path):
-            part_index = len(path.split("/")) if path else 0
+        if _is_path_prefix(prefix=path, path=self.path):
+            part_index = _path_len(path)
             if self.get_part(part_index) > key:
                 self._decrement_part(part_index)
             else:
@@ -451,14 +451,14 @@ class MoveOperation(PatchOperation):
         self.set_from_part(index, self.get_from_part(index) - 1)
 
     def _on_undo_remove(self, path, key):
-        if self.from_path.startswith(path):
-            part_index = len(path.split("/")) if path else 0
+        if _is_path_prefix(prefix=path, path=self.from_path):
+            part_index = _path_len(path)
             if self.get_from_part(part_index) >= key:
                 self._increment_from_part(part_index)
             else:
                 key -= 1
-        if self.path.startswith(path):
-            part_index = len(path.split("/")) if path else 0
+        if _is_path_prefix(prefix=path, path=self.path):
+            part_index = _path_len(path)
             if self.get_part(part_index) > key:
                 self._increment_part(part_index)
             else:
@@ -466,14 +466,14 @@ class MoveOperation(PatchOperation):
         return key
 
     def _on_undo_add(self, path, key):
-        if self.from_path.startswith(path):
-            part_index = len(path.split("/")) if path else 0
+        if _is_path_prefix(prefix=path, path=self.from_path):
+            part_index = _path_len(path)
             if self.get_from_part(part_index) > key:
                 self._decrement_from_part(part_index)
             else:
                 key -= 1
-        if self.path.startswith(path):
-            part_index = len(path.split("/")) if path else 0
+        if _is_path_prefix(prefix=path, path=self.path):
+            part_index = _path_len(path)
             if self.get_part(part_index) > key:
                 self._decrement_part(part_index)
             else:
@@ -961,3 +961,9 @@ def _path_join(path, key):
         return path
 
     return path + '/' + str(key).replace('~', '~0').replace('/', '~1')
+
+def _is_path_prefix(prefix, path):
+    return prefix == path or path.startswith(prefix + "/") or not prefix
+
+def _path_len(path):
+    return len(path.split("/")) if path else 0
