@@ -584,6 +584,26 @@ class MakePatchTestCase(unittest.TestCase):
         result = jsonpatch.apply_patch(old, patch)
         self.assertEqual(result, new)
 
+    def test_issue_138b(self):
+        """Similar to issue 138 but additionally tests escaping"""
+        old = {"/":
+            [
+                {"x": ["a", {"y": ["b"]}], "z": "a"},
+                {"x": ["c", {"d": ["d"]}], "z": "c"},
+                {},
+            ]
+        }
+        new = {"/":
+            [
+                {"x": ["c", {"y": ["d"]}], "z": "c"},
+                {},
+            ]
+        }
+        patch = jsonpatch.make_patch(old, new)
+        result = jsonpatch.apply_patch(old, patch)
+        self.assertEqual(result, new)
+
+
     def test_issue_124(self):
         """Similar to issue 138, but for different operations."""
         old = ['a', 'b', ['d', 'e'], 'f']
