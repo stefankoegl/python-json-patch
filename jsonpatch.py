@@ -265,19 +265,19 @@ class RemoveOperation(PatchOperation):
         return obj
 
     def _on_undo_remove(self, sub_parts, key):
-        if _is_prefix(prefix_parts=sub_parts, parts=self.pointer.parts):
-            part_index = len(sub_parts)
-            if self.get_part(part_index) >= key:
-                self._increment_part(part_index)
+        if _is_prefix(sub_parts, self.pointer.parts):
+            affected_index = len(sub_parts)
+            if self.get_part(affected_index) >= key:
+                self._increment_part(affected_index)
             else:
                 key -= 1
         return key
 
     def _on_undo_add(self, sub_parts, key):
-        if _is_prefix(prefix_parts=sub_parts, parts=self.pointer.parts):
-            part_index = len(sub_parts)
-            if self.get_part(part_index) > key:
-                self._decrement_part(part_index)
+        if _is_prefix(sub_parts, self.pointer.parts):
+            affected_index = len(sub_parts)
+            if self.get_part(affected_index) > key:
+                self._decrement_part(affected_index)
             else:
                 key -= 1
         return key
@@ -319,19 +319,19 @@ class AddOperation(PatchOperation):
         return obj
 
     def _on_undo_remove(self, sub_parts, key):
-        if _is_prefix(prefix_parts=sub_parts, parts=self.pointer.parts):
-            part_index = len(sub_parts)
-            if self.get_part(part_index) > key:
-                self._increment_part(part_index)
+        if _is_prefix(sub_parts, self.pointer.parts):
+            affected_index = len(sub_parts)
+            if self.get_part(affected_index) > key:
+                self._increment_part(affected_index)
             else:
                 key += 1
         return key
 
     def _on_undo_add(self, sub_parts, key):
-        if _is_prefix(prefix_parts=sub_parts, parts=self.pointer.parts):
-            part_index = len(sub_parts)
-            if self.get_part(part_index) > key:
-                self._decrement_part(part_index)
+        if _is_prefix(sub_parts, self.pointer.parts):
+            affected_index = len(sub_parts)
+            if self.get_part(affected_index) > key:
+                self._decrement_part(affected_index)
             else:
                 key += 1
         return key
@@ -372,10 +372,10 @@ class ReplaceOperation(PatchOperation):
         subobj[part] = value
         return obj
 
-    def _on_undo_remove(self, path, key):
+    def _on_undo_remove(self, sub_parts, key):
         return key
 
-    def _on_undo_add(self, path, key):
+    def _on_undo_add(self, sub_parts, key):
         return key
 
 
@@ -452,32 +452,32 @@ class MoveOperation(PatchOperation):
 
     def _on_undo_remove(self, sub_parts, key):
         from_ptr = self.pointer_cls(self.operation['from'])
-        if _is_prefix(prefix_parts=sub_parts, parts=from_ptr.parts):
-            part_index = len(sub_parts)
-            if self.get_from_part(part_index) >= key:
-                self._increment_from_part(part_index)
+        if _is_prefix(sub_parts, from_ptr.parts):
+            affected_index = len(sub_parts)
+            if self.get_from_part(affected_index) >= key:
+                self._increment_from_part(affected_index)
             else:
                 key -= 1
-        if _is_prefix(prefix_parts=sub_parts, parts=self.pointer.parts):
-            part_index = len(sub_parts)
-            if self.get_part(part_index) > key:
-                self._increment_part(part_index)
+        if _is_prefix(sub_parts, self.pointer.parts):
+            affected_index = len(sub_parts)
+            if self.get_part(affected_index) > key:
+                self._increment_part(affected_index)
             else:
                 key += 1
         return key
 
     def _on_undo_add(self, sub_parts, key):
         from_ptr = self.pointer_cls(self.operation['from'])
-        if _is_prefix(prefix_parts=sub_parts, parts=from_ptr.parts):
-            part_index = len(sub_parts)
-            if self.get_from_part(part_index) > key:
-                self._decrement_from_part(part_index)
+        if _is_prefix(sub_parts, from_ptr.parts):
+            affected_index = len(sub_parts)
+            if self.get_from_part(affected_index) > key:
+                self._decrement_from_part(affected_index)
             else:
                 key -= 1
-        if _is_prefix(prefix_parts=sub_parts, parts=self.pointer.parts):
-            part_index = len(sub_parts)
-            if self.get_part(part_index) > key:
-                self._decrement_part(part_index)
+        if _is_prefix(sub_parts, self.pointer.parts):
+            affected_index = len(sub_parts)
+            if self.get_part(affected_index) > key:
+                self._decrement_part(affected_index)
             else:
                 key += 1
         return key
@@ -964,5 +964,5 @@ def _path_join(path, key):
 
     return path + '/' + str(key).replace('~', '~0').replace('/', '~1')
 
-def _is_prefix(prefix_parts, parts):
-    return prefix_parts == parts[:len(prefix_parts)]
+def _is_prefix(sub_parts, parts):
+    return sub_parts == parts[:len(sub_parts)]
