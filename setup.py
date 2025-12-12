@@ -10,15 +10,17 @@ except ImportError:
     from distutils.core import setup
     has_setuptools = False
 
-src = io.open('jsonpatch.py', encoding='utf-8').read()
+src = io.open('jsonpatch/__init__.py', encoding='utf-8').read()
 metadata = dict(re.findall("__([a-z]+)__ = '([^']+)'", src))
 docstrings = re.findall('"""([^"]*)"""', src, re.MULTILINE | re.DOTALL)
 
 PACKAGE = 'jsonpatch'
 
-MODULES = (
-        'jsonpatch',
-)
+MODULES = [
+    'jsonpatch',
+    'jsonpatch._jsondiff_cli',
+    'jsonpatch._jsonpatch_cli',
+]
 
 REQUIREMENTS = list(open('requirements.txt'))
 
@@ -79,7 +81,12 @@ setup(name=PACKAGE,
       url=WEBSITE,
       py_modules=MODULES,
       package_data={'': ['requirements.txt']},
-      scripts=['bin/jsondiff', 'bin/jsonpatch'],
+      entry_points={
+          'console_scripts': [
+              'jsondiff = jsonpatch._jsondiff_cli:main',
+              'jsonpatch = jsonpatch._jsonpatch_cli:main',
+          ]  
+      },
       classifiers=CLASSIFIERS,
       python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*',
       project_urls={
