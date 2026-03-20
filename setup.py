@@ -10,21 +10,29 @@ except ImportError:
     from distutils.core import setup
     has_setuptools = False
 
-src = io.open('jsonpatch.py', encoding='utf-8').read()
+src = io.open('jsonpatch/__init__.py', encoding='utf-8').read()
 metadata = dict(re.findall("__([a-z]+)__ = '([^']+)'", src))
 docstrings = re.findall('"""([^"]*)"""', src, re.MULTILINE | re.DOTALL)
 
 PACKAGE = 'jsonpatch'
 
-MODULES = (
-        'jsonpatch',
-)
+MODULES = [
+    'jsonpatch',
+    'jsonpatch._jsondiff_cli',
+    'jsonpatch._jsonpatch_cli',
+]
 
 REQUIREMENTS = list(open('requirements.txt'))
 
 if has_setuptools:
     OPTIONS = {
-        'install_requires': REQUIREMENTS
+        'install_requires': REQUIREMENTS,
+        'entry_points': {
+            'console_scripts': [
+                'jsondiff = jsonpatch._jsondiff_cli:main',
+                'jsonpatch = jsonpatch._jsonpatch_cli:main',
+            ]
+        },
     }
 else:
     OPTIONS = {}
@@ -77,9 +85,8 @@ setup(name=PACKAGE,
       author_email=EMAIL,
       license=LICENSE,
       url=WEBSITE,
-      py_modules=MODULES,
+      packages=[PACKAGE],
       package_data={'': ['requirements.txt']},
-      scripts=['bin/jsondiff', 'bin/jsonpatch'],
       classifiers=CLASSIFIERS,
       python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*',
       project_urls={
