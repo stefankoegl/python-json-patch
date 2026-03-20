@@ -26,7 +26,13 @@ REQUIREMENTS = list(open('requirements.txt'))
 
 if has_setuptools:
     OPTIONS = {
-        'install_requires': REQUIREMENTS
+        'install_requires': REQUIREMENTS,
+        'entry_points': {
+            'console_scripts': [
+                'jsondiff = jsonpatch._jsondiff_cli:main',
+                'jsonpatch = jsonpatch._jsonpatch_cli:main',
+            ]
+        },
     }
 else:
     OPTIONS = {}
@@ -79,14 +85,8 @@ setup(name=PACKAGE,
       author_email=EMAIL,
       license=LICENSE,
       url=WEBSITE,
-      py_modules=MODULES,
+      packages=[PACKAGE],
       package_data={'': ['requirements.txt']},
-      entry_points={
-          'console_scripts': [
-              'jsondiff = jsonpatch._jsondiff_cli:main',
-              'jsonpatch = jsonpatch._jsonpatch_cli:main',
-          ]  
-      },
       classifiers=CLASSIFIERS,
       python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*',
       project_urls={
