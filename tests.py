@@ -889,6 +889,38 @@ class UtilityMethodTests(unittest.TestCase):
         with self.assertRaises(jsonpatch.JsonPatchConflict):
             jsonpatch.CopyOperation({'path': '/target', 'from': '/source'}).apply({})
 
+    def test_expand_slash_keys_simple(self):
+        """Slashed keys are expanded into nested dicts."""
+        result = jsonpatch.expand_slash_keys({'/fields/test': '123456'})
+        self.assertEqual(result, {'fields': {'test': '123456'}})
+
+    def test_expand_slash_keys_mixed(self):
+        """Keys with and without slashes are handled correctly."""
+        result = jsonpatch.expand_slash_keys({'a/b': 1, 'c': 2})
+        self.assertEqual(result, {'a': {'b': 1}, 'c': 2})
+
+    def test_expand_slash_keys_deep(self):
+        """Keys with multiple slash levels produce deeply nested dicts."""
+        result = jsonpatch.expand_slash_keys({'a/b/c': 42})
+        self.assertEqual(result, {'a': {'b': {'c': 42}}})
+
+    def test_expand_slash_keys_no_slashes(self):
+        """Dicts without slashed keys are returned unchanged."""
+        result = jsonpatch.expand_slash_keys({'foo': 'bar', 'baz': 1})
+        self.assertEqual(result, {'foo': 'bar', 'baz': 1})
+
+    def test_expand_slash_keys_make_patch(self):
+        """expand_slash_keys allows make_patch to produce readable paths."""
+        src = {}
+        dst = jsonpatch.expand_slash_keys({'/fields/test': '123456'})
+        patch = jsonpatch.make_patch(src, dst)
+        self.assertEqual(patch.patch, [{'op': 'add', 'path': '/fields', 'value': {'test': '123456'}}])
+
+    def test_expand_slash_keys_conflict(self):
+        """Conflicting keys raise ValueError."""
+        with self.assertRaises(ValueError):
+            jsonpatch.expand_slash_keys({'a': 1, 'a/b': 2})
+
 
 class CustomJsonPointer(jsonpointer.JsonPointer):
     pass
