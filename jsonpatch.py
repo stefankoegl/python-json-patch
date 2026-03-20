@@ -924,6 +924,58 @@ class DiffBuilder(object):
             self._item_replaced(path, key, dst)
 
 
+def expand_slash_keys(obj):
+    """Expand slash-separated keys in a dict into nested dicts.
+
+    Keys containing '/' are split on '/' and expanded into nested
+    dictionaries. This is useful when a flat dictionary uses slash-separated
+    path-like keys and you want to generate JSON Patch paths that traverse
+    nested objects rather than addressing a literal key that contains '/'.
+
+    Leading and trailing '/' characters in keys are ignored (empty path
+    segments are skipped).
+
+    Raises :exc:`ValueError` if two keys produce conflicting paths (e.g.
+    ``'a'`` and ``'a/b'`` both appear in *obj*).
+
+    :param obj: The flat dictionary whose keys should be expanded.
+    :type obj: dict
+
+    :return: A new dictionary with slash-separated keys expanded into
+             nested dicts.
+    :rtype: dict
+
+    >>> expand_slash_keys({'/fields/test': '123456'})
+    {'fields': {'test': '123456'}}
+    >>> expand_slash_keys({'a/b': 1, 'c': 2}) == {'a': {'b': 1}, 'c': 2}
+    True
+    """
+    result = {}
+    for key, value in obj.items():
+        parts = [p for p in str(key).split('/') if p]
+        if not parts:
+            result[key] = value
+            continue
+        d = result
+        for part in parts[:-1]:
+            if part not in d:
+                d[part] = {}
+            elif not isinstance(d[part], dict):
+                raise ValueError(
+                    "Key conflict: '{0}' is both a value and a path "
+                    "prefix in the source dict".format(part)
+                )
+            d = d[part]
+        last = parts[-1]
+        if last in d and isinstance(d[last], dict):
+            raise ValueError(
+                "Key conflict: '{0}' is both a path prefix and a value "
+                "in the source dict".format(last)
+            )
+        d[last] = value
+    return result
+
+
 def _path_join(path, key):
     if key is None:
         return path
