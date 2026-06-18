@@ -511,6 +511,16 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(res, dst)
         self.assertIsInstance(res['A'], float)
 
+    def test_issue180(self):
+        """In JSON 1 is different from True in list items even though in python 1 == True"""
+        src = {'aaa': [1, 1, 1]}
+        dst = {'aaa': [1, True, True]}
+        patch = jsonpatch.make_patch(src, dst)
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
+        self.assertIsInstance(res['aaa'][1], bool)
+        self.assertIsInstance(res['aaa'][2], bool)
+
     def test_issue119(self):
         """Make sure it avoids casting numeric str dict key to int"""
         src = [

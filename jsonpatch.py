@@ -880,16 +880,19 @@ class DiffBuilder(object):
         for key in range(max_len):
             if key < min_len:
                 old, new = src[key], dst[key]
-                if old == new:
-                    continue
-
-                elif isinstance(old, MutableMapping) and \
-                    isinstance(new, MutableMapping):
+                if isinstance(old, MutableMapping) and \
+                        isinstance(new, MutableMapping):
                     self._compare_dicts(_path_join(path, key), old, new)
 
                 elif isinstance(old, MutableSequence) and \
                         isinstance(new, MutableSequence):
                     self._compare_lists(_path_join(path, key), old, new)
+
+                # To ensure we catch changes to JSON, we can't rely on a
+                # simple old == new, because it would not recognize the
+                # difference between 1 and True, among other things.
+                elif self.dumps(old) == self.dumps(new):
+                    continue
 
                 else:
                     self._item_removed(path, key, old)
