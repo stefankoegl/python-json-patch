@@ -526,6 +526,20 @@ class MakePatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
+    def test_make_patch_added_numeric_str_dict_key(self):
+        """Avoid casting numeric str dict key to int on the add/move side.
+
+        Symmetric to the _item_removed fix (issues 119/120): _item_added must
+        not treat a removed numeric-string dict key (cast to int by
+        PatchOperation.key) as a list index, which raised a TypeError while
+        building the move.
+        """
+        src = {'0': [], 'd': [], 'a': [-1, {'a': ['s']}]}
+        dst = {'d': [0, []], 'c': ['s2']}
+        patch = jsonpatch.make_patch(src, dst)
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
+
     def test_issue120(self):
         """Make sure it avoids casting numeric str dict key to int"""
         src = [{'foobar': {'821b7213_b9e6_2b73_2e9c_cf1526314553': ['Open Work'],
