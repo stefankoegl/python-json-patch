@@ -658,9 +658,24 @@ class JsonPatch(object):
         True
         """
         json_dumper = dumps or cls.json_dumper
-        builder = DiffBuilder(src, dst, json_dumper, pointer_cls=pointer_cls)
+        builder = DiffBuilder(src, dst, json_dumper, pointer_cls=pointer_cls,
+                              optimization=optimization)
         builder._compare_values('', None, src, dst)
         ops = list(builder.execute())
+
+        if optimization and any(op.get('op') == 'move' for op in ops):
+            try:
+                valid_patch = cls(ops, pointer_cls=pointer_cls).apply(src) == dst
+            except (JsonPatchException, JsonPointerException, TypeError, KeyError, IndexError):
+                valid_patch = False
+
+            if not valid_patch:
+                builder = DiffBuilder(src, dst, json_dumper,
+                                      pointer_cls=pointer_cls,
+                                      optimization=False)
+                builder._compare_values('', None, src, dst)
+                ops = list(builder.execute())
+
         return cls(ops, pointer_cls=pointer_cls)
 
     def to_string(self, dumps=None):
@@ -711,9 +726,11 @@ class JsonPatch(object):
 
 class DiffBuilder(object):
 
-    def __init__(self, src_doc, dst_doc, dumps=json.dumps, pointer_cls=JsonPointer):
+    def __init__(self, src_doc, dst_doc, dumps=json.dumps,
+                 pointer_cls=JsonPointer, optimization=True):
         self.dumps = dumps
         self.pointer_cls = pointer_cls
+        self.optimization = optimization
         self.index_storage = [{}, {}]
         self.index_storage2 = [[], []]
         self.__root = root = []
@@ -794,10 +811,14 @@ class DiffBuilder(object):
             curr = curr[1]
 
     def _item_added(self, path, key, item):
-        index = self.take_index(item, _ST_REMOVE)
+        index = self.take_index(item, _ST_REMOVE) if self.optimization else None
         if index is not None:
             op = index[2]
-            if type(op.key) == int and type(key) == int:
+            # We can't rely on the op/key types since PatchOperation casts
+            # numeric path parts to int even for numeric string dict keys. Only
+            # undo index shifts when the removed item came from a list.
+            removed_from = op.pointer.to_last(self.src_doc)[0]
+            if type(removed_from) == list:
                 for v in self.iter_from(index):
                     op.key = v._on_undo_remove(op.path, op.key)
 
@@ -816,14 +837,15 @@ class DiffBuilder(object):
                 'value': item,
             }, pointer_cls=self.pointer_cls)
             new_index = self.insert(new_op)
-            self.store_index(item, new_index, _ST_ADD)
+            if self.optimization:
+                self.store_index(item, new_index, _ST_ADD)
 
     def _item_removed(self, path, key, item):
         new_op = RemoveOperation({
             'op': 'remove',
             'path': _path_join(path, key),
         }, pointer_cls=self.pointer_cls)
-        index = self.take_index(item, _ST_ADD)
+        index = self.take_index(item, _ST_ADD) if self.optimization else None
         new_index = self.insert(new_op)
         if index is not None:
             op = index[2]
@@ -849,7 +871,8 @@ class DiffBuilder(object):
                 self.remove(new_index)
 
         else:
-            self.store_index(item, new_index, _ST_REMOVE)
+            if self.optimization:
+                self.store_index(item, new_index, _ST_REMOVE)
 
     def _item_replaced(self, path, key, item):
         self.insert(ReplaceOperation({

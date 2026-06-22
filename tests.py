@@ -526,6 +526,27 @@ class MakePatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
+    def test_issue179(self):
+        cases = [
+            (
+                {'d': {'arr': ['', 42, '', {'a': 1}]}},
+                {'d': {'arr': [{'a': 1}, {'a': 1}, [1], {}, False, '', {'a': 1}]}},
+            ),
+            (
+                {'d': {'arr': [42, -1, 42, True, {'b': 'x'}, [1], 42]}},
+                {'d': {'arr': ['', None, False, {}, {}, 42]}},
+            ),
+            (
+                {'d': {'arr': [False, 42, [1], {'a': 1}, None, 42]}},
+                {'d': {'arr': [None, 42, []]}},
+            ),
+        ]
+
+        for src, dst in cases:
+            patch = jsonpatch.make_patch(src, dst)
+            res = jsonpatch.apply_patch(src, patch)
+            self.assertEqual(res, dst)
+
     def test_issue120(self):
         """Make sure it avoids casting numeric str dict key to int"""
         src = [{'foobar': {'821b7213_b9e6_2b73_2e9c_cf1526314553': ['Open Work'],
