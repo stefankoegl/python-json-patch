@@ -98,6 +98,12 @@ class JsonPatchTestFailed(JsonPatchException, AssertionError):
     """ A Test operation failed """
 
 
+def _raise_if_string_index(document, part):
+    if isinstance(document, basestring):
+        raise JsonPointerException(
+            "unable to resolve json pointer against string value, part {0}".format(part))
+
+
 def multidict(ordered_pairs):
     """Convert duplicate keys values to lists."""
     # read all values into lists
@@ -240,6 +246,7 @@ class RemoveOperation(PatchOperation):
 
     def apply(self, obj):
         subobj, part = self.pointer.to_last(obj)
+        _raise_if_string_index(subobj, part)
 
         if isinstance(subobj, Sequence) and not isinstance(part, int):
             raise JsonPointerException("invalid array index '{0}'".format(part))
@@ -378,8 +385,9 @@ class MoveOperation(PatchOperation):
 
         subobj, part = from_ptr.to_last(obj)
         try:
+            _raise_if_string_index(subobj, part)
             value = subobj[part]
-        except (KeyError, IndexError) as ex:
+        except (KeyError, IndexError, JsonPointerException) as ex:
             raise JsonPatchConflict(str(ex))
 
         # If source and target are equal, this is a no-op
@@ -458,6 +466,7 @@ class TestOperation(PatchOperation):
             if part is None:
                 val = subobj
             else:
+                _raise_if_string_index(subobj, part)
                 val = self.pointer.walk(subobj, part)
         except JsonPointerException as ex:
             raise JsonPatchTestFailed(str(ex))
@@ -488,8 +497,9 @@ class CopyOperation(PatchOperation):
 
         subobj, part = from_ptr.to_last(obj)
         try:
+            _raise_if_string_index(subobj, part)
             value = copy.deepcopy(subobj[part])
-        except (KeyError, IndexError) as ex:
+        except (KeyError, IndexError, JsonPointerException) as ex:
             raise JsonPatchConflict(str(ex))
 
         obj = AddOperation({

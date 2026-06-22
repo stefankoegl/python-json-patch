@@ -87,6 +87,12 @@ class ApplyPatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(obj, [{'op': 'remove', 'path': '/foo/1'}])
         self.assertEqual(res['foo'], ['bar', 'baz'])
 
+    def test_remove_does_not_index_string(self):
+        obj = {'foo': 'should-not-be-indexable'}
+        patch_obj = [{'op': 'remove', 'path': '/foo/0'}]
+        self.assertRaises(jsonpointer.JsonPointerException,
+                          jsonpatch.apply_patch, obj, patch_obj)
+
     def test_remove_invalid_item(self):
         obj = {'foo': ['bar', 'qux', 'baz']}
         with self.assertRaises(jsonpointer.JsonPointerException):
@@ -134,6 +140,12 @@ class ApplyPatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(obj, [{'op': 'move', 'from': '/foo/1', 'path': '/foo/3'}])
         self.assertEqual(res, {'foo': ['all', 'cows', 'eat', 'grass']})
 
+    def test_move_does_not_index_string(self):
+        obj = {'foo': 'should-not-be-indexable', 'bar': []}
+        patch_obj = [{'op': 'move', 'from': '/foo/0', 'path': '/bar/0'}]
+        self.assertRaises(jsonpatch.JsonPatchConflict,
+                          jsonpatch.apply_patch, obj, patch_obj)
+
     def test_move_array_item_into_other_item(self):
         obj = [{"foo": []}, {"bar": []}]
         patch = [{"op": "move", "from": "/0", "path": "/0/bar/0"}]
@@ -159,6 +171,12 @@ class ApplyPatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(obj, [{'op': 'copy', 'from': '/foo/1', 'path': '/foo/3'}])
         self.assertEqual(res, {'foo': ['all', 'grass', 'cows', 'grass', 'eat']})
 
+    def test_copy_does_not_index_string(self):
+        obj = {'foo': 'should-not-be-indexable'}
+        patch_obj = [{'op': 'copy', 'from': '/foo/0', 'path': '/bar'}]
+        self.assertRaises(jsonpatch.JsonPatchConflict,
+                          jsonpatch.apply_patch, obj, patch_obj)
+
 
     def test_copy_mutable(self):
         """ test if mutable objects (dicts and lists) are copied by value """
@@ -176,6 +194,12 @@ class ApplyPatchTestCase(unittest.TestCase):
         obj =  {'baz': 'qux', 'foo': ['a', 2, 'c']}
         jsonpatch.apply_patch(obj, [{'op': 'test', 'path': '/baz', 'value': 'qux'},
                                     {'op': 'test', 'path': '/foo/1', 'value': 2}])
+
+    def test_test_does_not_index_string(self):
+        obj = {'foo': 'should-not-be-indexable'}
+        patch_obj = [{'op': 'test', 'path': '/foo/0', 'value': 's'}]
+        self.assertRaises(jsonpatch.JsonPatchTestFailed,
+                          jsonpatch.apply_patch, obj, patch_obj)
 
     def test_test_whole_obj(self):
         obj =  {'baz': 1}
