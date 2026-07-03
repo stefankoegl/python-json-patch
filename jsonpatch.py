@@ -197,7 +197,7 @@ class PatchOperation(object):
             self.location = operation['path']
             try:
                 self.pointer = self.pointer_cls(self.location)
-            except TypeError as ex:
+            except TypeError:
                 raise InvalidJsonPatch("Invalid 'path'")
 
         self.operation = operation
@@ -246,7 +246,7 @@ class RemoveOperation(PatchOperation):
 
         try:
             del subobj[part]
-        except (KeyError, IndexError) as ex:
+        except (KeyError, IndexError):
             msg = "can't remove a non-existent object '{0}'".format(part)
             raise JsonPatchConflict(msg)
 
@@ -275,7 +275,7 @@ class AddOperation(PatchOperation):
     def apply(self, obj):
         try:
             value = self.operation["value"]
-        except KeyError as ex:
+        except KeyError:
             raise InvalidJsonPatch(
                 "The operation does not contain a 'value' member")
 
@@ -327,7 +327,7 @@ class ReplaceOperation(PatchOperation):
     def apply(self, obj):
         try:
             value = self.operation["value"]
-        except KeyError as ex:
+        except KeyError:
             raise InvalidJsonPatch(
                 "The operation does not contain a 'value' member")
 
@@ -372,7 +372,7 @@ class MoveOperation(PatchOperation):
                 from_ptr = self.operation['from']
             else:
                 from_ptr = self.pointer_cls(self.operation['from'])
-        except KeyError as ex:
+        except KeyError:
             raise InvalidJsonPatch(
                 "The operation does not contain a 'from' member")
 
@@ -464,7 +464,7 @@ class TestOperation(PatchOperation):
 
         try:
             value = self.operation['value']
-        except KeyError as ex:
+        except KeyError:
             raise InvalidJsonPatch(
                 "The operation does not contain a 'value' member")
 
@@ -482,7 +482,7 @@ class CopyOperation(PatchOperation):
     def apply(self, obj):
         try:
             from_ptr = self.pointer_cls(self.operation['from'])
-        except KeyError as ex:
+        except KeyError:
             raise InvalidJsonPatch(
                 "The operation does not contain a 'from' member")
 
