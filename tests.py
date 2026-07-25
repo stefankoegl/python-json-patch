@@ -222,6 +222,41 @@ class ApplyPatchTestCase(unittest.TestCase):
                           jsonpatch.apply_patch,
                           obj, [{'op': 'test', 'path': '/baz/qx'}])
 
+    def test_test_bool_and_int_not_equal(self):
+        # RFC 6902 requires the tested value to be of the same JSON type,
+        # so the number 1 must not test-equal the boolean true (in Python
+        # True == 1), and likewise 0 must not test-equal false.
+        self.assertRaises(jsonpatch.JsonPatchTestFailed,
+                          jsonpatch.apply_patch,
+                          {'baz': 1}, [{'op': 'test', 'path': '/baz', 'value': True}])
+        self.assertRaises(jsonpatch.JsonPatchTestFailed,
+                          jsonpatch.apply_patch,
+                          {'baz': True}, [{'op': 'test', 'path': '/baz', 'value': 1}])
+        self.assertRaises(jsonpatch.JsonPatchTestFailed,
+                          jsonpatch.apply_patch,
+                          {'baz': 0}, [{'op': 'test', 'path': '/baz', 'value': False}])
+
+    def test_test_bool_matches_bool(self):
+        # Same-typed boolean values still test-equal.
+        obj = {'baz': True}
+        res = jsonpatch.apply_patch(obj, [{'op': 'test', 'path': '/baz', 'value': True}])
+        self.assertEqual(res, obj)
+
+    def test_test_int_and_float_equal(self):
+        # Numbers are compared numerically, so 1 and 1.0 test-equal.
+        obj = {'baz': 1}
+        res = jsonpatch.apply_patch(obj, [{'op': 'test', 'path': '/baz', 'value': 1.0}])
+        self.assertEqual(res, obj)
+
+    def test_test_bool_and_int_nested_not_equal(self):
+        # The same-type rule also applies to values nested in containers.
+        self.assertRaises(jsonpatch.JsonPatchTestFailed,
+                          jsonpatch.apply_patch,
+                          {'baz': [1]}, [{'op': 'test', 'path': '/baz', 'value': [True]}])
+        self.assertRaises(jsonpatch.JsonPatchTestFailed,
+                          jsonpatch.apply_patch,
+                          {'baz': {'q': 1}}, [{'op': 'test', 'path': '/baz', 'value': {'q': True}}])
+
 
     def test_unrecognized_element(self):
         obj = {'foo': 'bar', 'baz': 'qux'}

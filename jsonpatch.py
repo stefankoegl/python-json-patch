@@ -98,6 +98,34 @@ class JsonPatchTestFailed(JsonPatchException, AssertionError):
     """ A Test operation failed """
 
 
+def _compare_json_values(left, right):
+    """Compare two JSON values for equality as required by RFC 6902.
+
+    Two values are only considered equal if they are of the same JSON
+    type. This needs special handling because in Python ``bool`` is a
+    subclass of ``int`` (so ``True == 1`` and ``False == 0``), whereas in
+    JSON the ``true``/``false`` literals are a distinct type from numbers.
+    Containers are compared recursively so the same rule applies to values
+    nested inside arrays and objects.
+    """
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) \
+            and left == right
+
+    if isinstance(left, MutableMapping) and isinstance(right, MutableMapping):
+        return left.keys() == right.keys() and all(
+            _compare_json_values(left[key], right[key]) for key in left
+        )
+
+    if isinstance(left, MutableSequence) and isinstance(right, MutableSequence):
+        return len(left) == len(right) and all(
+            _compare_json_values(lval, rval)
+            for lval, rval in zip(left, right)
+        )
+
+    return left == right
+
+
 def multidict(ordered_pairs):
     """Convert duplicate keys values to lists."""
     # read all values into lists
@@ -468,7 +496,7 @@ class TestOperation(PatchOperation):
             raise InvalidJsonPatch(
                 "The operation does not contain a 'value' member")
 
-        if val != value:
+        if not _compare_json_values(val, value):
             msg = '{0} ({1}) is not equal to tested value {2} ({3})'
             raise JsonPatchTestFailed(msg.format(val, type(val),
                                                  value, type(value)))
