@@ -246,7 +246,10 @@ class RemoveOperation(PatchOperation):
 
         try:
             del subobj[part]
-        except (KeyError, IndexError) as ex:
+        except (KeyError, IndexError, TypeError) as ex:
+            # TypeError happens when subobj is not a mutable container, e.g. a
+            # pointer into a string value ("str object doesn't support item
+            # deletion").
             msg = "can't remove a non-existent object '{0}'".format(part)
             raise JsonPatchConflict(msg)
 
@@ -379,7 +382,9 @@ class MoveOperation(PatchOperation):
         subobj, part = from_ptr.to_last(obj)
         try:
             value = subobj[part]
-        except (KeyError, IndexError) as ex:
+        except (KeyError, IndexError, TypeError) as ex:
+            # TypeError happens when the 'from' pointer ends in '-' (the
+            # array-append token), so part is a string used to index a list.
             raise JsonPatchConflict(str(ex))
 
         # If source and target are equal, this is a no-op
@@ -489,7 +494,9 @@ class CopyOperation(PatchOperation):
         subobj, part = from_ptr.to_last(obj)
         try:
             value = copy.deepcopy(subobj[part])
-        except (KeyError, IndexError) as ex:
+        except (KeyError, IndexError, TypeError) as ex:
+            # TypeError happens when the 'from' pointer ends in '-' (the
+            # array-append token), so part is a string used to index a list.
             raise JsonPatchConflict(str(ex))
 
         obj = AddOperation({

@@ -764,6 +764,25 @@ class ConflictTests(unittest.TestCase):
         patch_obj = [ { "op": "remove", "path": "/foo/non-existent"} ]
         self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
 
+    def test_copy_from_dash_on_array(self):
+        # 'from' ending in '-' indexes a list with a string; used to raise a
+        # bare TypeError.
+        src = [1, 2, 3]
+        patch_obj = [ { "op": "copy", "path": "/0", "from": "/-"} ]
+        self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
+
+    def test_move_from_dash_on_array(self):
+        src = [1, 2, 3]
+        patch_obj = [ { "op": "move", "path": "/0", "from": "/-"} ]
+        self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
+
+    def test_remove_index_into_string(self):
+        # A pointer into a string value is not a mutable container; deleting
+        # from it used to raise a bare TypeError.
+        src = {"foo": "bar"}
+        patch_obj = [ { "op": "remove", "path": "/foo/0"} ]
+        self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
+
     def test_insert_oob(self):
         src = {"foo": [1, 2]}
         patch_obj = [ { "op": "add", "path": "/foo/10", "value": 1} ]
