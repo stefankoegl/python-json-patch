@@ -117,6 +117,13 @@ def multidict(ordered_pairs):
 _jsonloads = functools.partial(json.loads, object_pairs_hook=multidict)
 
 
+def _path_join(path, key):
+    if key is None:
+        return path
+
+    return path + '/' + str(key).replace('~', '~0').replace('/', '~1')
+
+
 def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
     """Apply list of patches to specified json document.
 
@@ -157,7 +164,7 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
     return patch.apply(doc, in_place)
 
 
-def make_patch(src, dst, pointer_cls=JsonPointer):
+def make_patch(src, dst, pointer_cls=JsonPointer, path_join=_path_join):
     """Generates patch by comparing two document objects. Actually is
     a proxy to :meth:`JsonPatch.from_diff` method.
 
@@ -178,7 +185,7 @@ def make_patch(src, dst, pointer_cls=JsonPointer):
     True
     """
 
-    return JsonPatch.from_diff(src, dst, pointer_cls=pointer_cls)
+    return JsonPatch.from_diff(src, dst, pointer_cls=pointer_cls, path_join=path_join)
 
 
 class PatchOperation(object):
@@ -282,7 +289,9 @@ class AddOperation(PatchOperation):
         subobj, part = self.pointer.to_last(obj)
 
         if isinstance(subobj, MutableSequence):
-            if part == '-':
+            if part is None:
+                obj = value  # we're replacing the root
+            elif part == '-':
                 subobj.append(value)  # pylint: disable=E1103
 
             elif part > len(subobj) or part < 0:
@@ -629,7 +638,7 @@ class JsonPatch(object):
     @classmethod
     def from_diff(
             cls, src, dst, optimization=True, dumps=None,
-            pointer_cls=JsonPointer,
+            pointer_cls=JsonPointer, path_join=_path_join,
     ):
         """Creates JsonPatch instance based on comparison of two document
         objects. Json patch would be created for `src` argument against `dst`
@@ -658,7 +667,7 @@ class JsonPatch(object):
         True
         """
         json_dumper = dumps or cls.json_dumper
-        builder = DiffBuilder(src, dst, json_dumper, pointer_cls=pointer_cls)
+        builder = DiffBuilder(src, dst, json_dumper, pointer_cls=pointer_cls, path_join=path_join)
         builder._compare_values('', None, src, dst)
         ops = list(builder.execute())
         return cls(ops, pointer_cls=pointer_cls)
@@ -711,9 +720,10 @@ class JsonPatch(object):
 
 class DiffBuilder(object):
 
-    def __init__(self, src_doc, dst_doc, dumps=json.dumps, pointer_cls=JsonPointer):
+    def __init__(self, src_doc, dst_doc, dumps=json.dumps, pointer_cls=JsonPointer, path_join=_path_join):
         self.dumps = dumps
         self.pointer_cls = pointer_cls
+        self.path_join = path_join
         self.index_storage = [{}, {}]
         self.index_storage2 = [[], []]
         self.__root = root = []
@@ -802,17 +812,17 @@ class DiffBuilder(object):
                     op.key = v._on_undo_remove(op.path, op.key)
 
             self.remove(index)
-            if op.location != _path_join(path, key):
+            if op.location != self.path_join(path, key):
                 new_op = MoveOperation({
                     'op': 'move',
                     'from': op.location,
-                    'path': _path_join(path, key),
+                    'path': self.path_join(path, key),
                 }, pointer_cls=self.pointer_cls)
                 self.insert(new_op)
         else:
             new_op = AddOperation({
                 'op': 'add',
-                'path': _path_join(path, key),
+                'path': self.path_join(path, key),
                 'value': item,
             }, pointer_cls=self.pointer_cls)
             new_index = self.insert(new_op)
@@ -821,7 +831,7 @@ class DiffBuilder(object):
     def _item_removed(self, path, key, item):
         new_op = RemoveOperation({
             'op': 'remove',
-            'path': _path_join(path, key),
+            'path': self.path_join(path, key),
         }, pointer_cls=self.pointer_cls)
         index = self.take_index(item, _ST_ADD)
         new_index = self.insert(new_op)
@@ -854,7 +864,7 @@ class DiffBuilder(object):
     def _item_replaced(self, path, key, item):
         self.insert(ReplaceOperation({
             'op': 'replace',
-            'path': _path_join(path, key),
+            'path': self.path_join(path, key),
             'value': item,
         }, pointer_cls=self.pointer_cls))
 
@@ -885,11 +895,11 @@ class DiffBuilder(object):
 
                 elif isinstance(old, MutableMapping) and \
                     isinstance(new, MutableMapping):
-                    self._compare_dicts(_path_join(path, key), old, new)
+                    self._compare_dicts(self.path_join(path, key), old, new)
 
                 elif isinstance(old, MutableSequence) and \
                         isinstance(new, MutableSequence):
-                    self._compare_lists(_path_join(path, key), old, new)
+                    self._compare_lists(self.path_join(path, key), old, new)
 
                 else:
                     self._item_removed(path, key, old)
@@ -904,11 +914,11 @@ class DiffBuilder(object):
     def _compare_values(self, path, key, src, dst):
         if isinstance(src, MutableMapping) and \
                 isinstance(dst, MutableMapping):
-            self._compare_dicts(_path_join(path, key), src, dst)
+            self._compare_dicts(self.path_join(path, key), src, dst)
 
         elif isinstance(src, MutableSequence) and \
                 isinstance(dst, MutableSequence):
-            self._compare_lists(_path_join(path, key), src, dst)
+            self._compare_lists(self.path_join(path, key), src, dst)
 
         # To ensure we catch changes to JSON, we can't rely on a simple
         # src == dst, because it would not recognize the difference between
@@ -922,10 +932,3 @@ class DiffBuilder(object):
 
         else:
             self._item_replaced(path, key, dst)
-
-
-def _path_join(path, key):
-    if key is None:
-        return path
-
-    return path + '/' + str(key).replace('~', '~0').replace('/', '~1')
