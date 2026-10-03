@@ -488,7 +488,7 @@ class CopyOperation(PatchOperation):
 
         subobj, part = from_ptr.to_last(obj)
         try:
-            value = copy.deepcopy(subobj[part])
+            value = copy.deepcopy(subobj if part is None else subobj[part])
         except (KeyError, IndexError) as ex:
             raise JsonPatchConflict(str(ex))
 

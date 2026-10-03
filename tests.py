@@ -171,6 +171,40 @@ class ApplyPatchTestCase(unittest.TestCase):
         # check if that didn't modify the copied object
         self.assertEqual(res['boo'], [{'bar': 42}])
 
+    def test_copy_document_into_object(self):
+        for in_place in (False, True):
+            obj = {'foo': [1]}
+            res = jsonpatch.apply_patch(
+                obj, [{'op': 'copy', 'from': '', 'path': '/snapshot'}],
+                in_place=in_place)
+            self.assertEqual(res, {'foo': [1], 'snapshot': {'foo': [1]}})
+            self.assertEqual(res is obj, in_place)
+            res['foo'].append(2)
+            self.assertEqual(res['snapshot'], {'foo': [1]})
+            if not in_place:
+                self.assertEqual(obj, {'foo': [1]})
+
+    def test_copy_document_into_array(self):
+        for in_place in (False, True):
+            obj = [[1]]
+            res = jsonpatch.apply_patch(
+                obj, [{'op': 'copy', 'from': '', 'path': '/-'}],
+                in_place=in_place)
+            self.assertEqual(res, [[1], [[1]]])
+            self.assertEqual(res is obj, in_place)
+            res[0].append(2)
+            self.assertEqual(res[1], [[1]])
+            if not in_place:
+                self.assertEqual(obj, [[1]])
+
+    def test_copy_document_to_itself(self):
+        obj = {'foo': [1]}
+        res = jsonpatch.apply_patch(
+            obj, [{'op': 'copy', 'from': '', 'path': ''}], in_place=True)
+        self.assertEqual(res, obj)
+        res['foo'].append(2)
+        self.assertEqual(obj, {'foo': [1]})
+
 
     def test_test_success(self):
         obj =  {'baz': 'qux', 'foo': ['a', 2, 'c']}
