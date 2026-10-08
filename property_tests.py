@@ -362,11 +362,12 @@ class ApplyPatchProperties(unittest.TestCase):
 
     @unittest.expectedFailure
     @given(docs_with_patches())
-    # 'add' of the whole document crashes for array roots, #190
-    @example(case=([], [{'op': 'add', 'path': '', 'value': 0}]))
-    # 'copy' or 'move' from the whole document crashes for array roots
-    @example(case=([], [{'op': 'copy', 'from': '', 'path': '/-'}]))
+    # 'move' from the whole document crashes for array roots
     @example(case=([], [{'op': 'move', 'from': '', 'path': '/-'}]))
+    # 'copy' or 'move' from the '-' of an array crashes
+    @example(case=([0], [{'op': 'copy', 'from': '/-', 'path': '/0'}]))
+    # operations on the whole document crash if it is a scalar
+    @example(case=(None, [{'op': 'remove', 'path': ''}]))
     def test_raises_only_documented_exceptions(self, case):
         doc, patch = case
         try:
@@ -414,13 +415,12 @@ class OperationProperties(unittest.TestCase):
 
     @unittest.expectedFailure
     @given(whole_document_operations())
-    # crashes for array roots, #190
-    @example(case=([], {'op': 'add', 'path': '', 'value': 0}, 0))
+    # 'add' crashes if the document is a scalar, unlike 'replace'
+    @example(case=(None, {'op': 'add', 'path': '', 'value': 0}, 0))
     def test_whole_document_as_target(self, case):
         doc, operation, expected = case
         assert_json_equal(jsonpatch.apply_patch(doc, [operation]), expected)
 
-    @unittest.expectedFailure
     @given(st.one_of(st.lists(json_docs, max_size=3),
                      st.dictionaries(json_keys, json_docs, max_size=3)))
     @example(doc={})
@@ -492,7 +492,7 @@ class PatchOperationMachine(RuleBasedStateMachine):
     """ Applies valid operations one at a time to a document and compares
     each result with a direct implementation of RFC 6902.
 
-    Inputs covered by the expected failures in OperationProperties are left
+    Inputs covered by separate tests in OperationProperties are left
     out: the whole document as target or source of an operation, moving a
     location into its own children, replacing an object member '-', and
     testing values which are equal in Python but not in JSON. """
