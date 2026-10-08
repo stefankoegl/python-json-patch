@@ -135,12 +135,14 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
 
 def make_patch(src, dst, pointer_cls=JsonPointer):
     """Generates patch by comparing two document objects. Actually is
-    a proxy to :meth:`JsonPatch.from_diff` method.
+    a proxy to :meth:`JsonPatch.from_diff` method. The resulting patch
+    transforms `src` into `dst`, so it has to be applied to `src` (or to a
+    document equal to it).
 
     :param src: Data source document object.
     :type src: dict
 
-    :param dst: Data source document object.
+    :param dst: Data target document object.
     :type dst: dict
 
     :param pointer_cls: JSON pointer class to use.
@@ -568,12 +570,13 @@ class JsonPatch(object):
     ):
         """Creates JsonPatch instance based on comparison of two document
         objects. Json patch would be created for `src` argument against `dst`
-        one.
+        one. The resulting patch transforms `src` into `dst`, so it has to be
+        applied to `src` (or to a document equal to it).
 
         :param src: Data source document object.
         :type src: dict
 
-        :param dst: Data source document object.
+        :param dst: Data target document object.
         :type dst: dict
 
         :param dumps: A function of one argument that produces a serialized

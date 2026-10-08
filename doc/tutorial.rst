@@ -42,16 +42,30 @@ Another way is to *diff* two objects.
 Applying a Patch
 ----------------
 
-A patch is always applied to an object.
+A patch is always applied to an object. The patch created by diffing ``src``
+and ``dst`` above turns ``src`` into ``dst``:
 
 .. code-block:: python
 
-    >>> doc = {}
-    >>> result = patch.apply(doc)
-    {'foo': 'bar', 'baz': [42]}
+    >>> result = patch.apply(src)
+    >>> result == dst
+    True
 
 The ``apply`` method returns a new object as a result. If ``in_place=True`` the
 object is modified in place.
+
+The operations of a patch refer to locations in the object it is applied to.
+A patch created with ``make_patch(src, dst)`` or ``JsonPatch.from_diff(src,
+dst)`` must therefore be applied to ``src`` (or to an object equal to it).
+Applying it to any other object, such as ``dst``, usually fails with a
+``JsonPatchConflict``, because the locations it refers to don't exist there:
+
+.. code-block:: python
+
+    >>> patch.apply(dst)
+    Traceback (most recent call last):
+      ...
+    jsonpatch.JsonPatchConflict: can't remove a non-existent object 'foo'
 
 If a patch is only used once, it is not necessary to create a patch object
 explicitly.
