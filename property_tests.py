@@ -326,9 +326,6 @@ class MakePatchProperties(unittest.TestCase):
         outcome(jsonpatch.make_patch, *docs)
         assert_json_equal(list(docs), list(saved))
 
-    # operations hold references to parts of dst which are inserted into the
-    # result, so modifying the result modifies dst, #137
-    @unittest.expectedFailure
     @given(safe_doc_pairs)
     @example(docs=({}, {'a': []}))
     def test_result_shares_nothing_with_dst(self, docs):
@@ -348,9 +345,6 @@ class ApplyPatchProperties(unittest.TestCase):
         outcome(jsonpatch.apply_patch, doc, patch)
         assert_json_equal(doc, saved)
 
-    # an operation inserts its value by reference, so later operations
-    # modify the patch, and applying it again gives a different result, #137
-    @unittest.expectedFailure
     @given(docs_with_patches())
     @example(case=({}, [{'op': 'add', 'path': '/a', 'value': []},
                         {'op': 'add', 'path': '/a/-', 'value': 1}]))
@@ -588,9 +582,8 @@ class PatchOperationMachine(RuleBasedStateMachine):
 
     @invariant()
     def patch_gives_same_result(self):
-        # copied, as applying a patch can modify it, #137
-        patch = copy.deepcopy(self.patch)
-        assert_json_equal(jsonpatch.apply_patch(self.initial, patch), self.doc)
+        assert_json_equal(jsonpatch.apply_patch(self.initial, self.patch),
+                          self.doc)
 
 
 PatchOperationTests = PatchOperationMachine.TestCase

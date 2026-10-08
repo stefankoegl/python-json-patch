@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import copy
 import json
 import decimal
 import doctest
@@ -141,6 +142,42 @@ class ApplyPatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(obj, [{'op': 'replace', 'path': '/foo/1',
                                            'value': 'boo'}])
         self.assertEqual(res['foo'], ['bar', 'boo', 'baz'])
+
+    def test_apply_does_not_modify_patch(self):
+        # applying a patch must not change it, so it can be applied again
+        patch_obj = [
+            {'op': 'add', 'path': '/foo', 'value': 'bar'},
+            {'op': 'add', 'path': '/baz', 'value': [1, 2, 3]},
+            {'op': 'remove', 'path': '/baz/1'},
+            {'op': 'test', 'path': '/baz', 'value': [1, 3]},
+            {'op': 'replace', 'path': '/baz/0', 'value': 42},
+            {'op': 'remove', 'path': '/baz/1'},
+        ]
+        expected_patch = copy.deepcopy(patch_obj)
+        patch = jsonpatch.JsonPatch(patch_obj)
+        self.assertEqual(patch.apply({}), {'foo': 'bar', 'baz': [42]})
+        self.assertEqual(patch.patch, expected_patch)
+        self.assertEqual(patch.apply({}), {'foo': 'bar', 'baz': [42]})
+
+    def test_apply_in_place_does_not_modify_patch(self):
+        patch_obj = [
+            {'op': 'add', 'path': '/foo', 'value': {'bar': [1]}},
+            {'op': 'replace', 'path': '/baz', 'value': [2]},
+        ]
+        expected_patch = copy.deepcopy(patch_obj)
+        patch = jsonpatch.JsonPatch(patch_obj)
+        doc = {'baz': None}
+        patch.apply(doc, in_place=True)
+        doc['foo']['bar'].append(3)
+        doc['baz'].append(4)
+        self.assertEqual(patch.patch, expected_patch)
+
+    def test_replace_whole_document_does_not_share_value(self):
+        for op in ('add', 'replace'):
+            value = {'foo': [1]}
+            res = jsonpatch.apply_patch({}, [{'op': op, 'path': '', 'value': value}])
+            res['foo'].append(2)
+            self.assertEqual(value, {'foo': [1]})
 
     def test_move_object_keyerror(self):
         obj = {'foo': {'bar': 'baz'},
