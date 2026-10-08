@@ -603,6 +603,12 @@ class MakePatchTestCase(unittest.TestCase):
         result = jsonpatch.apply_patch(old, patch)
         self.assertEqual(result, new)
 
+        operation = jsonpatch.RemoveOperation({
+            'op': 'remove', 'path': '/~1/0/x/1/y/0',
+        })
+        operation._on_undo_add(['/', '0', 'x'], 0)
+        self.assertEqual(operation.location, '/~1/0/x/0/y/0')
+
 
     def test_issue_124(self):
         """Similar to issue 138, but for different operations."""
