@@ -221,7 +221,7 @@ class RemoveOperation(PatchOperation):
     """Removes an object property or an array element."""
 
     def apply(self, obj):
-        subobj, part = self.pointer.to_last(obj)
+        subobj, part = _to_last(self.pointer, obj)
 
         if isinstance(subobj, Sequence) and not isinstance(part, int):
             raise JsonPointerException("invalid array index '{0}'".format(part))
@@ -245,7 +245,7 @@ class AddOperation(PatchOperation):
             raise InvalidJsonPatch(
                 "The operation does not contain a 'value' member")
 
-        subobj, part = self.pointer.to_last(obj)
+        subobj, part = _to_last(self.pointer, obj)
 
         if isinstance(subobj, MutableSequence):
             if part is None:
@@ -284,7 +284,7 @@ class ReplaceOperation(PatchOperation):
             raise InvalidJsonPatch(
                 "The operation does not contain a 'value' member")
 
-        subobj, part = self.pointer.to_last(obj)
+        subobj, part = _to_last(self.pointer, obj)
 
         if part is None:
             return value
@@ -323,7 +323,7 @@ class MoveOperation(PatchOperation):
             raise InvalidJsonPatch(
                 "The operation does not contain a 'from' member")
 
-        subobj, part = from_ptr.to_last(obj)
+        subobj, part = _to_last(from_ptr, obj)
         try:
             value = subobj[part]
         except (KeyError, IndexError) as ex:
@@ -381,7 +381,7 @@ class TestOperation(PatchOperation):
 
     def apply(self, obj):
         try:
-            subobj, part = self.pointer.to_last(obj)
+            subobj, part = _to_last(self.pointer, obj)
             if part is None:
                 val = subobj
             else:
@@ -413,7 +413,7 @@ class CopyOperation(PatchOperation):
             raise InvalidJsonPatch(
                 "The operation does not contain a 'from' member")
 
-        subobj, part = from_ptr.to_last(obj)
+        subobj, part = _to_last(from_ptr, obj)
         try:
             value = copy.deepcopy(subobj if part is None else subobj[part])
         except (KeyError, IndexError) as ex:
@@ -805,10 +805,9 @@ class DiffBuilder(object):
         })
 
     def _compare_dicts(self, path, src, dst):
-        src_keys = set(src.keys())
-        dst_keys = set(dst.keys())
-        added_keys = dst_keys - src_keys
-        removed_keys = src_keys - dst_keys
+        added_keys = [key for key in dst if key not in src]
+        removed_keys = [key for key in src if key not in dst]
+        intersection = [key for key in src if key in dst]
 
         for key in removed_keys:
             self._item_removed(path, str(key), src[key])
@@ -816,7 +815,7 @@ class DiffBuilder(object):
         for key in added_keys:
             self._item_added(path, str(key), dst[key])
 
-        for key in src_keys & dst_keys:
+        for key in intersection:
             self._compare_values(path, str(key), src[key], dst[key])
 
     def _compare_lists(self, path, src, dst):
@@ -826,16 +825,19 @@ class DiffBuilder(object):
         for key in range(max_len):
             if key < min_len:
                 old, new = src[key], dst[key]
-                if old == new:
-                    continue
-
-                elif isinstance(old, MutableMapping) and \
-                    isinstance(new, MutableMapping):
+                if isinstance(old, MutableMapping) and \
+                        isinstance(new, MutableMapping):
                     self._compare_dicts(_path_join(path, key), old, new)
 
                 elif isinstance(old, MutableSequence) and \
                         isinstance(new, MutableSequence):
                     self._compare_lists(_path_join(path, key), old, new)
+
+                # To ensure we catch changes to JSON, we can't rely on a
+                # simple old == new, because it would not recognize the
+                # difference between 1 and True, among other things.
+                elif self.dumps(old) == self.dumps(new):
+                    continue
 
                 else:
                     self._item_removed(path, key, old)
@@ -938,3 +940,19 @@ def _item_after(location, parts, inserted):
         return _shift(location, depth, -1)
 
     return location
+
+
+def _to_last(pointer, doc):
+    """Resolve pointer like JsonPointer.to_last, without indexing into strings.
+
+    RFC 6901 only allows reference tokens to be applied to objects and arrays,
+    but older versions of jsonpointer treat strings as sequences.
+    """
+    subobj, part = pointer.to_last(doc)
+
+    if part is not None and isinstance(subobj, str):
+        raise JsonPointerException(
+            "Cannot apply token '{0}' to non-container type {1}".format(
+                part, type(subobj)))
+
+    return subobj, part

@@ -572,6 +572,16 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(res, dst)
         self.assertIsInstance(res['A'], float)
 
+    def test_issue180(self):
+        """In JSON 1 is different from True in list items even though in python 1 == True"""
+        src = {'aaa': [1, 1, 1]}
+        dst = {'aaa': [1, True, True]}
+        patch = jsonpatch.make_patch(src, dst)
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(res, dst)
+        self.assertIsInstance(res['aaa'][1], bool)
+        self.assertIsInstance(res['aaa'][2], bool)
+
     def test_issue119(self):
         """Make sure it avoids casting numeric str dict key to int"""
         src = [
@@ -937,6 +947,58 @@ class ConflictTests(unittest.TestCase):
         self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
 
 
+class StringIndexingTests(unittest.TestCase):
+    """ RFC 6901 pointers must not index into strings (#178) """
+
+    def setUp(self):
+        self.src = {"foo": "should-not-be-indexable"}
+
+    def test_test(self):
+        patch_obj = [ { "op": "test", "path": "/foo/0", "value": "s" } ]
+        self.assertRaises(jsonpatch.JsonPatchTestFailed, jsonpatch.apply_patch, self.src, patch_obj)
+
+    def test_test_nested(self):
+        patch_obj = [ { "op": "test", "path": "/foo/0/0", "value": "s" } ]
+        self.assertRaises(jsonpatch.JsonPatchTestFailed, jsonpatch.apply_patch, self.src, patch_obj)
+
+    def test_copy(self):
+        patch_obj = [ { "op": "copy", "from": "/foo/0", "path": "/bar" } ]
+        self.assertRaises(jsonpointer.JsonPointerException, jsonpatch.apply_patch, self.src, patch_obj)
+
+    def test_move(self):
+        patch_obj = [ { "op": "move", "from": "/foo/0", "path": "/bar" } ]
+        self.assertRaises(jsonpointer.JsonPointerException, jsonpatch.apply_patch, self.src, patch_obj)
+
+    def test_remove(self):
+        patch_obj = [ { "op": "remove", "path": "/foo/0" } ]
+        self.assertRaises(jsonpointer.JsonPointerException, jsonpatch.apply_patch, self.src, patch_obj)
+
+    def test_add(self):
+        patch_obj = [ { "op": "add", "path": "/foo/0", "value": "x" } ]
+        self.assertRaises(jsonpointer.JsonPointerException, jsonpatch.apply_patch, self.src, patch_obj)
+
+    def test_replace(self):
+        patch_obj = [ { "op": "replace", "path": "/foo/0", "value": "x" } ]
+        self.assertRaises(jsonpointer.JsonPointerException, jsonpatch.apply_patch, self.src, patch_obj)
+
+    def test_root_string(self):
+        patch_obj = [ { "op": "test", "path": "/0", "value": "a" } ]
+        self.assertRaises(jsonpatch.JsonPatchTestFailed, jsonpatch.apply_patch, "abc", patch_obj)
+
+    def test_whole_string_value(self):
+        patch_obj = [
+            { "op": "test", "path": "/foo", "value": "should-not-be-indexable" },
+            { "op": "copy", "from": "/foo", "path": "/bar" },
+        ]
+        res = jsonpatch.apply_patch(self.src, patch_obj)
+        self.assertEqual(res, {"foo": "should-not-be-indexable",
+                               "bar": "should-not-be-indexable"})
+
+    def test_root_string_whole_document(self):
+        patch_obj = [ { "op": "test", "path": "", "value": "abc" } ]
+        self.assertEqual(jsonpatch.apply_patch("abc", patch_obj), "abc")
+
+
 class JsonPointerTests(unittest.TestCase):
 
     def test_create_with_pointer(self):
@@ -1201,6 +1263,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ListTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(InvalidInputTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ConflictTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(StringIndexingTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(OptimizationTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(JsonPointerTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(JsonPatchCreationTest))
