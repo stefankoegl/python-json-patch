@@ -481,9 +481,7 @@ class MakePatchTestCase(unittest.TestCase):
                    }
         self.assertEqual(expected, res)
 
-    # TODO: this test is currently disabled, as the optimized patch is
-    # not ideal
-    def _test_should_just_add_new_item_not_rebuild_all_list(self):
+    def test_should_just_add_new_item_not_rebuild_all_list(self):
         src = {'foo': [1, 2, 3]}
         dst = {'foo': [3, 1, 2, 3]}
         patch = list(jsonpatch.make_patch(src, dst))
@@ -901,6 +899,58 @@ class OptimizationTests(unittest.TestCase):
         ]
 
         self.assertEqual(patch.patch, exp)
+
+    def test_insert_into_list_of_objects(self):
+        """ Inserting an object does not change the ones after it, see #83 """
+        src = {'items': [{'id': 1, 'name': 'a'}, {'id': 2, 'name': 'b'}]}
+        dst = {'items': [{'id': 0, 'name': 'z'}, {'id': 1, 'name': 'a'},
+                         {'id': 2, 'name': 'b'}]}
+        patch = jsonpatch.make_patch(src, dst)
+        exp = [{'op': 'add', 'path': '/items/0',
+                'value': {'id': 0, 'name': 'z'}}]
+        self.assertEqual(patch.patch, exp)
+        self.assertEqual(patch.apply(src), dst)
+
+    def test_remove_from_list_of_objects(self):
+        src = [{'id': 1}, {'id': 2}, {'id': 3}, {'id': 4}]
+        dst = [{'id': 1}, {'id': 3}]
+        patch = jsonpatch.make_patch(src, dst)
+        exp = [{'op': 'remove', 'path': '/1'}, {'op': 'remove', 'path': '/2'}]
+        self.assertEqual(patch.patch, exp)
+        self.assertEqual(patch.apply(src), dst)
+
+    def test_insert_and_remove_in_list(self):
+        src = ['a', 'b', 'c', 'd', 'e']
+        dst = ['x', 'a', 'b', 'd', 'e']
+        patch = jsonpatch.make_patch(src, dst)
+        exp = [{'op': 'add', 'path': '/0', 'value': 'x'},
+               {'op': 'remove', 'path': '/3'}]
+        self.assertEqual(patch.patch, exp)
+        self.assertEqual(patch.apply(src), dst)
+
+    def test_insert_into_long_list_of_repeated_values(self):
+        src = [i % 2 == 0 for i in range(500)]
+        dst = [False] + src
+        patch = jsonpatch.make_patch(src, dst)
+        exp = [{'op': 'add', 'path': '/0', 'value': False}]
+        self.assertEqual(patch.patch, exp)
+        self.assertEqual(patch.apply(src), dst)
+
+    def test_list_items_are_compared_by_index_if_aligning_is_worse(self):
+        # aligning on the 1 would move all the 0s
+        src = [0] * 300 + [1]
+        dst = [1] + [0] * 300
+        patch = jsonpatch.make_patch(src, dst)
+        self.assertLessEqual(len(patch.patch), 2)
+        self.assertEqual(patch.apply(src), dst)
+
+    def test_list_alignment_ignores_key_order(self):
+        src = [{'a': 1, 'b': 2}]
+        dst = [0, {'b': 2, 'a': 1}]
+        patch = jsonpatch.make_patch(src, dst)
+        exp = [{'op': 'add', 'path': '/0', 'value': 0}]
+        self.assertEqual(patch.patch, exp)
+        self.assertEqual(patch.apply(src), dst)
 
 
 class ListTests(unittest.TestCase):

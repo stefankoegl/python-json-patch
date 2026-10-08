@@ -34,6 +34,7 @@
 
 import collections
 import copy
+import difflib
 import functools
 import json
 from collections.abc import MutableMapping, MutableSequence, Sequence
@@ -826,36 +827,57 @@ class DiffBuilder(object):
         for key in intersection:
             self._compare_values(path, str(key), src[key], dst[key])
 
+    def _item_key(self, item):
+        """ A hashable key of item, which is the same for items between which
+        the diff finds no changes """
+        if isinstance(item, MutableMapping):
+            return frozenset((str(key), self._item_key(value))
+                             for key, value in item.items())
+
+        if isinstance(item, MutableSequence):
+            return tuple(self._item_key(value) for value in item)
+
+        return self.dumps(item)
+
     def _compare_lists(self, path, src, dst):
-        len_src, len_dst = len(src), len(dst)
-        max_len = max(len_src, len_dst)
-        min_len = min(len_src, len_dst)
-        for key in range(max_len):
-            if key < min_len:
-                old, new = src[key], dst[key]
-                if isinstance(old, MutableMapping) and \
-                        isinstance(new, MutableMapping):
-                    self._compare_dicts(_path_join(path, key), old, new)
+        # Items are aligned first, so that inserting or removing one does not
+        # make all items after it look changed
+        ids = {}
+        src_ids = [ids.setdefault(self._item_key(item), len(ids))
+                   for item in src]
+        dst_ids = [ids.setdefault(self._item_key(item), len(ids))
+                   for item in dst]
 
-                elif isinstance(old, MutableSequence) and \
-                        isinstance(new, MutableSequence):
-                    self._compare_lists(_path_join(path, key), old, new)
+        for i1, i2, j1, j2 in _changed_blocks(src_ids, dst_ids):
+            # src[:i1] has been changed to dst[:j1] already, so src[i1] is
+            # at index j1 now
+            common = min(i2 - i1, j2 - j1)
+            for offset in range(common):
+                if src_ids[i1 + offset] != dst_ids[j1 + offset]:
+                    self._compare_items(path, j1 + offset, src[i1 + offset],
+                                        dst[j1 + offset])
 
-                # To ensure we catch changes to JSON, we can't rely on a
-                # simple old == new, because it would not recognize the
-                # difference between 1 and True, among other things.
-                elif self.dumps(old) == self.dumps(new):
-                    continue
+            for item in src[i1 + common:i2]:
+                self._item_removed(path, j1 + common, item)
 
-                else:
-                    self._item_removed(path, key, old)
-                    self._item_added(path, key, new)
-
-            elif len_src > len_dst:
-                self._item_removed(path, len_dst, src[key])
-
-            else:
+            for key in range(j1 + common, j2):
                 self._item_added(path, key, dst[key])
+
+    def _compare_items(self, path, key, old, new):
+        if isinstance(old, MutableMapping) and \
+                isinstance(new, MutableMapping):
+            self._compare_dicts(_path_join(path, key), old, new)
+
+        elif isinstance(old, MutableSequence) and \
+                isinstance(new, MutableSequence):
+            self._compare_lists(_path_join(path, key), old, new)
+
+        # To ensure we catch changes to JSON, we can't rely on a simple
+        # old == new, because it would not recognize the difference between
+        # 1 and True, among other things.
+        elif self.dumps(old) != self.dumps(new):
+            self._item_removed(path, key, old)
+            self._item_added(path, key, new)
 
     def _compare_values(self, path, key, src, dst):
         if isinstance(src, MutableMapping) and \
@@ -948,6 +970,52 @@ def _item_after(location, parts, inserted):
         return _shift(location, depth, -1)
 
     return location
+
+
+def _changed_blocks(src, dst):
+    """ Aligns the sequences src and dst, and returns the blocks
+    (i1, i2, j1, j2) in which src[i1:i2] has to change into dst[j1:j2] """
+    min_len = min(len(src), len(dst))
+    start = 0
+    while start < min_len and src[start] == dst[start]:
+        start += 1
+
+    end = 0
+    while end < min_len - start and src[-1 - end] == dst[-1 - end]:
+        end += 1
+
+    src_end, dst_end = len(src) - end, len(dst) - end
+    # comparing the items at the same index
+    positional = [(start, src_end, start, dst_end)]
+    if start in (src_end, dst_end):
+        # items are only inserted or only removed
+        return positional
+
+    matcher = difflib.SequenceMatcher(None, src[start:src_end],
+                                      dst[start:dst_end])
+    aligned = [(start + i1, start + i2, start + j1, start + j2)
+               for tag, i1, i2, j1, j2 in matcher.get_opcodes()
+               if tag != 'equal']
+
+    # SequenceMatcher ignores items that occur often in long sequences, so
+    # its alignment can change more items than comparing them by index
+    if _changed_items(src, dst, aligned) < \
+            _changed_items(src, dst, positional):
+        return aligned
+
+    return positional
+
+
+def _changed_items(src, dst, blocks):
+    """ How many items are inserted, removed or replaced in blocks """
+    count = 0
+    for i1, i2, j1, j2 in blocks:
+        common = min(i2 - i1, j2 - j1)
+        count += max(i2 - i1, j2 - j1) - common
+        count += sum(src[i1 + offset] != dst[j1 + offset]
+                     for offset in range(common))
+
+    return count
 
 
 def _to_last(pointer, doc):
