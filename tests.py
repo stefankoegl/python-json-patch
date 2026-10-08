@@ -101,7 +101,40 @@ class ApplyPatchTestCase(unittest.TestCase):
         obj = {'foo': 'bar'}
         new_obj = {'baz': 'qux'}
         res = jsonpatch.apply_patch(obj, [{'op': 'add', 'path': '', 'value': new_obj}])
-        self.assertTrue(res, new_obj)
+        # assertTrue(res, new_obj) passed a dict as the failure message, so this
+        # asserted nothing; it is the object-root counterpart of the array-root
+        # test below, so it needs to actually compare.
+        self.assertEqual(res, new_obj)
+
+    def test_add_replace_whole_document_list_root(self):
+        # a whole document pointer resolves to part None, which has to replace
+        # the document no matter whether the root is an object or an array
+        obj = ['foo', 'bar']
+        new_obj = {'baz': 'qux'}
+        res = jsonpatch.apply_patch(obj, [{'op': 'add', 'path': '', 'value': new_obj}])
+        self.assertEqual(res, new_obj)
+
+    def test_move_whole_document_list_root(self):
+        # move and copy reuse AddOperation, so they need the same treatment
+        obj = ['foo', 'bar']
+        res = jsonpatch.apply_patch(obj, [{'op': 'move', 'from': '/0', 'path': ''}])
+        self.assertEqual(res, 'foo')
+
+    def test_copy_whole_document_list_root(self):
+        obj = ['foo', 'bar']
+        res = jsonpatch.apply_patch(obj, [{'op': 'copy', 'from': '/1', 'path': ''}])
+        self.assertEqual(res, 'bar')
+
+    def test_add_whole_document_list_root_raises_no_bare_typeerror(self):
+        # a bare TypeError is not part of the documented exception hierarchy, so
+        # callers cannot catch it; the sequence branch must not fall through to it
+        obj = ['foo', 'bar']
+        try:
+            jsonpatch.apply_patch(obj, [{'op': 'add', 'path': '', 'value': 'R'}])
+        except jsonpatch.JsonPatchException:
+            self.fail("root add on an array root should succeed, not raise")
+        except TypeError:
+            self.fail("root add on an array root raised a bare TypeError")
 
     def test_replace_array_item(self):
         obj = {'foo': ['bar', 'qux', 'baz']}

@@ -258,7 +258,10 @@ class AddOperation(PatchOperation):
         subobj, part = self.pointer.to_last(obj)
 
         if isinstance(subobj, MutableSequence):
-            if part == '-':
+            if part is None:
+                return value  # we're replacing the root
+
+            elif part == '-':
                 subobj.append(value)  # pylint: disable=E1103
 
             elif part > len(subobj) or part < 0:
