@@ -639,8 +639,8 @@ class MakePatchTestCase(unittest.TestCase):
 
     def test_issue_138(self):
         """
-        The _on_undo methods should update its operation's path if it is
-        affected by the removal of a prior operation.
+        Operations between a removal and the move that replaces it should be
+        adjusted to the removal happening later.
         """
         old = [
             {"x": ["a", {"y": ["b"]}], "z": "a"},
@@ -717,6 +717,14 @@ class MakePatchTestCase(unittest.TestCase):
         for old, new in cases:
             with self.subTest(old=old, new=new):
                 self.assertMakesPatch(old, new)
+
+    def test_issue160(self):
+        """A value moved from an array into an object is taken from where it
+        is after the operations before the move, whatever the key order."""
+        old = {'a': [{'id': [1]}, {'id': [2]}], 'b': [{'id': 5}]}
+        new = {'a': [{'id': []}, {'id': [1]}], 'b': [{'id': 5, 'newKey': 2}]}
+        self.assertMakesPatch(old, new)
+        self.assertMakesPatch(dict(reversed(old.items())), new)
 
     def test_move_with_numeric_object_keys(self):
         """Object keys that look like array indices are not shifted."""
