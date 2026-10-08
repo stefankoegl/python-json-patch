@@ -11,6 +11,7 @@ help:
 
 test:
 	python -Wd -m coverage run --branch --source=jsonpatch tests.py
+	python -Wd property_tests.py
 	coverage report --show-missing
 
 coverage:

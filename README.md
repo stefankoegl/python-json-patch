@@ -26,3 +26,14 @@ Running external tests
 To run external tests (such as those from https://github.com/json-patch/json-patch-tests) use ext_test.py
 
     ./ext_tests.py ../json-patch-tests/tests.json
+
+Running property-based tests
+----------------------------
+Property-based tests using [Hypothesis](https://hypothesis.readthedocs.io/)
+are in property_tests.py. Properties that the implementation does not satisfy
+yet are marked as expected failures.
+
+    pip install hypothesis
+    python property_tests.py
+
+Set `HYPOTHESIS_PROFILE=thorough` to run many more examples.
