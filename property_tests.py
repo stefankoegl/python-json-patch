@@ -288,8 +288,6 @@ class MakePatchProperties(unittest.TestCase):
 
     @unittest.expectedFailure
     @given(doc_pairs)
-    # move detection considers e.g. [1] and [true] equal, #180
-    @example(docs=({'a': [1]}, {'b': [True]}))
     # replace of the object member '-' is rejected
     @example(docs=({'-': 0}, {'-': 1}))
     def test_roundtrip(self, docs):

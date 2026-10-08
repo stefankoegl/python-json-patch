@@ -650,37 +650,28 @@ class DiffBuilder(object):
         self.dumps = dumps
         self.pointer_cls = pointer_cls
         self.index_storage = [{}, {}]
-        self.index_storage2 = [[], []]
         self.__root = root = []
         self.src_doc = src_doc
         self.dst_doc = dst_doc
         root[:] = [root, root, None]
 
-    def store_index(self, value, index, st):
-        typed_key = (value, type(value))
+    def index_key(self, value):
+        """ A key that two values share exactly when comparing them finds no
+        changes, so that a value is only moved to where it is the same. It is
+        None for values that cannot be serialized, which are not moved. """
         try:
-            storage = self.index_storage[st]
-            stored = storage.get(typed_key)
-            if stored is None:
-                storage[typed_key] = [index]
-            else:
-                storage[typed_key].append(index)
+            return _serialized_key(value, self.dumps)
+        except (TypeError, ValueError):
+            return None
 
-        except TypeError:
-            self.index_storage2[st].append((typed_key, index))
+    def store_index(self, key, index, st):
+        if key is not None:
+            self.index_storage[st].setdefault(key, []).append(index)
 
-    def take_index(self, value, st):
-        typed_key = (value, type(value))
-        try:
-            stored = self.index_storage[st].get(typed_key)
-            if stored:
-                return stored.pop()
-
-        except TypeError:
-            storage = self.index_storage2[st]
-            for i in range(len(storage)-1, -1, -1):
-                if storage[i][0] == typed_key:
-                    return storage.pop(i)[1]
+    def take_index(self, key, st):
+        stored = self.index_storage[st].get(key)
+        if stored:
+            return stored.pop()
 
     def insert(self, op):
         root = self.__root
@@ -769,7 +760,8 @@ class DiffBuilder(object):
 
     def _item_added(self, path, key, item):
         target = _path_join(path, key)
-        index = self.take_index(item, _ST_REMOVE)
+        index_key = self.index_key(item)
+        index = self.take_index(index_key, _ST_REMOVE)
         if index is not None:
             changes, source = self._adjust_following(index, removed=True)
             # RFC 6902 does not allow moving a value into its own children
@@ -783,11 +775,12 @@ class DiffBuilder(object):
                 return
 
         new_index = self.insert({'op': 'add', 'path': target, 'value': item})
-        self.store_index(item, new_index, _ST_ADD)
+        self.store_index(index_key, new_index, _ST_ADD)
 
     def _item_removed(self, path, key, item):
         source = _path_join(path, key)
-        index = self.take_index(item, _ST_ADD)
+        index_key = self.index_key(item)
+        index = self.take_index(index_key, _ST_ADD)
         if index is not None:
             changes, added = self._adjust_following(index, removed=False)
             moved_from = _without_item(source, added)
@@ -803,7 +796,7 @@ class DiffBuilder(object):
                 return
 
         new_index = self.insert({'op': 'remove', 'path': source})
-        self.store_index(item, new_index, _ST_REMOVE)
+        self.store_index(index_key, new_index, _ST_REMOVE)
 
     def _item_replaced(self, path, key, item):
         self.insert({
@@ -878,6 +871,21 @@ class DiffBuilder(object):
 
         else:
             self._item_replaced(path, key, dst)
+
+
+def _serialized_key(value, dumps):
+    """ Python considers e.g. 1 and True equal, so values themselves cannot
+    be the keys that find moved values (#180). Like _compare_values, the key
+    uses serialized values, but objects and arrays are compared member by
+    member there, so the order of object members does not matter here. """
+    if isinstance(value, MutableMapping):
+        return frozenset((key, _serialized_key(item, dumps))
+                         for key, item in value.items())
+
+    if isinstance(value, MutableSequence):
+        return tuple(_serialized_key(item, dumps) for item in value)
+
+    return dumps(value)
 
 
 # The DiffBuilder keeps locations as tuples of object keys (str) and array
