@@ -50,7 +50,7 @@ _ST_REMOVE = 1
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
 __version__ = '1.33'
 __website__ = 'https://github.com/stefankoegl/python-json-patch'
-__license__ = 'Modified BSD License'
+__license__ = 'BSD-3-Clause'
 
 
 class JsonPatchException(Exception):
