@@ -216,12 +216,6 @@ class PatchOperation(object):
         self.location = self.pointer.path
         self.operation['path'] = self.location
 
-    def _increment_part(self, index):
-        self.set_part(index, self.get_part(index) + 1)
-
-    def _decrement_part(self, index):
-        self.set_part(index, self.get_part(index) - 1)
-
 
 class RemoveOperation(PatchOperation):
     """Removes an object property or an array element."""
@@ -239,24 +233,6 @@ class RemoveOperation(PatchOperation):
             raise JsonPatchConflict(msg)
 
         return obj
-
-    def _on_undo_remove(self, sub_parts, key):
-        if _is_prefix(sub_parts, self.pointer.parts):
-            affected_index = len(sub_parts)
-            if self.get_part(affected_index) >= key:
-                self._increment_part(affected_index)
-            else:
-                key -= 1
-        return key
-
-    def _on_undo_add(self, sub_parts, key):
-        if _is_prefix(sub_parts, self.pointer.parts):
-            affected_index = len(sub_parts)
-            if self.get_part(affected_index) > key:
-                self._decrement_part(affected_index)
-            else:
-                key -= 1
-        return key
 
 
 class AddOperation(PatchOperation):
@@ -302,24 +278,6 @@ class AddOperation(PatchOperation):
                 raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part))
         return obj
 
-    def _on_undo_remove(self, sub_parts, key):
-        if _is_prefix(sub_parts, self.pointer.parts):
-            affected_index = len(sub_parts)
-            if self.get_part(affected_index) > key:
-                self._increment_part(affected_index)
-            else:
-                key += 1
-        return key
-
-    def _on_undo_add(self, sub_parts, key):
-        if _is_prefix(sub_parts, self.pointer.parts):
-            affected_index = len(sub_parts)
-            if self.get_part(affected_index) > key:
-                self._decrement_part(affected_index)
-            else:
-                key += 1
-        return key
-
 
 class ReplaceOperation(PatchOperation):
     """Replaces an object property or an array element by a new value."""
@@ -358,12 +316,6 @@ class ReplaceOperation(PatchOperation):
 
         subobj[part] = value
         return obj
-
-    def _on_undo_remove(self, sub_parts, key):
-        return key
-
-    def _on_undo_add(self, sub_parts, key):
-        return key
 
 
 class MoveOperation(PatchOperation):
@@ -430,44 +382,6 @@ class MoveOperation(PatchOperation):
         from_ptr = self.pointer_cls(self.operation['from'])
         from_ptr.parts[index] = str(value)
         self.operation['from'] = from_ptr.path
-
-    def _increment_from_part(self, index):
-        self.set_from_part(index, self.get_from_part(index) + 1)
-
-    def _decrement_from_part(self, index):
-        self.set_from_part(index, self.get_from_part(index) - 1)
-
-    def _on_undo_remove(self, sub_parts, key):
-        from_ptr = self.pointer_cls(self.operation['from'])
-        if _is_prefix(sub_parts, from_ptr.parts):
-            affected_index = len(sub_parts)
-            if self.get_from_part(affected_index) >= key:
-                self._increment_from_part(affected_index)
-            else:
-                key -= 1
-        if _is_prefix(sub_parts, self.pointer.parts):
-            affected_index = len(sub_parts)
-            if self.get_part(affected_index) > key:
-                self._increment_part(affected_index)
-            else:
-                key += 1
-        return key
-
-    def _on_undo_add(self, sub_parts, key):
-        from_ptr = self.pointer_cls(self.operation['from'])
-        if _is_prefix(sub_parts, from_ptr.parts):
-            affected_index = len(sub_parts)
-            if self.get_from_part(affected_index) > key:
-                self._decrement_from_part(affected_index)
-            else:
-                key -= 1
-        if _is_prefix(sub_parts, self.pointer.parts):
-            affected_index = len(sub_parts)
-            if self.get_part(affected_index) > key:
-                self._decrement_part(affected_index)
-            else:
-                key += 1
-        return key
 
 
 class TestOperation(PatchOperation):
@@ -680,7 +594,7 @@ class JsonPatch(object):
         """
         json_dumper = dumps or cls.json_dumper
         builder = DiffBuilder(src, dst, json_dumper, pointer_cls=pointer_cls)
-        builder._compare_values('', None, src, dst)
+        builder._compare_values((), None, src, dst)
         ops = list(builder.execute())
         return cls(ops, pointer_cls=pointer_cls)
 
@@ -800,81 +714,103 @@ class DiffBuilder(object):
         while curr is not root:
             if curr[1] is not root:
                 op_first, op_second = curr[2], curr[1][2]
-                if op_first.location == op_second.location and \
-                        type(op_first) == RemoveOperation and \
-                        type(op_second) == AddOperation:
-                    yield ReplaceOperation({
+                if op_first['path'] == op_second['path'] and \
+                        op_first['op'] == 'remove' and \
+                        op_second['op'] == 'add':
+                    yield {
                         'op': 'replace',
-                        'path': op_second.location,
-                        'value': op_second.operation['value'],
-                    }, pointer_cls=self.pointer_cls).operation
+                        'path': _to_pointer(op_second['path']),
+                        'value': op_second['value'],
+                    }
                     curr = curr[1][1]
                     continue
 
-            yield curr[2].operation
+            operation = dict(curr[2])
+            for member in ('from', 'path'):
+                if member in operation:
+                    operation[member] = _to_pointer(operation[member])
+            yield operation
             curr = curr[1]
 
+    def _adjust_following(self, index, removed):
+        """ Works out how the operations following index change if the item
+        that the operation at index removes (or adds, if not removed) is
+        moved there later instead.
+
+        The operations were made for documents without (or with) the item,
+        and are changed to documents with (or without) it. They never refer
+        to the item, as the diff does not change values it adds or removes.
+        Returns these changes and where the item is after the operations. """
+        location = index[2]['path']
+        changes = []
+        # only array indices change, so nothing does if there are none
+        if not any(isinstance(part, int) for part in location):
+            return changes, location
+
+        for op in self.iter_from(index):
+            # 'from' is removed before 'path' is added
+            for member in ('from', 'path'):
+                if member not in op:
+                    continue
+
+                inserted = member == 'path' and op['op'] in ('add', 'move')
+                if removed:
+                    parts = _with_item(op[member], location, inserted)
+                    present = parts
+                else:
+                    parts = _without_item(op[member], location)
+                    present = op[member]
+
+                if op['op'] != 'replace':
+                    location = _item_after(location, present, inserted)
+                changes.append((op, member, parts))
+
+        return changes, location
+
     def _item_added(self, path, key, item):
+        target = _path_join(path, key)
         index = self.take_index(item, _ST_REMOVE)
         if index is not None:
-            op = index[2]
-            parent_collection = op.pointer.to_last(self.dst_doc)[0]
-            if isinstance(parent_collection, MutableSequence):
-                for v in self.iter_from(index):
-                    op.key = v._on_undo_remove(op.pointer.parts[:-1], op.key)
+            changes, source = self._adjust_following(index, removed=True)
+            # RFC 6902 does not allow moving a value into its own children
+            if not _is_inside(target, source):
+                for op, member, parts in changes:
+                    op[member] = parts
+                self.remove(index)
+                if source != target:
+                    self.insert({'op': 'move', 'from': source,
+                                 'path': target})
+                return
 
-            self.remove(index)
-            if op.location != _path_join(path, key):
-                new_op = MoveOperation({
-                    'op': 'move',
-                    'from': op.location,
-                    'path': _path_join(path, key),
-                }, pointer_cls=self.pointer_cls)
-                self.insert(new_op)
-        else:
-            new_op = AddOperation({
-                'op': 'add',
-                'path': _path_join(path, key),
-                'value': item,
-            }, pointer_cls=self.pointer_cls)
-            new_index = self.insert(new_op)
-            self.store_index(item, new_index, _ST_ADD)
+        new_index = self.insert({'op': 'add', 'path': target, 'value': item})
+        self.store_index(item, new_index, _ST_ADD)
 
     def _item_removed(self, path, key, item):
-        new_op = RemoveOperation({
-            'op': 'remove',
-            'path': _path_join(path, key),
-        }, pointer_cls=self.pointer_cls)
+        source = _path_join(path, key)
         index = self.take_index(item, _ST_ADD)
-        new_index = self.insert(new_op)
         if index is not None:
-            op = index[2]
-            parent_collection = op.pointer.to_last(self.dst_doc)[0]
-            if isinstance(parent_collection, MutableSequence):
-                for v in self.iter_from(index):
-                    op.key = v._on_undo_add(op.pointer.parts[:-1], op.key)
+            changes, added = self._adjust_following(index, removed=False)
+            moved_from = _without_item(source, added)
+            target = _item_after(added, source, False)
+            # RFC 6902 does not allow moving a value into its own children
+            if not _is_inside(target, moved_from):
+                for op, member, parts in changes:
+                    op[member] = parts
+                self.remove(index)
+                if moved_from != target:
+                    self.insert({'op': 'move', 'from': moved_from,
+                                 'path': target})
+                return
 
-            self.remove(index)
-            if new_op.location != op.location:
-                new_op = MoveOperation({
-                    'op': 'move',
-                    'from': new_op.location,
-                    'path': op.location,
-                }, pointer_cls=self.pointer_cls)
-                new_index[2] = new_op
-
-            else:
-                self.remove(new_index)
-
-        else:
-            self.store_index(item, new_index, _ST_REMOVE)
+        new_index = self.insert({'op': 'remove', 'path': source})
+        self.store_index(item, new_index, _ST_REMOVE)
 
     def _item_replaced(self, path, key, item):
-        self.insert(ReplaceOperation({
+        self.insert({
             'op': 'replace',
             'path': _path_join(path, key),
             'value': item,
-        }, pointer_cls=self.pointer_cls))
+        })
 
     def _compare_dicts(self, path, src, dst):
         added_keys = [key for key in dst if key not in src]
@@ -888,7 +824,7 @@ class DiffBuilder(object):
             self._item_added(path, str(key), dst[key])
 
         for key in intersection:
-            self._compare_values(path, key, src[key], dst[key])
+            self._compare_values(path, str(key), src[key], dst[key])
 
     def _compare_lists(self, path, src, dst):
         len_src, len_dst = len(src), len(dst)
@@ -944,14 +880,75 @@ class DiffBuilder(object):
             self._item_replaced(path, key, dst)
 
 
+# The DiffBuilder keeps locations as tuples of object keys (str) and array
+# indices (int), so it can tell them apart when it adjusts array indices
+
+
 def _path_join(path, key):
     if key is None:
         return path
 
-    return path + '/' + str(key).replace('~', '~0').replace('/', '~1')
+    return path + (key,)
+
+
+def _to_pointer(path):
+    return ''.join('/' + str(part).replace('~', '~0').replace('/', '~1')
+                   for part in path)
+
 
 def _is_prefix(sub_parts, parts):
     return sub_parts == parts[:len(sub_parts)]
+
+
+def _is_inside(parts, container):
+    return len(parts) > len(container) and _is_prefix(container, parts)
+
+
+def _shift(parts, depth, offset):
+    return parts[:depth] + (parts[depth] + offset,) + parts[depth + 1:]
+
+
+def _with_item(parts, location, insertion):
+    """ Changes parts, which assumes that there is no item at location, to
+    the item being there. insertion tells if parts is where 'add' inserts """
+    depth = len(location) - 1
+    if isinstance(location[-1], int) and _is_inside(parts, location[:-1]):
+        index = parts[depth]
+        # inserting at the index of the item inserts before it
+        before_item = insertion and len(parts) == len(location) and \
+            index == location[-1]
+        if index >= location[-1] and not before_item:
+            return _shift(parts, depth, 1)
+
+    return parts
+
+
+def _without_item(parts, location):
+    """ Changes parts, which assumes that there is an item at location, to
+    the item missing """
+    depth = len(location) - 1
+    if isinstance(location[-1], int) and _is_inside(parts, location[:-1]) \
+            and parts[depth] > location[-1]:
+        return _shift(parts, depth, -1)
+
+    return parts
+
+
+def _item_after(location, parts, inserted):
+    """ Where the item at location is after inserting (or removing, if not
+    inserted) the value at parts """
+    depth = len(parts) - 1
+    if not isinstance(parts[-1], int) or not _is_inside(location, parts[:-1]):
+        return location
+
+    if inserted and location[depth] >= parts[-1]:
+        return _shift(location, depth, 1)
+
+    if not inserted and location[depth] > parts[-1]:
+        return _shift(location, depth, -1)
+
+    return location
+
 
 def _to_last(pointer, doc):
     """Resolve pointer like JsonPointer.to_last, without indexing into strings.
