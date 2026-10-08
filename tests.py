@@ -637,6 +637,20 @@ class MakePatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
+    def test_issue_160(self):
+        """A value moved from an array into an object is taken from where it
+        is after the operations before the move, whatever the key order."""
+        old = {'a': [{'id': [1]}, {'id': [2]}], 'b': [{'id': 5}]}
+        new = {'a': [{'id': []}, {'id': [1]}], 'b': [{'id': 5, 'newKey': 2}]}
+        patch = jsonpatch.make_patch(old, new)
+        result = jsonpatch.apply_patch(old, patch)
+        self.assertEqual(result, new)
+
+        old = dict(reversed(old.items()))
+        patch = jsonpatch.make_patch(old, new)
+        result = jsonpatch.apply_patch(old, patch)
+        self.assertEqual(result, new)
+
     def test_issue_138(self):
         """
         Operations between a removal and the move that replaces it should be
@@ -678,7 +692,6 @@ class MakePatchTestCase(unittest.TestCase):
             self.assertTrue(operation['path'].startswith('/~1/'))
             self.assertTrue(operation.get('from', '/~1/').startswith('/~1/'))
 
-
     def test_issue_124(self):
         """Similar to issue 138, but for different operations."""
         old = ['a', 'b', ['d', 'e'], 'f']
@@ -717,14 +730,6 @@ class MakePatchTestCase(unittest.TestCase):
         for old, new in cases:
             with self.subTest(old=old, new=new):
                 self.assertMakesPatch(old, new)
-
-    def test_issue160(self):
-        """A value moved from an array into an object is taken from where it
-        is after the operations before the move, whatever the key order."""
-        old = {'a': [{'id': [1]}, {'id': [2]}], 'b': [{'id': 5}]}
-        new = {'a': [{'id': []}, {'id': [1]}], 'b': [{'id': 5, 'newKey': 2}]}
-        self.assertMakesPatch(old, new)
-        self.assertMakesPatch(dict(reversed(old.items())), new)
 
     def test_move_with_numeric_object_keys(self):
         """Object keys that look like array indices are not shifted."""
