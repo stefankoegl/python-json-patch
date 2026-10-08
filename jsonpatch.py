@@ -227,7 +227,7 @@ class RemoveOperation(PatchOperation):
     """Removes an object property or an array element."""
 
     def apply(self, obj):
-        subobj, part = self.pointer.to_last(obj)
+        subobj, part = _to_last(self.pointer, obj)
 
         if isinstance(subobj, Sequence) and not isinstance(part, int):
             raise JsonPointerException("invalid array index '{0}'".format(part))
@@ -269,7 +269,7 @@ class AddOperation(PatchOperation):
             raise InvalidJsonPatch(
                 "The operation does not contain a 'value' member")
 
-        subobj, part = self.pointer.to_last(obj)
+        subobj, part = _to_last(self.pointer, obj)
 
         if isinstance(subobj, MutableSequence):
             if part is None:
@@ -326,7 +326,7 @@ class ReplaceOperation(PatchOperation):
             raise InvalidJsonPatch(
                 "The operation does not contain a 'value' member")
 
-        subobj, part = self.pointer.to_last(obj)
+        subobj, part = _to_last(self.pointer, obj)
 
         if part is None:
             return value
@@ -371,7 +371,7 @@ class MoveOperation(PatchOperation):
             raise InvalidJsonPatch(
                 "The operation does not contain a 'from' member")
 
-        subobj, part = from_ptr.to_last(obj)
+        subobj, part = _to_last(from_ptr, obj)
         try:
             value = subobj[part]
         except (KeyError, IndexError) as ex:
@@ -467,7 +467,7 @@ class TestOperation(PatchOperation):
 
     def apply(self, obj):
         try:
-            subobj, part = self.pointer.to_last(obj)
+            subobj, part = _to_last(self.pointer, obj)
             if part is None:
                 val = subobj
             else:
@@ -499,7 +499,7 @@ class CopyOperation(PatchOperation):
             raise InvalidJsonPatch(
                 "The operation does not contain a 'from' member")
 
-        subobj, part = from_ptr.to_last(obj)
+        subobj, part = _to_last(from_ptr, obj)
         try:
             value = copy.deepcopy(subobj if part is None else subobj[part])
         except (KeyError, IndexError) as ex:
@@ -947,3 +947,18 @@ def _path_join(path, key):
 
 def _is_prefix(sub_parts, parts):
     return sub_parts == parts[:len(sub_parts)]
+
+def _to_last(pointer, doc):
+    """Resolve pointer like JsonPointer.to_last, without indexing into strings.
+
+    RFC 6901 only allows reference tokens to be applied to objects and arrays,
+    but older versions of jsonpointer treat strings as sequences.
+    """
+    subobj, part = pointer.to_last(doc)
+
+    if part is not None and isinstance(subobj, str):
+        raise JsonPointerException(
+            "Cannot apply token '{0}' to non-container type {1}".format(
+                part, type(subobj)))
+
+    return subobj, part
