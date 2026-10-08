@@ -859,9 +859,9 @@ class DiffBuilder(object):
         }, pointer_cls=self.pointer_cls))
 
     def _compare_dicts(self, path, src, dst):
-        added_keys = [key for key in dst.keys() if key not in src.keys()]
-        removed_keys = [key for key in src.keys() if key not in dst.keys()]
-        intersection = [key for key in src.keys() if key in dst.keys()]
+        added_keys = [key for key in dst if key not in src]
+        removed_keys = [key for key in src if key not in dst]
+        intersection = [key for key in src if key in dst]
 
         for key in removed_keys:
             self._item_removed(path, str(key), src[key])
