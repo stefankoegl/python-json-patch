@@ -269,6 +269,11 @@ class AddOperation(PatchOperation):
             raise InvalidJsonPatch(
                 "The operation does not contain a 'value' member")
 
+        # Insert a copy so the document does not share mutable values with
+        # the patch; otherwise later operations would modify the patch itself.
+        return self._add(obj, copy.deepcopy(value))
+
+    def _add(self, obj, value):
         subobj, part = _to_last(self.pointer, obj)
 
         if isinstance(subobj, MutableSequence):
@@ -325,6 +330,9 @@ class ReplaceOperation(PatchOperation):
         except KeyError:
             raise InvalidJsonPatch(
                 "The operation does not contain a 'value' member")
+
+        # copied for the same reason as in AddOperation.apply
+        value = copy.deepcopy(value)
 
         subobj, part = _to_last(self.pointer, obj)
 
@@ -390,11 +398,11 @@ class MoveOperation(PatchOperation):
             'path': self.operation['from']
         }, pointer_cls=self.pointer_cls).apply(obj)
 
+        # the value has been detached from its old location, so no copy needed
         obj = AddOperation({
             'op': 'add',
             'path': self.location,
-            'value': value
-        }, pointer_cls=self.pointer_cls).apply(obj)
+        }, pointer_cls=self.pointer_cls)._add(obj, value)
 
         return obj
 
@@ -505,11 +513,11 @@ class CopyOperation(PatchOperation):
         except (KeyError, IndexError) as ex:
             raise JsonPatchConflict(str(ex))
 
+        # value is already a deep copy, no need to copy it again
         obj = AddOperation({
             'op': 'add',
             'path': self.location,
-            'value': value
-        }, pointer_cls=self.pointer_cls).apply(obj)
+        }, pointer_cls=self.pointer_cls)._add(obj, value)
 
         return obj
 
