@@ -627,6 +627,58 @@ class MakePatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
+    def test_issue_138(self):
+        """
+        The _on_undo methods should update its operation's path if it is
+        affected by the removal of a prior operation.
+        """
+        old = [
+            {"x": ["a", {"y": ["b"]}], "z": "a"},
+            {"x": ["c", {"d": ["d"]}], "z": "c"},
+            {},
+        ]
+        new = [
+            {"x": ["c", {"y": ["d"]}], "z": "c"},
+            {},
+        ]
+        patch = jsonpatch.make_patch(old, new)
+        result = jsonpatch.apply_patch(old, patch)
+        self.assertEqual(result, new)
+
+    def test_issue_138b(self):
+        """Additionally tests escaping special characters."""
+        old = {"/":
+            [
+                {"x": ["a", {"y": ["b"]}], "z": "a"},
+                {"x": ["c", {"d": ["d"]}], "z": "c"},
+                {},
+            ]
+        }
+        new = {"/":
+            [
+                {"x": ["c", {"y": ["d"]}], "z": "c"},
+                {},
+            ]
+        }
+        patch = jsonpatch.make_patch(old, new)
+        result = jsonpatch.apply_patch(old, patch)
+        self.assertEqual(result, new)
+
+        operation = jsonpatch.RemoveOperation({
+            'op': 'remove', 'path': '/~1/0/x/1/y/0',
+        })
+        operation._on_undo_add(['/', '0', 'x'], 0)
+        self.assertEqual(operation.location, '/~1/0/x/0/y/0')
+
+
+    def test_issue_124(self):
+        """Similar to issue 138, but for different operations."""
+        old = ['a', 'b', ['d', 'e'], 'f']
+        new = ['a', 'd', ['e', 'g']]
+        patch = jsonpatch.make_patch(old, new)
+        result = jsonpatch.apply_patch(old, patch)
+        self.assertEqual(result, new)
+
     def test_custom_types_diff(self):
         old = {'value': decimal.Decimal('1.0')}
         new = {'value': decimal.Decimal('1.00')}
