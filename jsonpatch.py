@@ -37,6 +37,7 @@ import copy
 import functools
 import json
 from collections.abc import MutableMapping, MutableSequence, Sequence
+from difflib import SequenceMatcher
 from types import MappingProxyType
 
 from jsonpointer import JsonPointer, JsonPointerException
@@ -826,13 +827,55 @@ class DiffBuilder(object):
         for key in intersection:
             self._compare_values(path, str(key), src[key], dst[key])
 
+    def _differing_runs(self, src, dst):
+        """ Returns (i1, i2, j1, j2) for each run of items src[i1:i2] that is
+        replaced by dst[j1:j2], between runs of items that both lists have.
+
+        Without matching up the items they both have, inserting an item in
+        front of arrays or objects would change all of them that follow. """
+        try:
+            # Serialized like in _compare_values, so e.g. 1 and True differ
+            src_keys = [self.dumps(item) for item in src]
+            dst_keys = [self.dumps(item) for item in dst]
+        except (TypeError, ValueError):
+            # Items that cannot be serialized are compared by position
+            return [(0, len(src), 0, len(dst))]
+
+        # SequenceMatcher does not match up items that occur often in long
+        # lists, so it only gets what is between the common start and end
+        shorter = min(len(src), len(dst))
+        start = 0
+        while start < shorter and src_keys[start] == dst_keys[start]:
+            start += 1
+        common_end = 0
+        while common_end < shorter - start and \
+                src_keys[-1 - common_end] == dst_keys[-1 - common_end]:
+            common_end += 1
+        src_end, dst_end = len(src) - common_end, len(dst) - common_end
+        src_keys, dst_keys = src_keys[start:src_end], dst_keys[start:dst_end]
+
+        runs = [(start + i1, start + i2, start + j1, start + j2)
+                for tag, i1, i2, j1, j2 in
+                SequenceMatcher(None, src_keys, dst_keys).get_opcodes()
+                if tag != 'equal']
+
+        # Items can be equal by chance, and matching them up can take more
+        # operations than comparing by position: for [2, 3, 5] and [3, 3, 4]
+        # it removes 2, replaces 5 and adds 4 instead of replacing 2 and 5
+        by_position = abs(len(src_keys) - len(dst_keys)) + \
+            sum(old != new for old, new in zip(src_keys, dst_keys))
+        if sum(max(i2 - i1, j2 - j1) for i1, i2, j1, j2 in runs) > by_position:
+            return [(start, src_end, start, dst_end)]
+
+        return runs
+
     def _compare_lists(self, path, src, dst):
-        len_src, len_dst = len(src), len(dst)
-        max_len = max(len_src, len_dst)
-        min_len = min(len_src, len_dst)
-        for key in range(max_len):
-            if key < min_len:
-                old, new = src[key], dst[key]
+        # The list has become dst[:j1] + src[i1:] when a run is compared, so
+        # src[i1] is at index j1
+        for i1, i2, j1, j2 in self._differing_runs(src, dst):
+            paired = min(i2 - i1, j2 - j1)
+            for key in range(j1, j1 + paired):
+                old, new = src[i1 + key - j1], dst[key]
                 if isinstance(old, MutableMapping) and \
                         isinstance(new, MutableMapping):
                     self._compare_dicts(_path_join(path, key), old, new)
@@ -851,10 +894,10 @@ class DiffBuilder(object):
                     self._item_removed(path, key, old)
                     self._item_added(path, key, new)
 
-            elif len_src > len_dst:
-                self._item_removed(path, len_dst, src[key])
+            for old in src[i1 + paired:i2]:
+                self._item_removed(path, j1 + paired, old)
 
-            else:
+            for key in range(j1 + paired, j2):
                 self._item_added(path, key, dst[key])
 
     def _compare_values(self, path, key, src, dst):
