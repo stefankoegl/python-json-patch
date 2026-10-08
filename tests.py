@@ -637,6 +637,14 @@ class MakePatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
+    def test_issue_160(self):
+        """Removal of an operation to an array should trigger _on_undo_add."""
+        old = {'a': [{'id': [1]}, {'id': [2]}], 'b': [{'id': 5}]}
+        new = {'a': [{'id': []}, {'id': [1]}], 'b': [{'id': 5, 'newKey': 2}]}
+        patch = jsonpatch.make_patch(old, new)
+        result = jsonpatch.apply_patch(old, patch)
+        self.assertEqual(result, new)
+        
     def test_issue_138(self):
         """
         The _on_undo methods should update its operation's path if it is
@@ -679,7 +687,6 @@ class MakePatchTestCase(unittest.TestCase):
         })
         operation._on_undo_add(['/', '0', 'x'], 0)
         self.assertEqual(operation.location, '/~1/0/x/0/y/0')
-
 
     def test_issue_124(self):
         """Similar to issue 138, but for different operations."""
