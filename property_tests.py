@@ -118,14 +118,6 @@ def assert_same_outcome(first, second):
         assert first == second, '{0!r} != {1!r}'.format(first, second)
 
 
-def int_like(key):
-    try:
-        int(key)
-    except ValueError:
-        return False
-    return True
-
-
 json_scalars = st.one_of(
     st.none(),
     st.booleans(),
@@ -171,22 +163,16 @@ small_json_docs = json_values(
 
 def safe_json_values(scalars, keys):
     """ Documents that avoid the inputs on which make_patch is currently known
-    to fail (see test_roundtrip): booleans, object keys that are '-' or that
-    int() accepts, and arrays, except for an array of scalars as the whole
-    document """
-    scalars = scalars.filter(lambda value: not isinstance(value, bool))
-    keys = keys.filter(lambda key: key != '-' and not int_like(key))
-    return st.one_of(
-        st.recursive(scalars,
-                     lambda children: st.dictionaries(keys, children, max_size=5),
-                     max_leaves=20),
-        st.lists(scalars, max_size=8),
+    to fail (see test_roundtrip): booleans and object keys that are '-' """
+    return json_values(
+        scalars.filter(lambda value: not isinstance(value, bool)),
+        keys.filter(lambda key: key != '-'),
     )
 
 
 safe_json_docs = safe_json_values(json_scalars, json_keys)
 small_safe_json_docs = safe_json_values(st.sampled_from([None, 0, 1, 'a']),
-                                        st.sampled_from(['a', 'b', 'c']))
+                                        st.sampled_from(['a', 'b', '0', '1']))
 
 
 def pairs_of(*doc_strategies):
@@ -306,12 +292,6 @@ class MakePatchProperties(unittest.TestCase):
     @example(docs=([0], [False]))
     # replace of the object member '-' is rejected
     @example(docs=({'-': 0}, {'-': 1}))
-    # object keys that int() accepts are shifted like array indices
-    @example(docs=({'0': None, 'a': []}, {'1': [], 'a': [None]}))
-    @example(docs=({'0': None, 'a': []}, {'b': 1, 'a': [None]}))
-    # move detection uses stale array indices, #124 #138 #179
-    @example(docs=([None, [0]], [0, []]))
-    @example(docs=([None, {}], [0, {'a': None}]))
     def test_roundtrip(self, docs):
         self.check_roundtrip(*docs)
 

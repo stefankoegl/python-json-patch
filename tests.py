@@ -664,11 +664,9 @@ class MakePatchTestCase(unittest.TestCase):
         result = jsonpatch.apply_patch(old, patch)
         self.assertEqual(result, new)
 
-        operation = jsonpatch.RemoveOperation({
-            'op': 'remove', 'path': '/~1/0/x/1/y/0',
-        })
-        operation._on_undo_add(['/', '0', 'x'], 0)
-        self.assertEqual(operation.location, '/~1/0/x/0/y/0')
+        for operation in patch:
+            self.assertTrue(operation['path'].startswith('/~1/'))
+            self.assertTrue(operation.get('from', '/~1/').startswith('/~1/'))
 
 
     def test_issue_124(self):
@@ -678,6 +676,42 @@ class MakePatchTestCase(unittest.TestCase):
         patch = jsonpatch.make_patch(old, new)
         result = jsonpatch.apply_patch(old, patch)
         self.assertEqual(result, new)
+
+    def assertMakesPatch(self, old, new):
+        patch = jsonpatch.make_patch(old, new)
+        self.assertEqual(jsonpatch.apply_patch(old, patch), new)
+        for operation in patch:
+            if operation['op'] == 'move':
+                # RFC 6902, 4.4: 'from' must not be a proper prefix of 'path'
+                self.assertFalse(
+                    operation['path'].startswith(operation['from'] + '/'))
+
+    def test_issue_179(self):
+        """Moves must use locations that are valid after the operations
+        between the removal and the addition of the moved value."""
+        cases = [
+            ({'d': {'arr': ['', 42, '', {'a': 1}]}},
+             {'d': {'arr': [{'a': 1}, {'a': 1}, [1], {}, False, '',
+                            {'a': 1}]}}),
+            ({'d': {'arr': [42, -1, 42, True, {'b': 'x'}, [1], 42]}},
+             {'d': {'arr': ['', None, False, {}, {}, 42]}}),
+            ({'d': {'arr': [False, 42, [1], {'a': 1}, None, 42]}},
+             {'d': {'arr': [None, 42, []]}}),
+            # from an array into an object member
+            ([0, {}], [1, {'a': 0}]),
+            # operations on values inside the same array
+            ([1, []], [[], [0], 1]),
+            (['x', [1], 0], [0, [], 1]),
+            ([0, {'a': 1}, 5], [1, {'a': 2}, 0]),
+        ]
+        for old, new in cases:
+            with self.subTest(old=old, new=new):
+                self.assertMakesPatch(old, new)
+
+    def test_move_with_numeric_object_keys(self):
+        """Object keys that look like array indices are not shifted."""
+        self.assertMakesPatch({'0': None, 'a': []}, {'1': [], 'a': [None]})
+        self.assertMakesPatch({'0': None, 'a': []}, {'b': 1, 'a': [None]})
 
     def test_custom_types_diff(self):
         old = {'value': decimal.Decimal('1.0')}
