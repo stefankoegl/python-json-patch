@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-from __future__ import unicode_literals
-
 import json
 import decimal
 import doctest
@@ -10,11 +8,7 @@ import unittest
 import jsonpatch
 import jsonpointer
 import sys
-try:
-    from types import MappingProxyType
-except ImportError:
-    # Python < 3.3
-    MappingProxyType = dict
+from types import MappingProxyType
 
 
 class ApplyPatchTestCase(unittest.TestCase):
