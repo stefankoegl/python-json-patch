@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import io
 import re
 try:
     from setuptools import setup
@@ -10,7 +9,7 @@ except ImportError:
     from distutils.core import setup
     has_setuptools = False
 
-src = io.open('jsonpatch.py', encoding='utf-8').read()
+src = open('jsonpatch.py', encoding='utf-8').read()
 metadata = dict(re.findall("__([a-z]+)__ = '([^']+)'", src))
 docstrings = re.findall('"""([^"]*)"""', src, re.MULTILINE | re.DOTALL)
 
@@ -53,12 +52,8 @@ CLASSIFIERS = [
     'License :: OSI Approved :: BSD License',
     'Operating System :: OS Independent',
     'Programming Language :: Python',
-    'Programming Language :: Python :: 2',
-    'Programming Language :: Python :: 2.7',
     'Programming Language :: Python :: 3',
-    'Programming Language :: Python :: 3.7',
-    'Programming Language :: Python :: 3.8',
-    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3 :: Only',
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
@@ -81,7 +76,7 @@ setup(name=PACKAGE,
       package_data={'': ['requirements.txt']},
       scripts=['bin/jsondiff', 'bin/jsonpatch'],
       classifiers=CLASSIFIERS,
-      python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*',
+      python_requires='>=3.10',
       project_urls={
           'Website': 'https://github.com/stefankoegl/python-json-patch',
           'Repository': 'https://github.com/stefankoegl/python-json-patch.git',
