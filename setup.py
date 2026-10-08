@@ -16,12 +16,6 @@ docstrings = re.findall('"""([^"]*)"""', src, re.MULTILINE | re.DOTALL)
 
 PACKAGE = 'jsonpatch'
 
-MODULES = [
-    'jsonpatch',
-    'jsonpatch._jsondiff_cli',
-    'jsonpatch._jsonpatch_cli',
-]
-
 REQUIREMENTS = list(open('requirements.txt'))
 
 if has_setuptools:
