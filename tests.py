@@ -591,6 +591,17 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(res, dst)
         self.assertIsInstance(res['A'], bool)
 
+    def test_issue91(self):
+        """Removing duplicate dicts from a list; the patch applies to src only"""
+        src = {'foo': [{'baz': 2}, {'bar': 1}, {'bar': 1}]}
+        dst = {'foo': [{'baz': 2}]}
+        patch = jsonpatch.JsonPatch.from_diff(src, dst)
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+        self.assertEqual(src, {'foo': [{'baz': 2}, {'bar': 1}, {'bar': 1}]})
+        # the patch transforms src into dst, so it can't be applied to dst
+        self.assertRaises(jsonpatch.JsonPatchConflict, patch.apply, dst)
+
     def test_issue129(self):
         """In JSON 1 is different from True even though in python 1 == True Take Two"""
         src = {'A': {'D': 1.0}, 'B': {'E': 'a'}}
