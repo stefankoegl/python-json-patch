@@ -674,6 +674,14 @@ class MakePatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(src, patch)
         self.assertEqual(res, dst)
 
+    def test_issue_160(self):
+        """Removal of an operation to an array should trigger _on_undo_add."""
+        old = {'a': [{'id': [1]}, {'id': [2]}], 'b': [{'id': 5}]}
+        new = {'a': [{'id': []}, {'id': [1]}], 'b': [{'id': 5, 'newKey': 2}]}
+        patch = jsonpatch.make_patch(old, new)
+        result = jsonpatch.apply_patch(old, patch)
+        self.assertEqual(result, new)
+        
     def test_issue_138(self):
         """
         The _on_undo methods should update its operation's path if it is
@@ -716,7 +724,6 @@ class MakePatchTestCase(unittest.TestCase):
         })
         operation._on_undo_add(['/', '0', 'x'], 0)
         self.assertEqual(operation.location, '/~1/0/x/0/y/0')
-
 
     def test_issue_124(self):
         """Similar to issue 138, but for different operations."""
@@ -948,6 +955,58 @@ class ConflictTests(unittest.TestCase):
         src = {"foo": 1}
         patch_obj = [ { "op": "replace", "path": "/bar", "value": 10} ]
         self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
+
+
+class StringIndexingTests(unittest.TestCase):
+    """ RFC 6901 pointers must not index into strings (#178) """
+
+    def setUp(self):
+        self.src = {"foo": "should-not-be-indexable"}
+
+    def test_test(self):
+        patch_obj = [ { "op": "test", "path": "/foo/0", "value": "s" } ]
+        self.assertRaises(jsonpatch.JsonPatchTestFailed, jsonpatch.apply_patch, self.src, patch_obj)
+
+    def test_test_nested(self):
+        patch_obj = [ { "op": "test", "path": "/foo/0/0", "value": "s" } ]
+        self.assertRaises(jsonpatch.JsonPatchTestFailed, jsonpatch.apply_patch, self.src, patch_obj)
+
+    def test_copy(self):
+        patch_obj = [ { "op": "copy", "from": "/foo/0", "path": "/bar" } ]
+        self.assertRaises(jsonpointer.JsonPointerException, jsonpatch.apply_patch, self.src, patch_obj)
+
+    def test_move(self):
+        patch_obj = [ { "op": "move", "from": "/foo/0", "path": "/bar" } ]
+        self.assertRaises(jsonpointer.JsonPointerException, jsonpatch.apply_patch, self.src, patch_obj)
+
+    def test_remove(self):
+        patch_obj = [ { "op": "remove", "path": "/foo/0" } ]
+        self.assertRaises(jsonpointer.JsonPointerException, jsonpatch.apply_patch, self.src, patch_obj)
+
+    def test_add(self):
+        patch_obj = [ { "op": "add", "path": "/foo/0", "value": "x" } ]
+        self.assertRaises(jsonpointer.JsonPointerException, jsonpatch.apply_patch, self.src, patch_obj)
+
+    def test_replace(self):
+        patch_obj = [ { "op": "replace", "path": "/foo/0", "value": "x" } ]
+        self.assertRaises(jsonpointer.JsonPointerException, jsonpatch.apply_patch, self.src, patch_obj)
+
+    def test_root_string(self):
+        patch_obj = [ { "op": "test", "path": "/0", "value": "a" } ]
+        self.assertRaises(jsonpatch.JsonPatchTestFailed, jsonpatch.apply_patch, "abc", patch_obj)
+
+    def test_whole_string_value(self):
+        patch_obj = [
+            { "op": "test", "path": "/foo", "value": "should-not-be-indexable" },
+            { "op": "copy", "from": "/foo", "path": "/bar" },
+        ]
+        res = jsonpatch.apply_patch(self.src, patch_obj)
+        self.assertEqual(res, {"foo": "should-not-be-indexable",
+                               "bar": "should-not-be-indexable"})
+
+    def test_root_string_whole_document(self):
+        patch_obj = [ { "op": "test", "path": "", "value": "abc" } ]
+        self.assertEqual(jsonpatch.apply_patch("abc", patch_obj), "abc")
 
 
 class JsonPointerTests(unittest.TestCase):
@@ -1214,6 +1273,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ListTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(InvalidInputTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ConflictTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(StringIndexingTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(OptimizationTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(JsonPointerTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(JsonPatchCreationTest))

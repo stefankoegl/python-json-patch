@@ -302,15 +302,14 @@ class MakePatchProperties(unittest.TestCase):
 
     @unittest.expectedFailure
     @given(doc_pairs)
-    # array members 1 and true are considered equal, #180
-    @example(docs=([0], [False]))
+    # move detection considers e.g. [1] and [true] equal, #180
+    @example(docs=({'a': [1]}, {'b': [True]}))
     # replace of the object member '-' is rejected
     @example(docs=({'-': 0}, {'-': 1}))
     # object keys that int() accepts are shifted like array indices
     @example(docs=({'0': None, 'a': []}, {'1': [], 'a': [None]}))
     @example(docs=({'0': None, 'a': []}, {'b': 1, 'a': [None]}))
-    # move detection uses stale array indices, #124 #138 #179
-    @example(docs=([None, [0]], [0, []]))
+    # a value moved from an array into an object keeps a stale index, #160 #179
     @example(docs=([None, {}], [0, {'a': None}]))
     def test_roundtrip(self, docs):
         self.check_roundtrip(*docs)
