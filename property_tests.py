@@ -427,11 +427,13 @@ class OperationProperties(unittest.TestCase):
             doc, [{'op': 'replace', 'path': to_pointer(parts), 'value': value}])
         assert_json_equal(resolve(result, parts), value)
 
-    # RFC 6902, 4.6: literals like true are only equal to themselves, but
-    # 'test' uses Python equality, which considers 1 and True equal
-    @unittest.expectedFailure
+    # RFC 6902, 4.6: literals like true are only equal to themselves, although
+    # Python considers 1 and True equal, #216
     @given(doc_pairs)
     @example(values=(1, True))
+    @example(values=([1], [True]))
+    @example(values=({'a': 0}, {'a': False}))
+    @example(values=(1, 1.0))
     def test_test_operation_uses_json_equality(self, values):
         value, tested = values
         result = outcome(jsonpatch.apply_patch, {'a': value},

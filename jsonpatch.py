@@ -195,7 +195,8 @@ class PatchOperation(object):
     def __eq__(self, other):
         if not isinstance(other, PatchOperation):
             return False
-        return self.operation == other.operation
+        # e.g. tests for 1 and for true behave differently
+        return _json_equal(self.operation, other.operation)
 
     def __ne__(self, other):
         return not(self == other)
@@ -410,7 +411,7 @@ class TestOperation(PatchOperation):
             raise InvalidJsonPatch(
                 "The operation does not contain a 'value' member")
 
-        if val != value:
+        if not _json_equal(val, value):
             msg = '{0} ({1}) is not equal to tested value {2} ({3})'
             raise JsonPatchTestFailed(msg.format(val, type(val),
                                                  value, type(value)))
@@ -959,6 +960,25 @@ def _positional_cost(old, new):
         return abs(len(old) - len(new)) + sum(
             _positional_cost(*items) for items in zip(old, new))
     return 1
+
+
+def _json_equal(first, second):
+    """ Compares values the way RFC 6902, 4.6 does: numbers by value, but
+    literals like true only with themselves, which Python considers equal to
+    1, and arrays and objects member by member """
+    if isinstance(first, bool) or isinstance(second, bool):
+        return isinstance(first, bool) and isinstance(second, bool) and \
+            first == second
+    if isinstance(first, MutableMapping) and \
+            isinstance(second, MutableMapping):
+        return len(first) == len(second) and all(
+            key in second and _json_equal(first[key], second[key])
+            for key in first)
+    if isinstance(first, MutableSequence) and \
+            isinstance(second, MutableSequence):
+        return len(first) == len(second) and all(
+            _json_equal(*items) for items in zip(first, second))
+    return first == second
 
 
 def _sorted_members(value):
