@@ -629,6 +629,8 @@ class MakePatchTestCase(unittest.TestCase):
             ([[1], 0], [0, [True]]),
             ({'a': [1]}, {'b': [1.0]}),
             ({'a': 0.0}, {'b': -0.0}),
+            # member names that are not strings are serialized, too
+            ({'a': {1: 'v'}}, {'b': {True: 'v'}}),
         ]
         for src, dst in cases:
             with self.subTest(src=src, dst=dst):
@@ -652,6 +654,13 @@ class MakePatchTestCase(unittest.TestCase):
         patch = jsonpatch.make_patch(src, dst)
         self.assertEqual([op['op'] for op in patch], ['remove', 'add'])
         self.assertEqual(jsonpatch.apply_patch(src, patch), dst)
+
+    def test_values_that_contain_themselves(self):
+        """Values that contain themselves cannot be serialized either"""
+        value = []
+        value.append(value)
+        patch = jsonpatch.make_patch({'a': value}, {'b': value})
+        self.assertEqual([op['op'] for op in patch], ['remove', 'add'])
 
     def test_issue119(self):
         """Make sure it avoids casting numeric str dict key to int"""

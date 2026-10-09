@@ -656,12 +656,13 @@ class DiffBuilder(object):
         root[:] = [root, root, None]
 
     def index_key(self, value):
-        """ A key that two values share exactly when comparing them finds no
-        changes, so that a value is only moved to where it is the same. It is
-        None for values that cannot be serialized, which are not moved. """
+        """ A key that two values share only if they are the same in JSON, so
+        that a value is only moved to where it is the same. It is None for
+        values that cannot be serialized, which are not moved. """
         try:
             return _serialized_key(value, self.dumps)
-        except (TypeError, ValueError):
+        # values that contain themselves recurse until RecursionError
+        except (TypeError, ValueError, RecursionError):
             return None
 
     def store_index(self, key, index, st):
@@ -879,7 +880,10 @@ def _serialized_key(value, dumps):
     uses serialized values, but objects and arrays are compared member by
     member there, so the order of object members does not matter here. """
     if isinstance(value, MutableMapping):
-        return frozenset((key, _serialized_key(item, dumps))
+        # JSON member names are strings: 1 and True become "1" and "true",
+        # which differ although Python considers 1 and True equal
+        return frozenset((key if isinstance(key, str) else dumps(key),
+                          _serialized_key(item, dumps))
                          for key, item in value.items())
 
     if isinstance(value, MutableSequence):
