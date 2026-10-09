@@ -190,12 +190,15 @@ class PatchOperation(object):
         raise NotImplementedError('should implement the patch operation.')
 
     def __hash__(self):
-        return hash(frozenset(self.operation.items()))
+        # Other members can hold arrays or objects, which are unhashable.
+        # Operations that compare equal still have equal 'op' and 'path'.
+        return hash((self.operation.get('op'), self.operation['path']))
 
     def __eq__(self, other):
         if not isinstance(other, PatchOperation):
             return False
-        return self.operation == other.operation
+        # e.g. tests for 1 and for true behave differently
+        return _json_equal(self.operation, other.operation)
 
     def __ne__(self, other):
         return not(self == other)
@@ -301,10 +304,12 @@ class ReplaceOperation(PatchOperation):
         if part is None:
             return value
 
-        if part == "-":
-            raise InvalidJsonPatch("'path' with '-' can't be applied to 'replace' operation")
-
         if isinstance(subobj, MutableSequence):
+            # '-' only refers to the (nonexistent) element after the end of
+            # an array; for an object it is an ordinary member name
+            if part == "-":
+                raise InvalidJsonPatch("'path' with '-' can't be applied to 'replace' operation")
+
             if part >= len(subobj) or part < 0:
                 raise JsonPatchConflict("can't replace outside of list")
 
@@ -332,19 +337,26 @@ class MoveOperation(PatchOperation):
             raise InvalidJsonPatch(
                 "The operation does not contain a 'from' member")
 
+        # Checked before anything is resolved, as removing an array element
+        # shifts its siblings, so the target would resolve to a different
+        # location. This also covers moving the whole document ('from' is "").
+        if self.pointer != from_ptr and self.pointer.contains(from_ptr):
+            raise JsonPatchConflict('Cannot move values into their own children')
+
         subobj, part = _to_last(from_ptr, obj)
+
+        # Moving the whole document onto itself is a no-op
+        if part is None:
+            return obj
+
         try:
-            value = subobj if part is None else subobj[part]
+            value = subobj[part]
         except (KeyError, IndexError) as ex:
             raise JsonPatchConflict(str(ex))
 
         # If source and target are equal, this is a no-op
         if self.pointer == from_ptr:
             return obj
-
-        if isinstance(subobj, MutableMapping) and \
-                self.pointer.contains(from_ptr):
-            raise JsonPatchConflict('Cannot move values into their own children')
 
         obj = RemoveOperation({
             'op': 'remove',
@@ -404,7 +416,7 @@ class TestOperation(PatchOperation):
             raise InvalidJsonPatch(
                 "The operation does not contain a 'value' member")
 
-        if val != value:
+        if not _json_equal(val, value):
             msg = '{0} ({1}) is not equal to tested value {2} ({3})'
             raise JsonPatchTestFailed(msg.format(val, type(val),
                                                  value, type(value)))
@@ -953,6 +965,25 @@ def _positional_cost(old, new):
         return abs(len(old) - len(new)) + sum(
             _positional_cost(*items) for items in zip(old, new))
     return 1
+
+
+def _json_equal(first, second):
+    """ Compares values the way RFC 6902, 4.6 does: numbers by value, but
+    literals like true only with themselves, which Python considers equal to
+    1, and arrays and objects member by member """
+    if isinstance(first, bool) or isinstance(second, bool):
+        return isinstance(first, bool) and isinstance(second, bool) and \
+            first == second
+    if isinstance(first, MutableMapping) and \
+            isinstance(second, MutableMapping):
+        return len(first) == len(second) and all(
+            key in second and _json_equal(first[key], second[key])
+            for key in first)
+    if isinstance(first, MutableSequence) and \
+            isinstance(second, MutableSequence):
+        return len(first) == len(second) and all(
+            _json_equal(*items) for items in zip(first, second))
+    return first == second
 
 
 def _sorted_members(value):
