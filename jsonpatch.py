@@ -340,7 +340,18 @@ class MoveOperation(PatchOperation):
             raise InvalidJsonPatch(
                 "The operation does not contain a 'from' member")
 
+        # Checked before anything is resolved, as removing an array element
+        # shifts its siblings, so the target would resolve to a different
+        # location. This also covers moving the whole document ('from' is "").
+        if self.pointer != from_ptr and self.pointer.contains(from_ptr):
+            raise JsonPatchConflict('Cannot move values into their own children')
+
         subobj, part = _to_last(from_ptr, obj)
+
+        # Moving the whole document onto itself is a no-op
+        if part is None:
+            return obj
+
         try:
             value = subobj[part]
         except (KeyError, IndexError) as ex:
@@ -349,10 +360,6 @@ class MoveOperation(PatchOperation):
         # If source and target are equal, this is a no-op
         if self.pointer == from_ptr:
             return obj
-
-        if isinstance(subobj, MutableMapping) and \
-                self.pointer.contains(from_ptr):
-            raise JsonPatchConflict('Cannot move values into their own children')
 
         obj = RemoveOperation({
             'op': 'remove',
