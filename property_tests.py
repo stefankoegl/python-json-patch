@@ -163,16 +163,14 @@ small_json_docs = json_values(
 
 def safe_json_values(scalars, keys):
     """ Documents that avoid the inputs on which make_patch is currently known
-    to fail (see test_roundtrip): booleans and object keys that are '-' """
-    return json_values(
-        scalars.filter(lambda value: not isinstance(value, bool)),
-        keys.filter(lambda key: key != '-'),
-    )
+    to fail (see test_roundtrip): object keys that are '-' """
+    return json_values(scalars, keys.filter(lambda key: key != '-'))
 
 
 safe_json_docs = safe_json_values(json_scalars, json_keys)
-small_safe_json_docs = safe_json_values(st.sampled_from([None, 0, 1, 'a']),
-                                        st.sampled_from(['a', 'b', '0', '1']))
+small_safe_json_docs = safe_json_values(
+    st.sampled_from([None, True, False, 0, 1, 'a']),
+    st.sampled_from(['a', 'b', '0', '1']))
 
 
 def pairs_of(*doc_strategies):
@@ -294,6 +292,9 @@ class MakePatchProperties(unittest.TestCase):
         self.check_roundtrip(*docs)
 
     @given(safe_doc_pairs)
+    # the diff considered e.g. 1 and true equal, #180
+    @example(docs=([0], [False]))
+    @example(docs=({'a': [1]}, {'b': [True]}))
     def test_roundtrip_of_safe_documents(self, docs):
         self.check_roundtrip(*docs)
 

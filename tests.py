@@ -650,6 +650,7 @@ class MakePatchTestCase(unittest.TestCase):
         src = {'a': [datetime.date(2020, 1, 1)]}
         dst = {'b': [datetime.date(2020, 1, 1)]}
         patch = jsonpatch.make_patch(src, dst)
+        self.assertEqual([op['op'] for op in patch], ['remove', 'add'])
         self.assertEqual(jsonpatch.apply_patch(src, patch), dst)
 
     def test_issue119(self):
