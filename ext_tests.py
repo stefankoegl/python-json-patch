@@ -65,9 +65,9 @@ class TestCaseTemplate(unittest.TestCase):
                 raise Exception(test.get('comment', '')) from jpe
 
             # if there is no 'expected' we only verify that applying the patch
-            # does not raies an exception
+            # does not raise an exception
             if 'expected' in test:
-                self.assertEquals(res, test['expected'], test.get('comment', ''))
+                self.assertEqual(res, test['expected'], test.get('comment', ''))
 
 
 def make_test_case(tests):
@@ -98,7 +98,7 @@ def get_suite(filenames):
             # we use the (potentially) patched version of json.load here
             tests = jsonpatch.json.load(f)
             cls = make_test_case(tests)
-            suite.addTest(unittest.makeSuite(cls))
+            suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(cls))
 
     return suite
 

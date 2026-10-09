@@ -42,16 +42,30 @@ Another way is to *diff* two objects.
 Applying a Patch
 ----------------
 
-A patch is always applied to an object.
+A patch is always applied to an object. The patch created by diffing ``src``
+and ``dst`` above turns ``src`` into ``dst``:
 
 .. code-block:: python
 
-    >>> doc = {}
-    >>> result = patch.apply(doc)
-    {'foo': 'bar', 'baz': [42]}
+    >>> result = patch.apply(src)
+    >>> result == dst
+    True
 
 The ``apply`` method returns a new object as a result. If ``in_place=True`` the
 object is modified in place.
+
+The operations of a patch refer to locations in the object it is applied to.
+A patch created with ``make_patch(src, dst)`` or ``JsonPatch.from_diff(src,
+dst)`` must therefore be applied to ``src`` (or to an object equal to it).
+Applying it to any other object, such as ``dst``, usually fails with a
+``JsonPatchConflict``, because the locations it refers to don't exist there:
+
+.. code-block:: python
+
+    >>> patch.apply(dst)
+    Traceback (most recent call last):
+      ...
+    jsonpatch.JsonPatchConflict: can't remove a non-existent object 'foo'
 
 If a patch is only used once, it is not necessary to create a patch object
 explicitly.
@@ -67,6 +81,42 @@ explicitly.
     # or from a list
     >>> patch = [{'op': 'add', 'path': '/baz', 'value': 'qux'}]
     >>> res = jsonpatch.apply_patch(obj, patch)
+
+
+Paths and Special Characters
+----------------------------
+
+The ``path`` and ``from`` members of an operation are JSON Pointers
+(`RFC 6901 <https://tools.ietf.org/html/rfc6901>`_). A pointer is a sequence of
+reference tokens, each starting with ``/``, and every token selects one object
+key or array index. Because ``/`` separates the tokens, a key that contains
+``/`` or ``~`` has to be escaped: ``~`` is written as ``~0`` and ``/`` as
+``~1``.
+
+Patches created by ``make_patch`` follow this rule, so a key containing ``/``
+shows up escaped in the generated path.
+
+.. code-block:: python
+
+    >>> patch = jsonpatch.make_patch({}, {'/fields/test': '123456'})
+    >>> patch.patch
+    [{'op': 'add', 'path': '/~1fields~1test', 'value': '123456'}]
+    >>> patch.apply({})
+    {'/fields/test': '123456'}
+
+The unescaped path ``/fields/test`` would mean something different: the key
+``test`` inside the key ``fields``. Applying it to ``{}`` fails, because there
+is no key ``fields``.
+
+When writing a patch by hand, escape keys in the same way. The ``jsonpointer``
+package, which ``jsonpatch`` depends on, can build a pointer from a list of
+unescaped keys.
+
+.. code-block:: python
+
+    >>> from jsonpointer import JsonPointer
+    >>> JsonPointer.from_parts(['/fields/test', 'a~b']).path
+    '/~1fields~1test/a~0b'
 
 
 Dealing with Custom Types

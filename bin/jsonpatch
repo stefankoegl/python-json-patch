@@ -24,7 +24,8 @@ parser.add_argument('-i', '--in-place', action='store_true',
                     help='Modify ORIGINAL in-place instead of to stdout')
 parser.add_argument('-v', '--version', action='version',
                     version='%(prog)s ' + jsonpatch.__version__)
-
+parser.add_argument('-u', '--preserve-unicode', action='store_true',
+                    help='Output Unicode character as-is without using Code Point')
 
 def main():
     try:
@@ -72,8 +73,8 @@ def patch_files():
 
     # By this point we have some sort of file object we can write the 
     # modified JSON to.
-
-    json.dump(result, fp, indent=args.indent)
+    
+    json.dump(result, fp, indent=args.indent, ensure_ascii=not(args.preserve_unicode))
     fp.write('\n')
 
     if args.in_place:
