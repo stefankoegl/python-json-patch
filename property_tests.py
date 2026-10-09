@@ -450,8 +450,6 @@ class JsonPatchProperties(unittest.TestCase):
         self.assertEqual(jsonpatch.JsonPatch.from_string(patch.to_string()),
                          patch)
 
-    # hashing fails for operations whose value is an array or object
-    @unittest.expectedFailure
     @given(patches)
     @example(operations=[{'op': 'add', 'path': '/a', 'value': []}])
     def test_equal_patches_have_equal_hashes(self, operations):

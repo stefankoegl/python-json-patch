@@ -190,7 +190,9 @@ class PatchOperation(object):
         raise NotImplementedError('should implement the patch operation.')
 
     def __hash__(self):
-        return hash(frozenset(self.operation.items()))
+        # Other members can hold arrays or objects, which are unhashable.
+        # Operations that compare equal still have equal 'op' and 'path'.
+        return hash((self.operation.get('op'), self.operation['path']))
 
     def __eq__(self, other):
         if not isinstance(other, PatchOperation):
