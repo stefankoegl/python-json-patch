@@ -284,9 +284,8 @@ class MakePatchProperties(unittest.TestCase):
         self.assertEqual(list(jsonpatch.make_patch(doc, copy.deepcopy(doc))),
                          [])
 
-    @unittest.expectedFailure
     @given(doc_pairs)
-    # replace of the object member '-' is rejected
+    # replace of the object member '-' was rejected, #212
     @example(docs=({'-': 0}, {'-': 1}))
     def test_roundtrip(self, docs):
         self.check_roundtrip(*docs)
@@ -417,9 +416,8 @@ class OperationProperties(unittest.TestCase):
             jsonpatch.apply_patch(
                 doc, [{'op': 'move', 'from': source, 'path': target}])
 
-    # '-' is rejected even where it is an object key, not an array index
-    @unittest.expectedFailure
     @given(docs_with_locations(), json_docs)
+    # '-' was rejected even where it is an object key, not an array index, #212
     @example(case=({'-': None}, ['-']), value=0)
     def test_replace_any_existing_location(self, case, value):
         doc, parts = case

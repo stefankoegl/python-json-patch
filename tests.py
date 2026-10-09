@@ -95,6 +95,19 @@ class ApplyPatchTestCase(unittest.TestCase):
         res = jsonpatch.apply_patch(obj, [{'op': 'replace', 'path': '/baz', 'value': 'boo'}])
         self.assertTrue(res['baz'], 'boo')
 
+    def test_replace_object_key_dash(self):
+        # '-' only has a special meaning for arrays (#212)
+        obj = {'foo': {'-': 'bar', 'baz': 'qux'}}
+        res = jsonpatch.apply_patch(obj, [{'op': 'replace', 'path': '/foo/-',
+                                           'value': 'boo'}])
+        self.assertEqual(res, {'foo': {'-': 'boo', 'baz': 'qux'}})
+
+    def test_replace_array_dash(self):
+        obj = {'foo': ['bar', 'qux']}
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.apply_patch(obj, [{'op': 'replace', 'path': '/foo/-',
+                                         'value': 'boo'}])
+
     def test_replace_whole_document(self):
         obj = {'foo': 'bar'}
         res = jsonpatch.apply_patch(obj, [{'op': 'replace', 'path': '', 'value': {'baz': 'qux'}}])
@@ -847,6 +860,11 @@ class MakePatchTestCase(unittest.TestCase):
             with self.subTest(old=old, new=new):
                 self.assertMakesPatch(old, new)
 
+    def test_issue_212(self):
+        """A changed object member named '-' is replaced, not rejected."""
+        self.assertMakesPatch({'-': 0}, {'-': 1})
+        self.assertMakesPatch({'a': {'-': [1]}}, {'a': {'-': [2]}})
+
     def test_move_with_numeric_object_keys(self):
         """Object keys that look like array indices are not shifted."""
         self.assertMakesPatch({'0': None, 'a': []}, {'1': [], 'a': [None]})
@@ -1308,6 +1326,10 @@ class UtilityMethodTests(unittest.TestCase):
             jsonpatch.ReplaceOperation({'path': '/'}).apply({})
 
         with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.ReplaceOperation({'path': '/top/-', 'value': 'foo'}).apply({'top': ['value']})
+
+        # for an object, '-' is an ordinary member name (#212)
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
             jsonpatch.ReplaceOperation({'path': '/top/-', 'value': 'foo'}).apply({'top': {'inner': 'value'}})
 
         with self.assertRaises(jsonpatch.JsonPatchConflict):
