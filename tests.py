@@ -647,12 +647,27 @@ class MakePatchTestCase(unittest.TestCase):
             ([[1], [2], [3]], [[2], [3], [True]]),
             ([{'a': 1}, 2], [2, {'a': True}]),
             ({'a': [1]}, {'b': [True]}),
+            ({'a': {'x': 1}}, {'b': {'x': True}}),
+            ([[1], 0], [0, [True]]),
+            ({'a': [1]}, {'b': [1.0]}),
+            ({'a': 0.0}, {'b': -0.0}),
+            # member names that are not strings are serialized, too
+            ({'a': {1: 'v'}}, {'b': {True: 'v'}}),
         ]
         for src, dst in cases:
             with self.subTest(src=src, dst=dst):
                 patch = jsonpatch.make_patch(src, dst)
                 res = patch.apply(src)
                 self.assertEqual(json.dumps(res), json.dumps(dst))
+
+    def test_move_only_values_equal_in_given_dumps(self):
+        """The given dumps decides which values are the same"""
+        src = {'a': decimal.Decimal('1.0')}
+        dst = {'b': decimal.Decimal('1.00')}
+        patch = jsonpatch.JsonPatch.from_diff(
+            src, dst, dumps=custom_types_dumps)
+        res = jsonpatch.apply_patch(src, patch)
+        self.assertEqual(str(res['b']), '1.00')
 
     def test_values_dumps_cannot_serialize(self):
         """Such values can be added, removed and moved, as they need not be
@@ -669,6 +684,18 @@ class MakePatchTestCase(unittest.TestCase):
                 patch = jsonpatch.make_patch(src, dst)
                 self.assertEqual(patch.apply(src), dst)
         self.assertEqual(jsonpatch.make_patch(*cases[-1]).patch,
+                         [{'op': 'move', 'from': '/a', 'path': '/b'}])
+
+    def test_values_that_contain_themselves(self):
+        """dumps cannot serialize them either, but they can still be added,
+        removed and moved"""
+        value = []
+        value.append(value)
+        self.assertEqual(jsonpatch.make_patch({}, {'a': value}).patch,
+                         [{'op': 'add', 'path': '/a', 'value': value}])
+        self.assertEqual(jsonpatch.make_patch({'a': [value]}, {'a': []}).patch,
+                         [{'op': 'remove', 'path': '/a/0'}])
+        self.assertEqual(jsonpatch.make_patch({'a': value}, {'b': value}).patch,
                          [{'op': 'move', 'from': '/a', 'path': '/b'}])
 
     def test_issue119(self):
@@ -899,6 +926,12 @@ class OptimizationTests(unittest.TestCase):
         fn([1, 2, 3], [3, 1, 2])
         fn({'foo': [1, 2, 3]}, {'foo': [3, 2, 1]})
         fn([1, 2, 3], [3, 2, 1])
+
+    def test_use_move_regardless_of_member_order(self):
+        src = {'a': {'x': 1, 'y': [True, {}]}}
+        dst = {'b': {'y': [True, {}], 'x': 1}}
+        patch = list(jsonpatch.make_patch(src, dst))
+        self.assertEqual(patch, [{'op': 'move', 'from': '/a', 'path': '/b'}])
 
     def test_success_if_replace_inside_dict(self):
         src = [{'a': 1, 'foo': {'b': 2, 'd': 5}}]
