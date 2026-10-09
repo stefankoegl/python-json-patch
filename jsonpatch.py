@@ -32,11 +32,13 @@
 
 """ Apply JSON-Patches (RFC 6902) """
 
+import bisect
 import collections
 import copy
 import functools
 import json
-from collections.abc import MutableMapping, MutableSequence, Sequence
+from collections.abc import (Mapping, MutableMapping, MutableSequence,
+                             Sequence, Set)
 from types import MappingProxyType
 
 from jsonpointer import JsonPointer, JsonPointerException
@@ -653,10 +655,12 @@ class DiffBuilder(object):
         self.dumps = dumps
         self.pointer_cls = pointer_cls
         self.index_storage = [{}, {}]
-        self.index_storage2 = [[], []]
+        self.index_storage2 = [{}, {}]
         self.__root = root = []
         self.src_doc = src_doc
         self.dst_doc = dst_doc
+        # the _ArrayItems of each array, by the location of the array
+        self.arrays = {}
         root[:] = [root, root, None]
 
     def store_index(self, value, index, st):
@@ -670,7 +674,10 @@ class DiffBuilder(object):
                 storage[typed_key].append(index)
 
         except TypeError:
-            self.index_storage2[st].append((typed_key, index))
+            # unhashable values are grouped by a key that equal values share
+            storage = self.index_storage2[st]
+            storage.setdefault(_hashable(typed_key), []).append(
+                (typed_key, index))
 
     def take_index(self, value, st):
         typed_key = (value, type(value))
@@ -680,7 +687,7 @@ class DiffBuilder(object):
                 return stored.pop()
 
         except TypeError:
-            storage = self.index_storage2[st]
+            storage = self.index_storage2[st].get(_hashable(typed_key), [])
             for i in range(len(storage)-1, -1, -1):
                 if storage[i][0] == typed_key:
                     return storage.pop(i)[1]
@@ -697,13 +704,6 @@ class DiffBuilder(object):
         link_next[0] = link_prev
         index[:] = []
 
-    def iter_from(self, start):
-        root = self.__root
-        curr = start[1]
-        while curr is not root:
-            yield curr[2]
-            curr = curr[1]
-
     def __iter__(self):
         root = self.__root
         curr = root[1]
@@ -712,11 +712,11 @@ class DiffBuilder(object):
             curr = curr[1]
 
     def execute(self):
-        root = self.__root
-        curr = root[1]
-        while curr is not root:
-            if curr[1] is not root:
-                op_first, op_second = curr[2], curr[1][2]
+        operations = list(self._replay())
+        i = 0
+        while i < len(operations):
+            if i + 1 < len(operations):
+                op_first, op_second = operations[i], operations[i + 1]
                 if op_first['path'] == op_second['path'] and \
                         op_first['op'] == 'remove' and \
                         op_second['op'] == 'add':
@@ -725,93 +725,130 @@ class DiffBuilder(object):
                         'path': _to_pointer(op_second['path']),
                         'value': op_second['value'],
                     }
-                    curr = curr[1][1]
+                    i += 2
                     continue
 
-            operation = dict(curr[2])
+            operation = operations[i]
             for member in ('from', 'path'):
                 if member in operation:
                     operation[member] = _to_pointer(operation[member])
             yield operation
-            curr = curr[1]
+            i += 1
 
-    def _adjust_following(self, index, removed):
-        """ Works out how the operations following index change if the item
-        that the operation at index removes (or adds, if not removed) is
-        moved there later instead.
+    def _replay(self):
+        """ Applies the operations to the arrays of the source document, and
+        returns them with the array indices at which they apply """
+        for items in self.arrays.values():
+            items.reset()
 
-        The operations were made for documents without (or with) the item,
-        and are changed to documents with (or without) it. They never refer
-        to the item, as the diff does not change values it adds or removes.
-        Returns these changes and where the item is after the operations. """
-        location = index[2]['path']
-        changes = []
-        # only array indices change, so nothing does if there are none
-        if not any(isinstance(part, int) for part in location):
-            return changes, location
-
-        for op in self.iter_from(index):
+        for op in self:
+            operation = dict(op)
             # 'from' is removed before 'path' is added
-            for member in ('from', 'path'):
-                if member not in op:
-                    continue
+            if 'from' in op:
+                operation['from'] = self._parts(op['from'])
+                self._set_present(op['from'], False)
 
-                inserted = member == 'path' and op['op'] in ('add', 'move')
-                if removed:
-                    parts = _with_item(op[member], location, inserted)
-                    present = parts
-                else:
-                    parts = _without_item(op[member], location)
-                    present = op[member]
+            operation['path'] = self._parts(op['path'])
+            if op['op'] == 'remove':
+                self._set_present(op['path'], False)
+            elif op['op'] in ('add', 'move'):
+                self._set_present(op['path'], True)
 
-                if op['op'] != 'replace':
-                    location = _item_after(location, present, inserted)
-                changes.append((op, member, parts))
+            yield operation
 
-        return changes, location
+    def _array_items(self, location):
+        """ The _ArrayItems of the array at location """
+        items = self.arrays.get(location)
+        if items is None:
+            items = self.arrays[location] = _ArrayItems()
+        return items
+
+    def _location(self, parts):
+        """ The location of parts in the current document """
+        location = ()
+        for part in parts:
+            if isinstance(part, int):
+                part = self._array_items(location).at(part)
+            location += (part,)
+        return location
+
+    def _new_location(self, path, key):
+        """ The location of an item inserted at key of the container at path
+        of the current document """
+        location = self._location(path)
+        if isinstance(key, int):
+            key = self._array_items(location).insert(key)
+        return _path_join(location, key)
+
+    def _parts(self, location):
+        """ The parts of location in the current document. If location is an
+        array item that is not in the array, its index is where it would be
+        if it was. """
+        return tuple(part.index() if isinstance(part, _ArrayItem) else part
+                     for part in location)
+
+    def _set_present(self, location, present):
+        """ Adds the array item at location to the current document, or
+        removes it, if not present """
+        item = location[-1] if location else None
+        if isinstance(item, _ArrayItem):
+            if present:
+                item.array.add(item)
+            else:
+                item.array.remove(item)
 
     def _item_added(self, path, key, item):
         target = _path_join(path, key)
         index = self.take_index(item, _ST_REMOVE)
         if index is not None:
-            changes, source = self._adjust_following(index, removed=True)
+            removed = index[2]['path']
+            # where the removed item is if it is not removed
+            source = self._parts(removed)
             # RFC 6902 does not allow moving a value into its own children
             if not _is_inside(target, source):
-                for op, member, parts in changes:
-                    op[member] = parts
                 self.remove(index)
                 if source != target:
-                    self.insert({'op': 'move', 'from': source,
-                                 'path': target})
+                    self.insert({'op': 'move', 'from': removed,
+                                 'path': self._new_location(path, key)})
+                else:
+                    # the removed item stays where the added one would be
+                    self._set_present(removed, True)
                 return
 
-        new_index = self.insert({'op': 'add', 'path': target, 'value': item})
+        new_index = self.insert({'op': 'add',
+                                 'path': self._new_location(path, key),
+                                 'value': item})
         self.store_index(item, new_index, _ST_ADD)
 
     def _item_removed(self, path, key, item):
         source = _path_join(path, key)
+        location = self._location(source)
         index = self.take_index(item, _ST_ADD)
         if index is not None:
-            changes, added = self._adjust_following(index, removed=False)
+            added_location = index[2]['path']
+            added = self._parts(added_location)
             moved_from = _without_item(source, added)
             target = _item_after(added, source, False)
             # RFC 6902 does not allow moving a value into its own children
             if not _is_inside(target, moved_from):
-                for op, member, parts in changes:
-                    op[member] = parts
                 self.remove(index)
                 if moved_from != target:
-                    self.insert({'op': 'move', 'from': moved_from,
-                                 'path': target})
+                    self._set_present(location, False)
+                    self.insert({'op': 'move', 'from': location,
+                                 'path': added_location})
+                else:
+                    # the removed item stays where the added one would be
+                    self._set_present(added_location, False)
                 return
 
-        new_index = self.insert({'op': 'remove', 'path': source})
+        self._set_present(location, False)
+        new_index = self.insert({'op': 'remove', 'path': location})
         self.store_index(item, new_index, _ST_REMOVE)
 
     def _item_replaced(self, path, key, item):
         self.insert({
             'op': 'replace',
-            'path': _path_join(path, key),
+            'path': self._location(_path_join(path, key)),
             'value': item,
         })
 
@@ -883,8 +920,137 @@ class DiffBuilder(object):
             self._item_replaced(path, key, dst)
 
 
-# The DiffBuilder keeps locations as tuples of object keys (str) and array
-# indices (int), so it can tell them apart when it adjusts array indices
+# The DiffBuilder works with parts, which are tuples of object keys (str) and
+# array indices (int), and with locations, in which _ArrayItem objects take
+# the place of array indices. Operations keep locations: when a move replaces
+# an earlier 'add' or 'remove', the array indices in the operations after it
+# change, but their locations do not.
+
+
+class _ArrayItem(object):
+    """ An item that an array has at some point of the diff """
+
+    __slots__ = ('array', 'label', 'initial')
+
+    def __init__(self, array, label, initial):
+        self.array = array
+        self.label = label
+        # if the item is in the array of the source document
+        self.initial = initial
+
+    def index(self):
+        """ The index of the item in the array, or the index it would have if
+        it was in the array """
+        return bisect.bisect_left(self.array.present_labels, self.label)
+
+
+class _ArrayItems(object):
+    """ All items that an array has at some point of the diff, and the items
+    that it has at the moment, both ordered by their labels.
+
+    The array has its items in this order at every point of the diff, also
+    when a move later replaces the 'add' or 'remove' of an item. So an item
+    inserted at an index is put directly after the item before it in the
+    array: inserting at the index of a removed item inserts before it, if a
+    move replaces its 'remove' later. """
+
+    # how far apart the labels of items inserted one after the other are
+    step = 1 << 16
+    # how far apart labels are at the start and at the ends
+    gap = 1 << 32
+
+    def __init__(self):
+        self.items = []
+        self.labels = []
+        self.present = []
+        self.present_labels = []
+
+    def at(self, index):
+        """ The item at index of the array """
+        # the items of the source document follow the items that the diff
+        # has dealt with, so they are only created when needed
+        while len(self.present) <= index:
+            label = self.labels[-1] + self.gap if self.labels else 0
+            item = _ArrayItem(self, label, True)
+            self.items.append(item)
+            self.labels.append(label)
+            self.present.append(item)
+            self.present_labels.append(label)
+
+        return self.present[index]
+
+    def insert(self, index):
+        """ Inserts a new item at index of the array, and returns it """
+        position = 0
+        if index:
+            position = bisect.bisect_right(self.labels,
+                                           self.at(index - 1).label)
+
+        if position == 0 or position == len(self.labels):
+            if not self.labels:
+                label = 0
+            elif position == 0:
+                label = self.labels[0] - self.gap
+            else:
+                label = self.labels[-1] + self.gap
+
+        else:
+            if self.labels[position] - self.labels[position - 1] < 2:
+                self._relabel()
+            low, high = self.labels[position - 1], self.labels[position]
+            label = low + min(self.step, (high - low) // 2)
+
+        item = _ArrayItem(self, label, False)
+        self.items.insert(position, item)
+        self.labels.insert(position, label)
+        self.add(item)
+        return item
+
+    def _relabel(self):
+        self.labels = [i * self.gap for i in range(len(self.items))]
+        for item, label in zip(self.items, self.labels):
+            item.label = label
+        self.present_labels = [item.label for item in self.present]
+
+    def add(self, item):
+        """ Adds item to the array """
+        position = bisect.bisect_left(self.present_labels, item.label)
+        self.present.insert(position, item)
+        self.present_labels.insert(position, item.label)
+
+    def remove(self, item):
+        """ Removes item from the array """
+        position = bisect.bisect_left(self.present_labels, item.label)
+        del self.present[position]
+        del self.present_labels[position]
+
+    def reset(self):
+        """ Changes the array back to its items in the source document """
+        self.present = [item for item in self.items if item.initial]
+        self.present_labels = [item.label for item in self.present]
+
+
+def _hashable(value):
+    """ A hashable value that is equal for equal values """
+    if isinstance(value, Mapping):
+        return frozenset((key, _hashable(item)) for key, item in value.items())
+
+    if isinstance(value, Set):
+        return frozenset(_hashable(item) for item in value)
+
+    if isinstance(value, (bytes, bytearray)):
+        return bytes(value)
+
+    if isinstance(value, Sequence) and not isinstance(value, str):
+        return tuple(_hashable(item) for item in value)
+
+    try:
+        hash(value)
+    except TypeError:
+        # other unhashable values share one key
+        return None
+
+    return value
 
 
 def _path_join(path, key):
@@ -909,21 +1075,6 @@ def _is_inside(parts, container):
 
 def _shift(parts, depth, offset):
     return parts[:depth] + (parts[depth] + offset,) + parts[depth + 1:]
-
-
-def _with_item(parts, location, insertion):
-    """ Changes parts, which assumes that there is no item at location, to
-    the item being there. insertion tells if parts is where 'add' inserts """
-    depth = len(location) - 1
-    if isinstance(location[-1], int) and _is_inside(parts, location[:-1]):
-        index = parts[depth]
-        # inserting at the index of the item inserts before it
-        before_item = insertion and len(parts) == len(location) and \
-            index == location[-1]
-        if index >= location[-1] and not before_item:
-            return _shift(parts, depth, 1)
-
-    return parts
 
 
 def _without_item(parts, location):

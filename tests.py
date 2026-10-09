@@ -5,6 +5,7 @@ import copy
 import json
 import decimal
 import doctest
+import random
 import unittest
 import jsonpatch
 import jsonpointer
@@ -858,6 +859,50 @@ class OptimizationTests(unittest.TestCase):
         fn([1, 2, 3], [3, 1, 2])
         fn({'foo': [1, 2, 3]}, {'foo': [3, 2, 1]})
         fn([1, 2, 3], [3, 2, 1])
+
+    def test_moves_change_indices_of_later_operations(self):
+        src = [1, 2, 3, 4, 5]
+        dst = [5, 4, 3, 2, 1]
+        patch = jsonpatch.make_patch(src, dst)
+        exp = [
+            {'op': 'move', 'from': '/3', 'path': '/0'},
+            {'op': 'move', 'from': '/2', 'path': '/3'},
+            {'op': 'move', 'from': '/4', 'path': '/0'},
+            {'op': 'move', 'from': '/2', 'path': '/4'},
+        ]
+        self.assertEqual(patch.patch, exp)
+        self.assertEqual(patch.apply(src), dst)
+
+    def test_moves_change_indices_in_nested_list(self):
+        src = {'a': [5, {'b': [0, 1, 2]}, 6]}
+        dst = {'a': [6, {'b': [2, 0, 1]}, 5]}
+        patch = jsonpatch.make_patch(src, dst)
+        exp = [
+            {'op': 'move', 'from': '/a/1/b/2', 'path': '/a/1/b/0'},
+            {'op': 'move', 'from': '/a/2', 'path': '/a/0'},
+            {'op': 'move', 'from': '/a/1', 'path': '/a/2'},
+        ]
+        self.assertEqual(patch.patch, exp)
+        self.assertEqual(patch.apply(src), dst)
+
+    def test_moves_in_long_list(self):
+        """ This took seconds while each move found changed all operations
+        after it one by one """
+        src = list(range(2000))
+        for dst, length in [(src[::-1], 1999),
+                            (random.Random(2).sample(src, 2000), 1952)]:
+            patch = jsonpatch.make_patch(src, dst)
+            self.assertEqual(len(patch.patch), length)
+            self.assertEqual({op['op'] for op in patch}, {'move'})
+            self.assertEqual(patch.apply(src), dst)
+
+    def test_moves_of_unhashable_values(self):
+        src = {str(i): [i, {'a': i}] for i in range(2000)}
+        dst = {str(i + 2000): [i, {'a': i}] for i in range(2000)}
+        patch = jsonpatch.make_patch(src, dst)
+        self.assertEqual(len(patch.patch), 2000)
+        self.assertEqual({op['op'] for op in patch}, {'move'})
+        self.assertEqual(patch.apply(src), dst)
 
     def test_success_if_replace_inside_dict(self):
         src = [{'a': 1, 'foo': {'b': 2, 'd': 5}}]
