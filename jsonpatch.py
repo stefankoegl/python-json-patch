@@ -672,9 +672,9 @@ class DiffBuilder(object):
         try:
             # Serialized like in _differing_runs
             return self.dumps(_sorted_members(value))
-        except (TypeError, ValueError):
-            # Values that cannot be serialized are only moved where they are
-            # added unchanged
+        except (TypeError, ValueError, RecursionError):
+            # Values that cannot be serialized, e.g. as they contain
+            # themselves, are only moved where they are added unchanged
             return id(value)
 
     def store_index(self, value, index, st):
@@ -871,7 +871,7 @@ class DiffBuilder(object):
             # but independent of the order of object members
             src_keys = [self.dumps(_sorted_members(item)) for item in src]
             dst_keys = [self.dumps(_sorted_members(item)) for item in dst]
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, RecursionError):
             # Items that cannot be serialized are compared by position
             return [(0, len(src), 0, len(dst))]
 

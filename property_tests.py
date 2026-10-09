@@ -292,6 +292,9 @@ class MakePatchProperties(unittest.TestCase):
         self.check_roundtrip(*docs)
 
     @given(safe_doc_pairs)
+    # the diff considered e.g. 1 and true equal, #180
+    @example(docs=([0], [False]))
+    @example(docs=({'a': [1]}, {'b': [True]}))
     def test_roundtrip_of_safe_documents(self, docs):
         self.check_roundtrip(*docs)
 
