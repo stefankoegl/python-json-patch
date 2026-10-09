@@ -34,10 +34,10 @@
 
 import collections
 import copy
-import difflib
 import functools
 import json
 from collections.abc import MutableMapping, MutableSequence, Sequence
+from difflib import SequenceMatcher
 from types import MappingProxyType
 
 from jsonpointer import JsonPointer, JsonPointerException
@@ -46,16 +46,16 @@ from jsonpointer import JsonPointer, JsonPointerException
 _ST_ADD = 0
 _ST_REMOVE = 1
 
-# How many comparisons of equal items make_patch may spend on aligning the
-# items of two arrays, if they differ in only a few items by index
-_MAX_ALIGNMENT_COMPARISONS = 10 ** 5
+# Up to which product of their lengths DiffBuilder matches up all equal items
+# of two lists
+_EXACT_MATCH_LIMIT = 500 ** 2
 
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
-__version__ = '1.33'
+__version__ = '1.34'
 __website__ = 'https://github.com/stefankoegl/python-json-patch'
-__license__ = 'Modified BSD License'
+__license__ = 'BSD-3-Clause'
 
 
 class JsonPatchException(Exception):
@@ -107,7 +107,7 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
     :param patch: JSON patch as list of dicts or raw JSON-encoded string.
     :type patch: list or str
 
-    :param in_place: While :const:`True` patch will modify target document.
+    :param in_place: While ``True`` patch will modify target document.
                      By default patch will be applied to document copy.
     :type in_place: bool
 
@@ -140,12 +140,14 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
 
 def make_patch(src, dst, pointer_cls=JsonPointer):
     """Generates patch by comparing two document objects. Actually is
-    a proxy to :meth:`JsonPatch.from_diff` method.
+    a proxy to :meth:`JsonPatch.from_diff` method. The resulting patch
+    transforms `src` into `dst`, so it has to be applied to `src` (or to a
+    document equal to it).
 
     :param src: Data source document object.
     :type src: dict
 
-    :param dst: Data source document object.
+    :param dst: Data target document object.
     :type dst: dict
 
     :param pointer_cls: JSON pointer class to use.
@@ -442,18 +444,6 @@ class CopyOperation(PatchOperation):
 
 
 class JsonPatch(object):
-    json_dumper = staticmethod(json.dumps)
-    json_loader = staticmethod(_jsonloads)
-
-    operations = MappingProxyType({
-        'remove': RemoveOperation,
-        'add': AddOperation,
-        'replace': ReplaceOperation,
-        'move': MoveOperation,
-        'test': TestOperation,
-        'copy': CopyOperation,
-    })
-
     """A JSON Patch is a list of Patch Operations.
 
     >>> patch = JsonPatch([
@@ -499,6 +489,18 @@ class JsonPatch(object):
     ...     patch.apply(old)    #doctest: +ELLIPSIS
     {...}
     """
+    json_dumper = staticmethod(json.dumps)
+    json_loader = staticmethod(_jsonloads)
+
+    operations = MappingProxyType({
+        'remove': RemoveOperation,
+        'add': AddOperation,
+        'replace': ReplaceOperation,
+        'move': MoveOperation,
+        'test': TestOperation,
+        'copy': CopyOperation,
+    })
+
     def __init__(self, patch, pointer_cls=JsonPointer):
         self.patch = patch
         self.pointer_cls = pointer_cls
@@ -555,7 +557,7 @@ class JsonPatch(object):
 
         :param loads: A function of one argument that loads a serialized
                       JSON string.
-        :type loads: function
+        :type loads: Callable
 
         :param pointer_cls: JSON pointer class to use.
         :type pointer_cls: Type[JsonPointer]
@@ -573,17 +575,18 @@ class JsonPatch(object):
     ):
         """Creates JsonPatch instance based on comparison of two document
         objects. Json patch would be created for `src` argument against `dst`
-        one.
+        one. The resulting patch transforms `src` into `dst`, so it has to be
+        applied to `src` (or to a document equal to it).
 
         :param src: Data source document object.
         :type src: dict
 
-        :param dst: Data source document object.
+        :param dst: Data target document object.
         :type dst: dict
 
         :param dumps: A function of one argument that produces a serialized
                       JSON string.
-        :type dumps: function
+        :type dumps: Callable
 
         :param pointer_cls: JSON pointer class to use.
         :type pointer_cls: Type[JsonPointer]
@@ -660,14 +663,23 @@ class DiffBuilder(object):
         self.dst_doc = dst_doc
         root[:] = [root, root, None]
 
-    # Values are stored by _item_key, so that only values which are equal in
-    # JSON are moved instead of removed and added (e.g. not [1] and [true])
+    def _move_key(self, value):
+        """ A key of value, which is equal for values that are equal in JSON,
+        so that e.g. [1] is not moved where [true] is added """
+        try:
+            # Serialized like in _differing_runs
+            return self.dumps(_sorted_members(value))
+        except (TypeError, ValueError):
+            # Values that cannot be serialized are only moved where they are
+            # added unchanged
+            return id(value)
+
     def store_index(self, value, index, st):
         storage = self.index_storage[st]
-        storage.setdefault(self._item_key(value), []).append(index)
+        storage.setdefault(self._move_key(value), []).append(index)
 
     def take_index(self, value, st):
-        stored = self.index_storage[st].get(self._item_key(value))
+        stored = self.index_storage[st].get(self._move_key(value))
         if stored:
             return stored.pop()
 
@@ -815,62 +827,102 @@ class DiffBuilder(object):
         for key in intersection:
             self._compare_values(path, str(key), src[key], dst[key])
 
-    def _item_key(self, item):
-        """ A hashable key of item, which is the same for items between which
-        the diff finds no changes """
-        if isinstance(item, MutableMapping):
-            return frozenset((str(key), self._item_key(value))
-                             for key, value in item.items())
+    def _differing_runs(self, src, dst):
+        """ Returns (i1, i2, j1, j2) for each run of items src[i1:i2] that is
+        replaced by dst[j1:j2], between runs of items that both lists have.
 
-        if isinstance(item, MutableSequence):
-            return tuple(self._item_key(value) for value in item)
-
+        Without matching up the items they both have, inserting an item in
+        front of arrays or objects would change all of them that follow. """
         try:
-            return self.dumps(item)
-        except TypeError:
-            # dumps cannot compare values it cannot serialize, which can
-            # still be added, removed or moved as long as they are not changed
-            return id(item)
+            # Serialized like in _compare_values, so e.g. 1 and True differ,
+            # but independent of the order of object members
+            src_keys = [self.dumps(_sorted_members(item)) for item in src]
+            dst_keys = [self.dumps(_sorted_members(item)) for item in dst]
+        except (TypeError, ValueError):
+            # Items that cannot be serialized are compared by position
+            return [(0, len(src), 0, len(dst))]
+
+        # Only what is between the common start and end is matched up
+        shorter = min(len(src), len(dst))
+        start = 0
+        while start < shorter and src_keys[start] == dst_keys[start]:
+            start += 1
+        common_end = 0
+        while common_end < shorter - start and \
+                src_keys[-1 - common_end] == dst_keys[-1 - common_end]:
+            common_end += 1
+        src_end, dst_end = len(src) - common_end, len(dst) - common_end
+
+        # How many operations replacing src[i1:i2] by dst[j1:j2] takes
+        def cost(i1, i2, j1, j2):
+            return abs((i2 - i1) - (j2 - j1)) + sum(
+                _positional_cost(src[i], dst[j])
+                for i, j in zip(range(i1, i2), range(j1, j2))
+                if src_keys[i] != dst_keys[j])
+
+        by_position = (start, src_end, start, dst_end)
+        position_cost = cost(*by_position)
+
+        # Matching up all items can take time proportional to the product of
+        # the list lengths. For longer lists SequenceMatcher does not match
+        # up items that are frequent in them, unless next to other matches
+        exact = (src_end - start) * (dst_end - start) <= _EXACT_MATCH_LIMIT
+        if not exact:
+            # It still compares each item with the equal items of the other
+            # list that are not frequent, which takes quadratic time for long
+            # lists of repeated items. Comparing by position takes quadratic
+            # time in its operations as well, as the diff turns them into
+            # moves, so matching up may only take about as long
+            counts = collections.Counter(dst_keys[start:dst_end])
+            comparisons = sum(counts[key] for key in src_keys[start:src_end])
+            if comparisons > max(_EXACT_MATCH_LIMIT, position_cost ** 2):
+                return [by_position]
+
+        matcher = SequenceMatcher(None, src_keys[start:src_end],
+                                  dst_keys[start:dst_end], autojunk=not exact)
+        runs = [(start + i1, start + i2, start + j1, start + j2)
+                for tag, i1, i2, j1, j2 in matcher.get_opcodes()
+                if tag != 'equal']
+
+        # Items can be equal by chance, and matching them up can take more
+        # operations than comparing by position: for [2, 3, 5] and [3, 3, 4]
+        # it removes 2, replaces 5 and adds 4 instead of replacing 2 and 5.
+        # It can also pair up arrays or objects that differ in more members.
+        if sum(cost(*run) for run in runs) > position_cost:
+            return [by_position]
+
+        return runs
 
     def _compare_lists(self, path, src, dst):
-        # Items are aligned first, so that inserting or removing one does not
-        # make all items after it look changed
-        ids = {}
-        src_ids = [ids.setdefault(self._item_key(item), len(ids))
-                   for item in src]
-        dst_ids = [ids.setdefault(self._item_key(item), len(ids))
-                   for item in dst]
+        # The list has become dst[:j1] + src[i1:] when a run is compared, so
+        # src[i1] is at index j1
+        for i1, i2, j1, j2 in self._differing_runs(src, dst):
+            paired = min(i2 - i1, j2 - j1)
+            for key in range(j1, j1 + paired):
+                old, new = src[i1 + key - j1], dst[key]
+                if isinstance(old, MutableMapping) and \
+                        isinstance(new, MutableMapping):
+                    self._compare_dicts(_path_join(path, key), old, new)
 
-        for i1, i2, j1, j2 in _changed_blocks(src_ids, dst_ids):
-            # src[:i1] has been changed to dst[:j1] already, so src[i1] is
-            # at index j1 now
-            common = min(i2 - i1, j2 - j1)
-            for offset in range(common):
-                if src_ids[i1 + offset] != dst_ids[j1 + offset]:
-                    self._compare_items(path, j1 + offset, src[i1 + offset],
-                                        dst[j1 + offset])
+                elif isinstance(old, MutableSequence) and \
+                        isinstance(new, MutableSequence):
+                    self._compare_lists(_path_join(path, key), old, new)
 
-            for item in src[i1 + common:i2]:
-                self._item_removed(path, j1 + common, item)
+                # To ensure we catch changes to JSON, we can't rely on a
+                # simple old == new, because it would not recognize the
+                # difference between 1 and True, among other things.
+                elif self.dumps(old) == self.dumps(new):
+                    continue
 
-            for key in range(j1 + common, j2):
+                else:
+                    self._item_removed(path, key, old)
+                    self._item_added(path, key, new)
+
+            for old in src[i1 + paired:i2]:
+                self._item_removed(path, j1 + paired, old)
+
+            for key in range(j1 + paired, j2):
                 self._item_added(path, key, dst[key])
-
-    def _compare_items(self, path, key, old, new):
-        if isinstance(old, MutableMapping) and \
-                isinstance(new, MutableMapping):
-            self._compare_dicts(_path_join(path, key), old, new)
-
-        elif isinstance(old, MutableSequence) and \
-                isinstance(new, MutableSequence):
-            self._compare_lists(_path_join(path, key), old, new)
-
-        # To ensure we catch changes to JSON, we can't rely on a simple
-        # old == new, because it would not recognize the difference between
-        # 1 and True, among other things.
-        elif self.dumps(old) != self.dumps(new):
-            self._item_removed(path, key, old)
-            self._item_added(path, key, new)
 
     def _compare_values(self, path, key, src, dst):
         if isinstance(src, MutableMapping) and \
@@ -893,6 +945,33 @@ class DiffBuilder(object):
 
         else:
             self._item_replaced(path, key, dst)
+
+
+def _positional_cost(old, new):
+    """ Estimates how many operations change old into new, if the items of
+    arrays are compared by position """
+    if old == new:
+        return 0
+    if isinstance(old, MutableMapping) and isinstance(new, MutableMapping):
+        return sum(_positional_cost(old[key], new[key]) if key in new else 1
+                   for key in old) + sum(key not in old for key in new)
+    if isinstance(old, MutableSequence) and isinstance(new, MutableSequence):
+        return abs(len(old) - len(new)) + sum(
+            _positional_cost(*items) for items in zip(old, new))
+    return 1
+
+
+def _sorted_members(value):
+    """ Copies the arrays and objects in value, with the members of objects
+    sorted by key """
+    # Most values are scalars, so they are checked for first
+    if value is None or isinstance(value, (str, int, float)):
+        return value
+    if isinstance(value, MutableMapping):
+        return {key: _sorted_members(value[key]) for key in sorted(value)}
+    if isinstance(value, MutableSequence):
+        return [_sorted_members(item) for item in value]
+    return value
 
 
 # The DiffBuilder keeps locations as tuples of object keys (str) and array
@@ -963,62 +1042,6 @@ def _item_after(location, parts, inserted):
         return _shift(location, depth, -1)
 
     return location
-
-
-def _changed_blocks(src, dst):
-    """ Aligns the sequences src and dst, and returns the blocks
-    (i1, i2, j1, j2) in which src[i1:i2] has to change into dst[j1:j2] """
-    min_len = min(len(src), len(dst))
-    start = 0
-    while start < min_len and src[start] == dst[start]:
-        start += 1
-
-    end = 0
-    while end < min_len - start and src[-1 - end] == dst[-1 - end]:
-        end += 1
-
-    src_end, dst_end = len(src) - end, len(dst) - end
-    # comparing the items at the same index
-    positional = [(start, src_end, start, dst_end)]
-    if start in (src_end, dst_end):
-        # items are only inserted or only removed
-        return positional
-
-    # SequenceMatcher compares each item with the equal items of the other
-    # sequence, which takes quadratic time for long sequences of repeated
-    # items. Comparing items by index takes quadratic time in the number of
-    # changed items, as the diff tries to turn them into moves, so aligning is
-    # only allowed to take about as long
-    changed = _changed_items(src, dst, positional)
-    counts = collections.Counter(dst[start:dst_end])
-    comparisons = sum(counts[item] for item in src[start:src_end])
-    if comparisons > max(_MAX_ALIGNMENT_COMPARISONS, changed ** 2):
-        return positional
-
-    matcher = difflib.SequenceMatcher(None, src[start:src_end],
-                                      dst[start:dst_end])
-    aligned = [(start + i1, start + i2, start + j1, start + j2)
-               for tag, i1, i2, j1, j2 in matcher.get_opcodes()
-               if tag != 'equal']
-
-    # SequenceMatcher ignores items that occur often in long sequences, so
-    # its alignment can change more items than comparing them by index
-    if _changed_items(src, dst, aligned) < changed:
-        return aligned
-
-    return positional
-
-
-def _changed_items(src, dst, blocks):
-    """ How many items are inserted, removed or replaced in blocks """
-    count = 0
-    for i1, i2, j1, j2 in blocks:
-        common = min(i2 - i1, j2 - j1)
-        count += max(i2 - i1, j2 - j1) - common
-        count += sum(src[i1 + offset] != dst[j1 + offset]
-                     for offset in range(common))
-
-    return count
 
 
 def _to_last(pointer, doc):

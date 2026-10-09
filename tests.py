@@ -8,6 +8,7 @@ import doctest
 import unittest
 import jsonpatch
 import jsonpointer
+import random
 import sys
 from types import MappingProxyType
 from unittest import mock
@@ -499,6 +500,16 @@ class MakePatchTestCase(unittest.TestCase):
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
+    def test_issue_94(self):
+        """Keys containing '/' or '~' are escaped as defined in RFC 6901."""
+        src = {}
+        dst = {'/fields/test': '123456', 'a~b': 1}
+        patch = jsonpatch.make_patch(src, dst)
+        paths = sorted(op['path'] for op in patch)
+        self.assertEqual(paths, ['/a~0b', '/~1fields~1test'])
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+
     def test_root_list(self):
         """ Test making and applying a patch of the root is a list """
         src = [{'foo': 'bar', 'boo': 'qux'}]
@@ -590,6 +601,17 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(res, dst)
         self.assertIsInstance(res['A'], bool)
 
+    def test_issue91(self):
+        """Removing duplicate dicts from a list; the patch applies to src only"""
+        src = {'foo': [{'baz': 2}, {'bar': 1}, {'bar': 1}]}
+        dst = {'foo': [{'baz': 2}]}
+        patch = jsonpatch.JsonPatch.from_diff(src, dst)
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+        self.assertEqual(src, {'foo': [{'baz': 2}, {'bar': 1}, {'bar': 1}]})
+        # the patch transforms src into dst, so it can't be applied to dst
+        self.assertRaises(jsonpatch.JsonPatchConflict, patch.apply, dst)
+
     def test_issue129(self):
         """In JSON 1 is different from True even though in python 1 == True Take Two"""
         src = {'A': {'D': 1.0}, 'B': {'E': 'a'}}
@@ -638,7 +660,7 @@ class MakePatchTestCase(unittest.TestCase):
         value = decimal.Decimal('1.5')
         cases = [
             ({}, {'a': value}),
-            ([1], [value, 1]),
+            ([1], [1, value]),
             ({'a': [value]}, {}),
             ({'a': value}, {'b': value}),
         ]
@@ -932,78 +954,109 @@ class OptimizationTests(unittest.TestCase):
 
         self.assertEqual(patch.patch, exp)
 
-    def test_insert_into_list_of_objects(self):
-        """ Inserting an object does not change the ones after it, see #83 """
-        src = {'items': [{'id': 1, 'name': 'a'}, {'id': 2, 'name': 'b'}]}
-        dst = {'items': [{'id': 0, 'name': 'z'}, {'id': 1, 'name': 'a'},
-                         {'id': 2, 'name': 'b'}]}
+    def assertPatch(self, src, dst, exp):
         patch = jsonpatch.make_patch(src, dst)
-        exp = [{'op': 'add', 'path': '/items/0',
-                'value': {'id': 0, 'name': 'z'}}]
         self.assertEqual(patch.patch, exp)
         self.assertEqual(patch.apply(src), dst)
 
-    def test_remove_from_list_of_objects(self):
-        src = [{'id': 1}, {'id': 2}, {'id': 3}, {'id': 4}]
-        dst = [{'id': 1}, {'id': 3}]
-        patch = jsonpatch.make_patch(src, dst)
-        exp = [{'op': 'remove', 'path': '/1'}, {'op': 'remove', 'path': '/2'}]
-        self.assertEqual(patch.patch, exp)
-        self.assertEqual(patch.apply(src), dst)
+    def test_issue_78_insert_into_list_of_lists(self):
+        """ Inserting an item adds it instead of changing the items that
+        follow """
+        self.assertPatch([[1, 'a']], [[2, 'b'], [1, 'a']],
+                         [{'op': 'add', 'path': '/0', 'value': [2, 'b']}])
 
-    def test_insert_and_remove_in_list(self):
-        src = ['a', 'b', 'c', 'd', 'e']
-        dst = ['x', 'a', 'b', 'd', 'e']
-        patch = jsonpatch.make_patch(src, dst)
-        exp = [{'op': 'add', 'path': '/0', 'value': 'x'},
-               {'op': 'remove', 'path': '/3'}]
-        self.assertEqual(patch.patch, exp)
-        self.assertEqual(patch.apply(src), dst)
+    def test_issue_78_insert_into_list_of_objects(self):
+        src = [{'a': i} for i in [1, 3, 4, 5, 6, 7, 8, 9, 10]]
+        dst = [{'a': i} for i in range(1, 11)]
+        self.assertPatch(src, dst,
+                         [{'op': 'add', 'path': '/1', 'value': {'a': 2}}])
 
-    def test_insert_into_long_list_of_repeated_values(self):
-        src = [i % 2 == 0 for i in range(500)]
-        dst = [False] + src
-        patch = jsonpatch.make_patch(src, dst)
-        exp = [{'op': 'add', 'path': '/0', 'value': False}]
-        self.assertEqual(patch.patch, exp)
-        self.assertEqual(patch.apply(src), dst)
+    def test_issue_78_remove_from_list_of_objects(self):
+        self.assertPatch([{'a': 1}, {'b': 2}], [{'b': 2}],
+                         [{'op': 'remove', 'path': '/0'}])
 
-    def test_list_items_are_compared_by_index_if_aligning_is_worse(self):
-        # aligning on the 1 would move all the 0s
-        src = [0] * 300 + [1]
-        dst = [1] + [0] * 300
-        patch = jsonpatch.make_patch(src, dst)
-        self.assertLessEqual(len(patch.patch), 2)
-        self.assertEqual(patch.apply(src), dst)
+    def test_issue_78_separate_changes(self):
+        src = {'foo': [{'a': 1}, {'a': 3}, {'a': 5}, {'a': 6}, [7]]}
+        dst = {'foo': [{'a': 1}, {'a': 2}, {'a': 3}, {'a': 5},
+                       {'a': 6, 'b': 0}, [7]]}
+        self.assertPatch(src, dst, [
+            {'op': 'add', 'path': '/foo/1', 'value': {'a': 2}},
+            {'op': 'add', 'path': '/foo/4/b', 'value': 0},
+        ])
+        self.assertPatch(dst, src, [
+            {'op': 'remove', 'path': '/foo/1'},
+            {'op': 'remove', 'path': '/foo/3/b'},
+        ])
 
-    def test_long_list_of_repeated_items_is_compared_by_index(self):
-        # aligning would compare each item with about 133 equal items, while
-        # only two items differ by index
+    def test_issue_78_items_equal_by_chance(self):
+        """ Items are compared by position if matching up those that are
+        equal takes more operations """
+        self.assertPatch([1, 2, 3, 5], [1, 3, 3, 4], [
+            {'op': 'replace', 'path': '/1', 'value': 3},
+            {'op': 'replace', 'path': '/3', 'value': 4},
+        ])
+
+    def test_issue_78_items_paired_by_position(self):
+        """ Objects are compared by position if matching up those that are
+        equal pairs up objects that differ in more members """
+        src = [{'x': 'A'}, {'x': 'X'}, {'b1': 'B1', 'b2': 'B2', 'b3': 'B3'}]
+        dst = [{'x': 'X'}, {'x': 'X', 'c': 'C'},
+               {'b1': 'D1', 'b2': 'B2', 'b3': 'B3'}]
+        self.assertPatch(src, dst, [
+            {'op': 'replace', 'path': '/0/x', 'value': 'X'},
+            {'op': 'add', 'path': '/1/c', 'value': 'C'},
+            {'op': 'replace', 'path': '/2/b1', 'value': 'D1'},
+        ])
+
+    def test_issue_78_object_member_order(self):
+        """ Objects are matched up whatever the order of their members """
+        self.assertPatch([{'a': 1, 'b': 2}], [{'x': 0}, {'b': 2, 'a': 1}],
+                         [{'op': 'add', 'path': '/0', 'value': {'x': 0}}])
+
+    def test_issue_78_frequent_items(self):
+        """ Items that occur often in long lists are matched up, too """
+        self.assertPatch([0] * 300, [1] + [0] * 300 + [2], [
+            {'op': 'add', 'path': '/0', 'value': 1},
+            {'op': 'add', 'path': '/301', 'value': 2},
+        ])
+        self.assertPatch(
+            [{} for _ in range(300)],
+            [{'a': 1}] + [{} for _ in range(300)] + [{'b': 2}], [
+                {'op': 'add', 'path': '/0', 'value': {'a': 1}},
+                {'op': 'add', 'path': '/301', 'value': {'b': 2}},
+            ])
+
+    def test_issue_78_items_not_serializable(self):
+        """ Items that cannot be serialized with sorted object members are
+        compared by position """
+        src = [{1: 'a', 'b': 0}, {1: 'a'}]
+        dst = [{1: 'a', 'b': 1}, {1: 'a'}]
+        self.assertEqual(jsonpatch.make_patch(src, dst).patch,
+                         [{'op': 'replace', 'path': '/0/b', 'value': 1}])
+
+    def test_long_list_of_repeated_items_is_compared_by_position(self):
+        """ Matching up would compare each item with about 133 equal items,
+        while only two items differ by position """
         src = [i % 150 for i in range(20000)]
         dst = [-1] + src[1:-1] + [-2]
-        with mock.patch('difflib.SequenceMatcher',
-                        side_effect=AssertionError('aligned')):
+        with mock.patch('jsonpatch.SequenceMatcher',
+                        side_effect=AssertionError('matched up')):
             patch = jsonpatch.make_patch(src, dst)
         self.assertEqual(len(patch.patch), 2)
         self.assertEqual(patch.apply(src), dst)
 
-    def test_shifted_long_list_of_repeated_items_is_aligned(self):
-        # comparing by index would change all 6000 items
-        src = [i % 150 for i in range(6000)]
-        dst = [-1] + src[:-1]
-        patch = jsonpatch.make_patch(src, dst)
-        exp = [{'op': 'add', 'path': '/0', 'value': -1},
-               {'op': 'remove', 'path': '/6000'}]
-        self.assertEqual(patch.patch, exp)
-        self.assertEqual(patch.apply(src), dst)
-
-    def test_list_alignment_ignores_key_order(self):
-        src = [{'a': 1, 'b': 2}]
-        dst = [0, {'b': 2, 'a': 1}]
-        patch = jsonpatch.make_patch(src, dst)
-        exp = [{'op': 'add', 'path': '/0', 'value': 0}]
-        self.assertEqual(patch.patch, exp)
-        self.assertEqual(patch.apply(src), dst)
+    def test_long_list_of_repeated_items_is_matched_up(self):
+        """ Comparing by position would change the items between the changes,
+        as they are shifted """
+        rng = random.Random(0)
+        src = [rng.randrange(150) for _ in range(9000)]
+        dst = src[:1000] + [-1] + src[1000:5000] + src[5001:8000] + [-2] + \
+            src[8000:]
+        self.assertPatch(src, dst, [
+            {'op': 'add', 'path': '/1000', 'value': -1},
+            {'op': 'remove', 'path': '/5001'},
+            {'op': 'add', 'path': '/8000', 'value': -2},
+        ])
 
 
 class ListTests(unittest.TestCase):
