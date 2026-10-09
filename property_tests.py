@@ -335,11 +335,11 @@ class ApplyPatchProperties(unittest.TestCase):
 
     @unittest.expectedFailure
     @given(docs_with_patches())
-    # 'move' from the whole document crashes for array roots
+    # 'move' from the whole document crashed for array roots, #213
     @example(case=([], [{'op': 'move', 'from': '', 'path': '/-'}]))
     # 'copy' or 'move' from the '-' of an array crashes
     @example(case=([0], [{'op': 'copy', 'from': '/-', 'path': '/0'}]))
-    # operations on the whole document crash if it is a scalar
+    # operations on the whole document crashed if it was a scalar, #213
     @example(case=(None, [{'op': 'remove', 'path': ''}]))
     def test_raises_only_documented_exceptions(self, case):
         doc, patch = case
@@ -386,9 +386,8 @@ class ApplyPatchProperties(unittest.TestCase):
 
 class OperationProperties(unittest.TestCase):
 
-    @unittest.expectedFailure
     @given(whole_document_operations())
-    # 'add' crashes if the document is a scalar, unlike 'replace'
+    # 'add' crashed if the document was a scalar, unlike 'replace', #213
     @example(case=(None, {'op': 'add', 'path': '', 'value': 0}, 0))
     def test_whole_document_as_target(self, case):
         doc, operation, expected = case

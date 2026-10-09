@@ -230,6 +230,9 @@ class RemoveOperation(PatchOperation):
     def apply(self, obj):
         subobj, part = _to_last(self.pointer, obj)
 
+        if part is None:
+            raise JsonPatchConflict("can't remove the whole document")
+
         if isinstance(subobj, Sequence) and not isinstance(part, int):
             raise JsonPointerException("invalid array index '{0}'".format(part))
 
@@ -259,11 +262,11 @@ class AddOperation(PatchOperation):
     def _add(self, obj, value):
         subobj, part = _to_last(self.pointer, obj)
 
-        if isinstance(subobj, MutableSequence):
-            if part is None:
-                return value  # we're replacing the root
+        if part is None:
+            return value  # we're replacing the root, whatever its type
 
-            elif part == '-':
+        if isinstance(subobj, MutableSequence):
+            if part == '-':
                 subobj.append(value)  # pylint: disable=E1103
 
             elif part > len(subobj) or part < 0:
@@ -273,16 +276,10 @@ class AddOperation(PatchOperation):
                 subobj.insert(part, value)  # pylint: disable=E1103
 
         elif isinstance(subobj, MutableMapping):
-            if part is None:
-                obj = value  # we're replacing the root
-            else:
-                subobj[part] = value
+            subobj[part] = value
 
         else:
-            if part is None:
-                raise TypeError("invalid document type {0}".format(type(subobj)))
-            else:
-                raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part))
+            raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part))
         return obj
 
 
@@ -316,10 +313,7 @@ class ReplaceOperation(PatchOperation):
                 msg = "can't replace a non-existent object '{0}'".format(part)
                 raise JsonPatchConflict(msg)
         else:
-            if part is None:
-                raise TypeError("invalid document type {0}".format(type(subobj)))
-            else:
-                raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part))
+            raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part))
 
         subobj[part] = value
         return obj
@@ -340,7 +334,7 @@ class MoveOperation(PatchOperation):
 
         subobj, part = _to_last(from_ptr, obj)
         try:
-            value = subobj[part]
+            value = subobj if part is None else subobj[part]
         except (KeyError, IndexError) as ex:
             raise JsonPatchConflict(str(ex))
 
