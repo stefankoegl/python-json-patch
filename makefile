@@ -11,9 +11,10 @@ help:
 
 test:
 	python -Wd -m coverage run --branch --source=jsonpatch tests.py
-	python -Wd property_tests.py
+	python -Wd -m coverage run --append --branch --source=jsonpatch property_tests.py
 	coverage report --show-missing
 
 coverage:
 	coverage run --source=jsonpatch tests.py
+	coverage run --append --source=jsonpatch property_tests.py
 	coverage report -m

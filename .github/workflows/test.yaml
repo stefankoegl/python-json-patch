@@ -31,7 +31,10 @@ jobs:
           # flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
       - name: Test
         run: |
-          coverage run --source=jsonpointer tests.py
+          coverage run tests.py
       - name: Property-based tests
         run: |
-          python property_tests.py
+          coverage run --append property_tests.py
+      - name: Coverage report
+        run: |
+          coverage report
