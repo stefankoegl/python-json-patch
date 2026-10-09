@@ -335,7 +335,7 @@ class ApplyPatchProperties(unittest.TestCase):
 
     @unittest.expectedFailure
     @given(docs_with_patches())
-    # 'move' from the whole document crashes for array roots
+    # 'move' from the whole document crashed for array roots, #214
     @example(case=([], [{'op': 'move', 'from': '', 'path': '/-'}]))
     # 'copy' or 'move' from the '-' of an array crashes
     @example(case=([0], [{'op': 'copy', 'from': '/-', 'path': '/0'}]))
@@ -406,8 +406,7 @@ class OperationProperties(unittest.TestCase):
         assert_json_equal(result, expected)
 
     # RFC 6902, 4.4: a location cannot be moved into one of its children;
-    # only enforced if the location is an object member
-    @unittest.expectedFailure
+    # was only enforced if the location is an object member, #214
     @given(moves_into_own_child())
     @example(case=([[], []], '/0', '/0/0'))
     def test_move_into_own_child_fails(self, case):

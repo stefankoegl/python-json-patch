@@ -201,10 +201,16 @@ class ApplyPatchTestCase(unittest.TestCase):
         self.assertEqual(res, {'foo': ['all', 'cows', 'eat', 'grass']})
 
     def test_move_array_item_into_other_item(self):
-        obj = [{"foo": []}, {"bar": []}]
-        patch = [{"op": "move", "from": "/0", "path": "/0/bar/0"}]
-        res = jsonpatch.apply_patch(obj, patch)
-        self.assertEqual(res, [{'bar': [{"foo": []}]}])
+        # https://github.com/stefankoegl/python-json-patch/issues/214
+        # "from" is a proper prefix of "path", which RFC 6902, 4.4 forbids,
+        # even though "path" is inside the other item once "from" is removed
+        for obj, path in [([{"foo": []}, {"bar": []}], "/0/bar/0"),
+                          ([[], []], "/0/0")]:
+            saved = copy.deepcopy(obj)
+            patch = [{"op": "move", "from": "/0", "path": path}]
+            self.assertRaises(jsonpatch.JsonPatchConflict,
+                              jsonpatch.apply_patch, obj, patch)
+            self.assertEqual(obj, saved)
 
     def test_copy_object_keyerror(self):
         obj = {'foo': {'bar': 'baz'},
@@ -1169,6 +1175,22 @@ class ConflictTests(unittest.TestCase):
         src = {"foo": {"bar": {"baz": 1}}}
         patch_obj = [ { "op": "move", "from": "/foo", "path": "/foo/bar" } ]
         self.assertRaises(jsonpatch.JsonPatchException, jsonpatch.apply_patch, src, patch_obj)
+
+    def test_move_whole_document_into_own_child(self):
+        for src, path in [([], '/-'), ([1], '/0'), ({}, '/a'), ({'a': {}}, '/a/b')]:
+            patch_obj = [ { "op": "move", "from": "", "path": path } ]
+            self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
+
+    def test_move_whole_document_onto_itself(self):
+        for src in [[1], {'a': 1}]:
+            res = jsonpatch.apply_patch(src, [ { "op": "move", "from": "", "path": "" } ])
+            self.assertEqual(res, src)
+
+    def test_move_onto_itself_must_exist(self):
+        src = {'foo': [1]}
+        for path in ['/bar', '/foo/1']:
+            patch_obj = [ { "op": "move", "from": path, "path": path } ]
+            self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
 
     def test_replace_oob(self):
         src = {"foo": [1, 2]}
