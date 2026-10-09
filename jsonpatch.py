@@ -102,7 +102,7 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
     :param patch: JSON patch as list of dicts or raw JSON-encoded string.
     :type patch: list or str
 
-    :param in_place: While :const:`True` patch will modify target document.
+    :param in_place: While ``True`` patch will modify target document.
                      By default patch will be applied to document copy.
     :type in_place: bool
 
@@ -439,18 +439,6 @@ class CopyOperation(PatchOperation):
 
 
 class JsonPatch(object):
-    json_dumper = staticmethod(json.dumps)
-    json_loader = staticmethod(_jsonloads)
-
-    operations = MappingProxyType({
-        'remove': RemoveOperation,
-        'add': AddOperation,
-        'replace': ReplaceOperation,
-        'move': MoveOperation,
-        'test': TestOperation,
-        'copy': CopyOperation,
-    })
-
     """A JSON Patch is a list of Patch Operations.
 
     >>> patch = JsonPatch([
@@ -496,6 +484,18 @@ class JsonPatch(object):
     ...     patch.apply(old)    #doctest: +ELLIPSIS
     {...}
     """
+    json_dumper = staticmethod(json.dumps)
+    json_loader = staticmethod(_jsonloads)
+
+    operations = MappingProxyType({
+        'remove': RemoveOperation,
+        'add': AddOperation,
+        'replace': ReplaceOperation,
+        'move': MoveOperation,
+        'test': TestOperation,
+        'copy': CopyOperation,
+    })
+
     def __init__(self, patch, pointer_cls=JsonPointer):
         self.patch = patch
         self.pointer_cls = pointer_cls
@@ -552,7 +552,7 @@ class JsonPatch(object):
 
         :param loads: A function of one argument that loads a serialized
                       JSON string.
-        :type loads: function
+        :type loads: Callable
 
         :param pointer_cls: JSON pointer class to use.
         :type pointer_cls: Type[JsonPointer]
@@ -581,7 +581,7 @@ class JsonPatch(object):
 
         :param dumps: A function of one argument that produces a serialized
                       JSON string.
-        :type dumps: function
+        :type dumps: Callable
 
         :param pointer_cls: JSON pointer class to use.
         :type pointer_cls: Type[JsonPointer]
