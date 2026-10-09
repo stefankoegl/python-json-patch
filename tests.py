@@ -944,6 +944,18 @@ class OptimizationTests(unittest.TestCase):
             {'op': 'replace', 'path': '/3', 'value': 4},
         ])
 
+    def test_issue_78_items_paired_by_position(self):
+        """ Objects are compared by position if matching up those that are
+        equal pairs up objects that differ in more members """
+        src = [{'x': 'A'}, {'x': 'X'}, {'b1': 'B1', 'b2': 'B2', 'b3': 'B3'}]
+        dst = [{'x': 'X'}, {'x': 'X', 'c': 'C'},
+               {'b1': 'D1', 'b2': 'B2', 'b3': 'B3'}]
+        self.assertPatch(src, dst, [
+            {'op': 'replace', 'path': '/0/x', 'value': 'X'},
+            {'op': 'add', 'path': '/1/c', 'value': 'C'},
+            {'op': 'replace', 'path': '/2/b1', 'value': 'D1'},
+        ])
+
     def test_issue_78_object_member_order(self):
         """ Objects are matched up whatever the order of their members """
         self.assertPatch([{'a': 1, 'b': 2}], [{'x': 0}, {'b': 2, 'a': 1}],

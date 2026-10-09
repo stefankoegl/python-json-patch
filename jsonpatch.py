@@ -856,25 +856,31 @@ class DiffBuilder(object):
                 src_keys[-1 - common_end] == dst_keys[-1 - common_end]:
             common_end += 1
         src_end, dst_end = len(src) - common_end, len(dst) - common_end
-        src_keys, dst_keys = src_keys[start:src_end], dst_keys[start:dst_end]
 
         # Matching up all items can take time proportional to the product of
         # the list lengths. For longer lists SequenceMatcher does not match
         # up items that are frequent in them, unless next to other matches
-        matcher = SequenceMatcher(
-            None, src_keys, dst_keys,
-            autojunk=len(src_keys) * len(dst_keys) > _EXACT_MATCH_LIMIT)
+        exact = (src_end - start) * (dst_end - start) <= _EXACT_MATCH_LIMIT
+        matcher = SequenceMatcher(None, src_keys[start:src_end],
+                                  dst_keys[start:dst_end], autojunk=not exact)
         runs = [(start + i1, start + i2, start + j1, start + j2)
                 for tag, i1, i2, j1, j2 in matcher.get_opcodes()
                 if tag != 'equal']
 
+        # How many operations replacing src[i1:i2] by dst[j1:j2] takes
+        def cost(i1, i2, j1, j2):
+            return abs((i2 - i1) - (j2 - j1)) + sum(
+                _positional_cost(src[i], dst[j])
+                for i, j in zip(range(i1, i2), range(j1, j2))
+                if src_keys[i] != dst_keys[j])
+
         # Items can be equal by chance, and matching them up can take more
         # operations than comparing by position: for [2, 3, 5] and [3, 3, 4]
-        # it removes 2, replaces 5 and adds 4 instead of replacing 2 and 5
-        by_position = abs(len(src_keys) - len(dst_keys)) + \
-            sum(old != new for old, new in zip(src_keys, dst_keys))
-        if sum(max(i2 - i1, j2 - j1) for i1, i2, j1, j2 in runs) > by_position:
-            return [(start, src_end, start, dst_end)]
+        # it removes 2, replaces 5 and adds 4 instead of replacing 2 and 5.
+        # It can also pair up arrays or objects that differ in more members.
+        by_position = (start, src_end, start, dst_end)
+        if sum(cost(*run) for run in runs) > cost(*by_position):
+            return [by_position]
 
         return runs
 
@@ -930,6 +936,20 @@ class DiffBuilder(object):
 
         else:
             self._item_replaced(path, key, dst)
+
+
+def _positional_cost(old, new):
+    """ Estimates how many operations change old into new, if the items of
+    arrays are compared by position """
+    if old == new:
+        return 0
+    if isinstance(old, MutableMapping) and isinstance(new, MutableMapping):
+        return sum(_positional_cost(old[key], new[key]) if key in new else 1
+                   for key in old) + sum(key not in old for key in new)
+    if isinstance(old, MutableSequence) and isinstance(new, MutableSequence):
+        return abs(len(old) - len(new)) + sum(
+            _positional_cost(*items) for items in zip(old, new))
+    return 1
 
 
 def _sorted_members(value):
