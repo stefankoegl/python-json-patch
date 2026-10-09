@@ -36,7 +36,7 @@ import collections
 import copy
 import functools
 import json
-from collections.abc import MutableMapping, MutableSequence, Sequence
+from collections.abc import Mapping, MutableMapping, MutableSequence, Sequence
 from difflib import SequenceMatcher
 from types import MappingProxyType
 
@@ -185,6 +185,23 @@ class PatchOperation(object):
 
         self.operation = operation
 
+    def _from_pointer(self):
+        """Builds the pointer of the 'from' member like __init__ builds the
+        one of 'path'."""
+        try:
+            from_ptr = self.operation['from']
+        except KeyError:
+            raise InvalidJsonPatch(
+                "The operation does not contain a 'from' member")
+
+        if isinstance(from_ptr, self.pointer_cls):
+            return from_ptr
+
+        try:
+            return self.pointer_cls(from_ptr)
+        except TypeError:
+            raise InvalidJsonPatch("Invalid 'from'")
+
     def apply(self, obj):
         """Abstract method that applies a patch operation to the specified object."""
         raise NotImplementedError('should implement the patch operation.')
@@ -329,16 +346,9 @@ class MoveOperation(PatchOperation):
     """Moves an object property or an array element to a new location."""
 
     def apply(self, obj):
-        try:
-            if isinstance(self.operation['from'], self.pointer_cls):
-                from_ptr = self.operation['from']
-            else:
-                from_ptr = self.pointer_cls(self.operation['from'])
-        except KeyError:
-            raise InvalidJsonPatch(
-                "The operation does not contain a 'from' member")
+        from_ptr = self._from_pointer()
 
-        subobj, part = _to_last(from_ptr, obj)
+        subobj, part = _to_existing_last(from_ptr, obj)
         try:
             value = subobj[part]
         except (KeyError, IndexError) as ex:
@@ -422,13 +432,9 @@ class CopyOperation(PatchOperation):
     """ Copies an object property or an array element to a new location """
 
     def apply(self, obj):
-        try:
-            from_ptr = self.pointer_cls(self.operation['from'])
-        except KeyError:
-            raise InvalidJsonPatch(
-                "The operation does not contain a 'from' member")
+        from_ptr = self._from_pointer()
 
-        subobj, part = _to_last(from_ptr, obj)
+        subobj, part = _to_existing_last(from_ptr, obj)
         try:
             value = copy.deepcopy(subobj if part is None else subobj[part])
         except (KeyError, IndexError) as ex:
@@ -637,6 +643,9 @@ class JsonPatch(object):
         return obj
 
     def _get_operation(self, operation):
+        if not isinstance(operation, Mapping):
+            raise InvalidJsonPatch("Operation must be an object")
+
         if 'op' not in operation:
             raise InvalidJsonPatch("Operation does not contain 'op' member")
 
@@ -1056,5 +1065,18 @@ def _to_last(pointer, doc):
         raise JsonPointerException(
             "Cannot apply token '{0}' to non-container type {1}".format(
                 part, type(subobj)))
+
+    return subobj, part
+
+
+def _to_existing_last(pointer, doc):
+    """Resolve pointer like _to_last, for a location that has to exist.
+
+    The '-' of an array refers to the nonexistent element after its last one.
+    """
+    subobj, part = _to_last(pointer, doc)
+
+    if part == '-' and isinstance(subobj, Sequence):
+        raise JsonPointerException("invalid array index '{0}'".format(part))
 
     return subobj, part

@@ -89,6 +89,20 @@ class ApplyPatchTestCase(unittest.TestCase):
         with self.assertRaises(jsonpointer.JsonPointerException):
             jsonpatch.apply_patch(obj, [{'op': 'remove', 'path': '/foo/-'}])
 
+    def test_move_copy_from_end_of_list(self):
+        # '-' refers to the nonexistent element after the last one, #215
+        obj = {'foo': ['bar', 'qux', 'baz']}
+        for op in ('move', 'copy'):
+            with self.assertRaises(jsonpointer.JsonPointerException):
+                jsonpatch.apply_patch(obj, [{'op': op, 'from': '/foo/-', 'path': '/foo/0'}])
+
+    def test_move_copy_from_dash_object_key(self):
+        # '-' is an ordinary key in objects
+        obj = {'-': 1}
+        res = jsonpatch.apply_patch(obj, [{'op': 'copy', 'from': '/-', 'path': '/a'}])
+        self.assertEqual(res, {'-': 1, 'a': 1})
+        res = jsonpatch.apply_patch(obj, [{'op': 'move', 'from': '/-', 'path': '/a'}])
+        self.assertEqual(res, {'a': 1})
 
     def test_replace_object_key(self):
         obj = {'foo': 'bar', 'baz': 'qux'}
@@ -1142,6 +1156,20 @@ class InvalidInputTests(unittest.TestCase):
         patch_obj = [ { "op": "invalid", "path": "/child", "value": { "grandchild": { } } } ]
         self.assertRaises(jsonpatch.JsonPatchException, jsonpatch.apply_patch, src, patch_obj)
 
+    def test_operation_not_an_object(self):
+        # each element of a patch has to be an object, #215
+        src = {"foo": "bar"}
+        for operation in [0, None, True, [], ["op", "add"]]:
+            self.assertRaises(jsonpatch.InvalidJsonPatch, jsonpatch.apply_patch, src, [operation])
+
+    def test_invalid_from(self):
+        # "from" has to be a JSON pointer, like "path", #215
+        src = {"foo": "bar"}
+        for op in ("move", "copy"):
+            for from_ in [0, None, ["foo"], {"foo": "bar"}]:
+                patch_obj = [ { "op": op, "from": from_, "path": "/baz" } ]
+                self.assertRaises(jsonpatch.InvalidJsonPatch, jsonpatch.apply_patch, src, patch_obj)
+
 
 class ConflictTests(unittest.TestCase):
 
@@ -1256,6 +1284,12 @@ class JsonPointerTests(unittest.TestCase):
         result = patch.apply(doc)
         expected = {'bar': 'bar', 'baz': [42]}
         self.assertEqual(result, expected)
+
+    def test_copy_from_pointer(self):
+        patch = jsonpatch.JsonPatch([
+            {'op': 'copy', 'from': jsonpointer.JsonPointer('/foo'), 'path': '/bar'},
+        ])
+        self.assertEqual(patch.apply({'foo': 1}), {'foo': 1, 'bar': 1})
 
 
 class JsonPatchCreationTest(unittest.TestCase):
