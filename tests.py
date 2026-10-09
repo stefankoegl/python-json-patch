@@ -307,6 +307,23 @@ class ApplyPatchTestCase(unittest.TestCase):
                           jsonpatch.apply_patch,
                           obj, [{'op': 'test', 'path': '/bar', 'value': 'bar'}])
 
+    def test_test_numbers_by_value(self):
+        obj = {'a': 1, 'b': [0.0], 'c': {'d': 2}}
+        jsonpatch.apply_patch(obj, [{'op': 'test', 'path': '/a', 'value': 1.0},
+                                    {'op': 'test', 'path': '/b', 'value': [0]},
+                                    {'op': 'test', 'path': '/c', 'value': {'d': 2.0}}])
+
+    def test_test_literals_differ_from_numbers(self):
+        # RFC 6902, 4.6: true and false are only equal to themselves, #216
+        for doc, value in [({'a': 1}, True),
+                           ({'a': [1]}, [True]),
+                           ({'a': {'a': 0}}, {'a': False}),
+                           ({'a': True}, 1),
+                           ({'a': False}, 0)]:
+            with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+                jsonpatch.apply_patch(
+                    doc, [{'op': 'test', 'path': '/a', 'value': value}])
+
 
     def test_test_not_existing(self):
         obj =  {'bar': 'qux'}
@@ -381,6 +398,17 @@ class EqualityTestCase(unittest.TestCase):
         patch1 = jsonpatch.JsonPatch([{'op': 'test', 'path': '/test'}])
         patch2 = jsonpatch.JsonPatch([{'op': 'test', 'path': '/test1'}])
         self.assertNotEqual(patch1, patch2)
+
+    def test_patch_unequal_literal_and_number(self):
+        # the patches behave differently, #216
+        patch1 = jsonpatch.JsonPatch([{'op': 'test', 'path': '/a', 'value': 1}])
+        patch2 = jsonpatch.JsonPatch([{'op': 'test', 'path': '/a', 'value': True}])
+        self.assertNotEqual(patch1, patch2)
+
+    def test_patch_equal_numbers_by_value(self):
+        patch1 = jsonpatch.JsonPatch([{'op': 'test', 'path': '/a', 'value': [1]}])
+        patch2 = jsonpatch.JsonPatch([{'op': 'test', 'path': '/a', 'value': [1.0]}])
+        self.assertEqual(patch1, patch2)
 
     def test_patch_hash_equality(self):
         patch1 = jsonpatch.JsonPatch([{ "op": "add", "path": "/a/b/c", "value": "foo" }])
