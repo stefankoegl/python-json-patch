@@ -37,6 +37,7 @@ import copy
 import functools
 import json
 from collections.abc import MutableMapping, MutableSequence, Sequence
+from difflib import SequenceMatcher
 from types import MappingProxyType
 
 from jsonpointer import JsonPointer, JsonPointerException
@@ -45,12 +46,16 @@ from jsonpointer import JsonPointer, JsonPointerException
 _ST_ADD = 0
 _ST_REMOVE = 1
 
+# Up to which product of their lengths DiffBuilder matches up all equal items
+# of two lists
+_EXACT_MATCH_LIMIT = 500 ** 2
+
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
-__version__ = '1.33'
+__version__ = '1.34'
 __website__ = 'https://github.com/stefankoegl/python-json-patch'
-__license__ = 'Modified BSD License'
+__license__ = 'BSD-3-Clause'
 
 
 class JsonPatchException(Exception):
@@ -102,7 +107,7 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
     :param patch: JSON patch as list of dicts or raw JSON-encoded string.
     :type patch: list or str
 
-    :param in_place: While :const:`True` patch will modify target document.
+    :param in_place: While ``True`` patch will modify target document.
                      By default patch will be applied to document copy.
     :type in_place: bool
 
@@ -135,12 +140,14 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
 
 def make_patch(src, dst, pointer_cls=JsonPointer):
     """Generates patch by comparing two document objects. Actually is
-    a proxy to :meth:`JsonPatch.from_diff` method.
+    a proxy to :meth:`JsonPatch.from_diff` method. The resulting patch
+    transforms `src` into `dst`, so it has to be applied to `src` (or to a
+    document equal to it).
 
     :param src: Data source document object.
     :type src: dict
 
-    :param dst: Data source document object.
+    :param dst: Data target document object.
     :type dst: dict
 
     :param pointer_cls: JSON pointer class to use.
@@ -437,18 +444,6 @@ class CopyOperation(PatchOperation):
 
 
 class JsonPatch(object):
-    json_dumper = staticmethod(json.dumps)
-    json_loader = staticmethod(_jsonloads)
-
-    operations = MappingProxyType({
-        'remove': RemoveOperation,
-        'add': AddOperation,
-        'replace': ReplaceOperation,
-        'move': MoveOperation,
-        'test': TestOperation,
-        'copy': CopyOperation,
-    })
-
     """A JSON Patch is a list of Patch Operations.
 
     >>> patch = JsonPatch([
@@ -494,6 +489,18 @@ class JsonPatch(object):
     ...     patch.apply(old)    #doctest: +ELLIPSIS
     {...}
     """
+    json_dumper = staticmethod(json.dumps)
+    json_loader = staticmethod(_jsonloads)
+
+    operations = MappingProxyType({
+        'remove': RemoveOperation,
+        'add': AddOperation,
+        'replace': ReplaceOperation,
+        'move': MoveOperation,
+        'test': TestOperation,
+        'copy': CopyOperation,
+    })
+
     def __init__(self, patch, pointer_cls=JsonPointer):
         self.patch = patch
         self.pointer_cls = pointer_cls
@@ -550,7 +557,7 @@ class JsonPatch(object):
 
         :param loads: A function of one argument that loads a serialized
                       JSON string.
-        :type loads: function
+        :type loads: Callable
 
         :param pointer_cls: JSON pointer class to use.
         :type pointer_cls: Type[JsonPointer]
@@ -568,17 +575,18 @@ class JsonPatch(object):
     ):
         """Creates JsonPatch instance based on comparison of two document
         objects. Json patch would be created for `src` argument against `dst`
-        one.
+        one. The resulting patch transforms `src` into `dst`, so it has to be
+        applied to `src` (or to a document equal to it).
 
         :param src: Data source document object.
         :type src: dict
 
-        :param dst: Data source document object.
+        :param dst: Data target document object.
         :type dst: dict
 
         :param dumps: A function of one argument that produces a serialized
                       JSON string.
-        :type dumps: function
+        :type dumps: Callable
 
         :param pointer_cls: JSON pointer class to use.
         :type pointer_cls: Type[JsonPointer]
@@ -655,22 +663,23 @@ class DiffBuilder(object):
         self.dst_doc = dst_doc
         root[:] = [root, root, None]
 
-    def index_key(self, value):
-        """ A key that two values share only if they are the same in JSON, so
-        that a value is only moved to where it is the same. It is None for
-        values that cannot be serialized, which are not moved. """
+    def _move_key(self, value):
+        """ A key of value, which is equal for values that are equal in JSON,
+        so that e.g. [1] is not moved where [true] is added """
         try:
-            return _serialized_key(value, self.dumps)
-        # values that contain themselves recurse until RecursionError
+            # Serialized like in _differing_runs
+            return self.dumps(_sorted_members(value))
         except (TypeError, ValueError, RecursionError):
-            return None
+            # Values that cannot be serialized, e.g. as they contain
+            # themselves, are only moved where they are added unchanged
+            return id(value)
 
-    def store_index(self, key, index, st):
-        if key is not None:
-            self.index_storage[st].setdefault(key, []).append(index)
+    def store_index(self, value, index, st):
+        storage = self.index_storage[st]
+        storage.setdefault(self._move_key(value), []).append(index)
 
-    def take_index(self, key, st):
-        stored = self.index_storage[st].get(key)
+    def take_index(self, value, st):
+        stored = self.index_storage[st].get(self._move_key(value))
         if stored:
             return stored.pop()
 
@@ -761,8 +770,7 @@ class DiffBuilder(object):
 
     def _item_added(self, path, key, item):
         target = _path_join(path, key)
-        index_key = self.index_key(item)
-        index = self.take_index(index_key, _ST_REMOVE)
+        index = self.take_index(item, _ST_REMOVE)
         if index is not None:
             changes, source = self._adjust_following(index, removed=True)
             # RFC 6902 does not allow moving a value into its own children
@@ -776,12 +784,11 @@ class DiffBuilder(object):
                 return
 
         new_index = self.insert({'op': 'add', 'path': target, 'value': item})
-        self.store_index(index_key, new_index, _ST_ADD)
+        self.store_index(item, new_index, _ST_ADD)
 
     def _item_removed(self, path, key, item):
         source = _path_join(path, key)
-        index_key = self.index_key(item)
-        index = self.take_index(index_key, _ST_ADD)
+        index = self.take_index(item, _ST_ADD)
         if index is not None:
             changes, added = self._adjust_following(index, removed=False)
             moved_from = _without_item(source, added)
@@ -797,7 +804,7 @@ class DiffBuilder(object):
                 return
 
         new_index = self.insert({'op': 'remove', 'path': source})
-        self.store_index(index_key, new_index, _ST_REMOVE)
+        self.store_index(item, new_index, _ST_REMOVE)
 
     def _item_replaced(self, path, key, item):
         self.insert({
@@ -820,13 +827,79 @@ class DiffBuilder(object):
         for key in intersection:
             self._compare_values(path, str(key), src[key], dst[key])
 
+    def _differing_runs(self, src, dst):
+        """ Returns (i1, i2, j1, j2) for each run of items src[i1:i2] that is
+        replaced by dst[j1:j2], between runs of items that both lists have.
+
+        Without matching up the items they both have, inserting an item in
+        front of arrays or objects would change all of them that follow. """
+        try:
+            # Serialized like in _compare_values, so e.g. 1 and True differ,
+            # but independent of the order of object members
+            src_keys = [self.dumps(_sorted_members(item)) for item in src]
+            dst_keys = [self.dumps(_sorted_members(item)) for item in dst]
+        except (TypeError, ValueError, RecursionError):
+            # Items that cannot be serialized are compared by position
+            return [(0, len(src), 0, len(dst))]
+
+        # Only what is between the common start and end is matched up
+        shorter = min(len(src), len(dst))
+        start = 0
+        while start < shorter and src_keys[start] == dst_keys[start]:
+            start += 1
+        common_end = 0
+        while common_end < shorter - start and \
+                src_keys[-1 - common_end] == dst_keys[-1 - common_end]:
+            common_end += 1
+        src_end, dst_end = len(src) - common_end, len(dst) - common_end
+
+        # How many operations replacing src[i1:i2] by dst[j1:j2] takes
+        def cost(i1, i2, j1, j2):
+            return abs((i2 - i1) - (j2 - j1)) + sum(
+                _positional_cost(src[i], dst[j])
+                for i, j in zip(range(i1, i2), range(j1, j2))
+                if src_keys[i] != dst_keys[j])
+
+        by_position = (start, src_end, start, dst_end)
+        position_cost = cost(*by_position)
+
+        # Matching up all items can take time proportional to the product of
+        # the list lengths. For longer lists SequenceMatcher does not match
+        # up items that are frequent in them, unless next to other matches
+        exact = (src_end - start) * (dst_end - start) <= _EXACT_MATCH_LIMIT
+        if not exact:
+            # It still compares each item with the equal items of the other
+            # list that are not frequent, which takes quadratic time for long
+            # lists of repeated items. Comparing by position takes quadratic
+            # time in its operations as well, as the diff turns them into
+            # moves, so matching up may only take about as long
+            counts = collections.Counter(dst_keys[start:dst_end])
+            comparisons = sum(counts[key] for key in src_keys[start:src_end])
+            if comparisons > max(_EXACT_MATCH_LIMIT, position_cost ** 2):
+                return [by_position]
+
+        matcher = SequenceMatcher(None, src_keys[start:src_end],
+                                  dst_keys[start:dst_end], autojunk=not exact)
+        runs = [(start + i1, start + i2, start + j1, start + j2)
+                for tag, i1, i2, j1, j2 in matcher.get_opcodes()
+                if tag != 'equal']
+
+        # Items can be equal by chance, and matching them up can take more
+        # operations than comparing by position: for [2, 3, 5] and [3, 3, 4]
+        # it removes 2, replaces 5 and adds 4 instead of replacing 2 and 5.
+        # It can also pair up arrays or objects that differ in more members.
+        if sum(cost(*run) for run in runs) > position_cost:
+            return [by_position]
+
+        return runs
+
     def _compare_lists(self, path, src, dst):
-        len_src, len_dst = len(src), len(dst)
-        max_len = max(len_src, len_dst)
-        min_len = min(len_src, len_dst)
-        for key in range(max_len):
-            if key < min_len:
-                old, new = src[key], dst[key]
+        # The list has become dst[:j1] + src[i1:] when a run is compared, so
+        # src[i1] is at index j1
+        for i1, i2, j1, j2 in self._differing_runs(src, dst):
+            paired = min(i2 - i1, j2 - j1)
+            for key in range(j1, j1 + paired):
+                old, new = src[i1 + key - j1], dst[key]
                 if isinstance(old, MutableMapping) and \
                         isinstance(new, MutableMapping):
                     self._compare_dicts(_path_join(path, key), old, new)
@@ -845,10 +918,10 @@ class DiffBuilder(object):
                     self._item_removed(path, key, old)
                     self._item_added(path, key, new)
 
-            elif len_src > len_dst:
-                self._item_removed(path, len_dst, src[key])
+            for old in src[i1 + paired:i2]:
+                self._item_removed(path, j1 + paired, old)
 
-            else:
+            for key in range(j1 + paired, j2):
                 self._item_added(path, key, dst[key])
 
     def _compare_values(self, path, key, src, dst):
@@ -874,22 +947,31 @@ class DiffBuilder(object):
             self._item_replaced(path, key, dst)
 
 
-def _serialized_key(value, dumps):
-    """ Python considers e.g. 1 and True equal, so values themselves cannot
-    be the keys that find moved values (#180). Like _compare_values, the key
-    uses serialized values, but objects and arrays are compared member by
-    member there, so the order of object members does not matter here. """
+def _positional_cost(old, new):
+    """ Estimates how many operations change old into new, if the items of
+    arrays are compared by position """
+    if old == new:
+        return 0
+    if isinstance(old, MutableMapping) and isinstance(new, MutableMapping):
+        return sum(_positional_cost(old[key], new[key]) if key in new else 1
+                   for key in old) + sum(key not in old for key in new)
+    if isinstance(old, MutableSequence) and isinstance(new, MutableSequence):
+        return abs(len(old) - len(new)) + sum(
+            _positional_cost(*items) for items in zip(old, new))
+    return 1
+
+
+def _sorted_members(value):
+    """ Copies the arrays and objects in value, with the members of objects
+    sorted by key """
+    # Most values are scalars, so they are checked for first
+    if value is None or isinstance(value, (str, int, float)):
+        return value
     if isinstance(value, MutableMapping):
-        # JSON member names are strings: 1 and True become "1" and "true",
-        # which differ although Python considers 1 and True equal
-        return frozenset((key if isinstance(key, str) else dumps(key),
-                          _serialized_key(item, dumps))
-                         for key, item in value.items())
-
+        return {key: _sorted_members(value[key]) for key in sorted(value)}
     if isinstance(value, MutableSequence):
-        return tuple(_serialized_key(item, dumps) for item in value)
-
-    return dumps(value)
+        return [_sorted_members(item) for item in value]
+    return value
 
 
 # The DiffBuilder keeps locations as tuples of object keys (str) and array

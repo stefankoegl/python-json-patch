@@ -12,9 +12,10 @@ is a Python library for applying JSON patches (`RFC 6902
 supported. Tests are run on both CPython and PyPy.
 
 **Installation**
+
 .. code-block:: bash
+
   $ pip install jsonpatch
-..
 
 **Contents**
 
