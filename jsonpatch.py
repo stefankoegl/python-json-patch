@@ -651,7 +651,7 @@ class JsonPatch(object):
 
         op = operation['op']
 
-        if not isinstance(op, basestring):
+        if not isinstance(op, (str, bytes)):
             raise InvalidJsonPatch("Operation's op must be a string", op=operation)
 
         if op not in self.operations:
