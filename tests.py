@@ -8,8 +8,10 @@ import doctest
 import unittest
 import jsonpatch
 import jsonpointer
+import random
 import sys
 from types import MappingProxyType
+from unittest import mock
 
 
 class ApplyPatchTestCase(unittest.TestCase):
@@ -481,9 +483,7 @@ class MakePatchTestCase(unittest.TestCase):
                    }
         self.assertEqual(expected, res)
 
-    # TODO: this test is currently disabled, as the optimized patch is
-    # not ideal
-    def _test_should_just_add_new_item_not_rebuild_all_list(self):
+    def test_should_just_add_new_item_not_rebuild_all_list(self):
         src = {'foo': [1, 2, 3]}
         dst = {'foo': [3, 1, 2, 3]}
         patch = list(jsonpatch.make_patch(src, dst))
@@ -639,6 +639,37 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertEqual(res, dst)
         self.assertIsInstance(res['aaa'][1], bool)
         self.assertIsInstance(res['aaa'][2], bool)
+
+    def test_move_only_values_equal_in_json(self):
+        """[1] and [true] are equal in Python, so the diff moved one to where
+        the other belongs"""
+        cases = [
+            ([[1], [2], [3]], [[2], [3], [True]]),
+            ([{'a': 1}, 2], [2, {'a': True}]),
+            ({'a': [1]}, {'b': [True]}),
+        ]
+        for src, dst in cases:
+            with self.subTest(src=src, dst=dst):
+                patch = jsonpatch.make_patch(src, dst)
+                res = patch.apply(src)
+                self.assertEqual(json.dumps(res), json.dumps(dst))
+
+    def test_values_dumps_cannot_serialize(self):
+        """Such values can be added, removed and moved, as they need not be
+        compared"""
+        value = decimal.Decimal('1.5')
+        cases = [
+            ({}, {'a': value}),
+            ([1], [1, value]),
+            ({'a': [value]}, {}),
+            ({'a': value}, {'b': value}),
+        ]
+        for src, dst in cases:
+            with self.subTest(src=src, dst=dst):
+                patch = jsonpatch.make_patch(src, dst)
+                self.assertEqual(patch.apply(src), dst)
+        self.assertEqual(jsonpatch.make_patch(*cases[-1]).patch,
+                         [{'op': 'move', 'from': '/a', 'path': '/b'}])
 
     def test_issue119(self):
         """Make sure it avoids casting numeric str dict key to int"""
@@ -1002,6 +1033,30 @@ class OptimizationTests(unittest.TestCase):
         dst = [{1: 'a', 'b': 1}, {1: 'a'}]
         self.assertEqual(jsonpatch.make_patch(src, dst).patch,
                          [{'op': 'replace', 'path': '/0/b', 'value': 1}])
+
+    def test_long_list_of_repeated_items_is_compared_by_position(self):
+        """ Matching up would compare each item with about 133 equal items,
+        while only two items differ by position """
+        src = [i % 150 for i in range(20000)]
+        dst = [-1] + src[1:-1] + [-2]
+        with mock.patch('jsonpatch.SequenceMatcher',
+                        side_effect=AssertionError('matched up')):
+            patch = jsonpatch.make_patch(src, dst)
+        self.assertEqual(len(patch.patch), 2)
+        self.assertEqual(patch.apply(src), dst)
+
+    def test_long_list_of_repeated_items_is_matched_up(self):
+        """ Comparing by position would change the items between the changes,
+        as they are shifted """
+        rng = random.Random(0)
+        src = [rng.randrange(150) for _ in range(9000)]
+        dst = src[:1000] + [-1] + src[1000:5000] + src[5001:8000] + [-2] + \
+            src[8000:]
+        self.assertPatch(src, dst, [
+            {'op': 'add', 'path': '/1000', 'value': -1},
+            {'op': 'remove', 'path': '/5001'},
+            {'op': 'add', 'path': '/8000', 'value': -2},
+        ])
 
 
 class ListTests(unittest.TestCase):

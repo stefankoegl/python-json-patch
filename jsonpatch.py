@@ -658,37 +658,30 @@ class DiffBuilder(object):
         self.dumps = dumps
         self.pointer_cls = pointer_cls
         self.index_storage = [{}, {}]
-        self.index_storage2 = [[], []]
         self.__root = root = []
         self.src_doc = src_doc
         self.dst_doc = dst_doc
         root[:] = [root, root, None]
 
-    def store_index(self, value, index, st):
-        typed_key = (value, type(value))
+    def _move_key(self, value):
+        """ A key of value, which is equal for values that are equal in JSON,
+        so that e.g. [1] is not moved where [true] is added """
         try:
-            storage = self.index_storage[st]
-            stored = storage.get(typed_key)
-            if stored is None:
-                storage[typed_key] = [index]
-            else:
-                storage[typed_key].append(index)
+            # Serialized like in _differing_runs
+            return self.dumps(_sorted_members(value))
+        except (TypeError, ValueError):
+            # Values that cannot be serialized are only moved where they are
+            # added unchanged
+            return id(value)
 
-        except TypeError:
-            self.index_storage2[st].append((typed_key, index))
+    def store_index(self, value, index, st):
+        storage = self.index_storage[st]
+        storage.setdefault(self._move_key(value), []).append(index)
 
     def take_index(self, value, st):
-        typed_key = (value, type(value))
-        try:
-            stored = self.index_storage[st].get(typed_key)
-            if stored:
-                return stored.pop()
-
-        except TypeError:
-            storage = self.index_storage2[st]
-            for i in range(len(storage)-1, -1, -1):
-                if storage[i][0] == typed_key:
-                    return storage.pop(i)[1]
+        stored = self.index_storage[st].get(self._move_key(value))
+        if stored:
+            return stored.pop()
 
     def insert(self, op):
         root = self.__root
@@ -860,16 +853,6 @@ class DiffBuilder(object):
             common_end += 1
         src_end, dst_end = len(src) - common_end, len(dst) - common_end
 
-        # Matching up all items can take time proportional to the product of
-        # the list lengths. For longer lists SequenceMatcher does not match
-        # up items that are frequent in them, unless next to other matches
-        exact = (src_end - start) * (dst_end - start) <= _EXACT_MATCH_LIMIT
-        matcher = SequenceMatcher(None, src_keys[start:src_end],
-                                  dst_keys[start:dst_end], autojunk=not exact)
-        runs = [(start + i1, start + i2, start + j1, start + j2)
-                for tag, i1, i2, j1, j2 in matcher.get_opcodes()
-                if tag != 'equal']
-
         # How many operations replacing src[i1:i2] by dst[j1:j2] takes
         def cost(i1, i2, j1, j2):
             return abs((i2 - i1) - (j2 - j1)) + sum(
@@ -877,12 +860,35 @@ class DiffBuilder(object):
                 for i, j in zip(range(i1, i2), range(j1, j2))
                 if src_keys[i] != dst_keys[j])
 
+        by_position = (start, src_end, start, dst_end)
+        position_cost = cost(*by_position)
+
+        # Matching up all items can take time proportional to the product of
+        # the list lengths. For longer lists SequenceMatcher does not match
+        # up items that are frequent in them, unless next to other matches
+        exact = (src_end - start) * (dst_end - start) <= _EXACT_MATCH_LIMIT
+        if not exact:
+            # It still compares each item with the equal items of the other
+            # list that are not frequent, which takes quadratic time for long
+            # lists of repeated items. Comparing by position takes quadratic
+            # time in its operations as well, as the diff turns them into
+            # moves, so matching up may only take about as long
+            counts = collections.Counter(dst_keys[start:dst_end])
+            comparisons = sum(counts[key] for key in src_keys[start:src_end])
+            if comparisons > max(_EXACT_MATCH_LIMIT, position_cost ** 2):
+                return [by_position]
+
+        matcher = SequenceMatcher(None, src_keys[start:src_end],
+                                  dst_keys[start:dst_end], autojunk=not exact)
+        runs = [(start + i1, start + i2, start + j1, start + j2)
+                for tag, i1, i2, j1, j2 in matcher.get_opcodes()
+                if tag != 'equal']
+
         # Items can be equal by chance, and matching them up can take more
         # operations than comparing by position: for [2, 3, 5] and [3, 3, 4]
         # it removes 2, replaces 5 and adds 4 instead of replacing 2 and 5.
         # It can also pair up arrays or objects that differ in more members.
-        by_position = (start, src_end, start, dst_end)
-        if sum(cost(*run) for run in runs) > cost(*by_position):
+        if sum(cost(*run) for run in runs) > position_cost:
             return [by_position]
 
         return runs
