@@ -46,6 +46,10 @@ from jsonpointer import JsonPointer, JsonPointerException
 _ST_ADD = 0
 _ST_REMOVE = 1
 
+# Up to which product of their lengths DiffBuilder matches up all equal items
+# of two lists
+_EXACT_MATCH_LIMIT = 500 ** 2
+
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
@@ -834,15 +838,15 @@ class DiffBuilder(object):
         Without matching up the items they both have, inserting an item in
         front of arrays or objects would change all of them that follow. """
         try:
-            # Serialized like in _compare_values, so e.g. 1 and True differ
-            src_keys = [self.dumps(item) for item in src]
-            dst_keys = [self.dumps(item) for item in dst]
+            # Serialized like in _compare_values, so e.g. 1 and True differ,
+            # but independent of the order of object members
+            src_keys = [self.dumps(_sorted_members(item)) for item in src]
+            dst_keys = [self.dumps(_sorted_members(item)) for item in dst]
         except (TypeError, ValueError):
             # Items that cannot be serialized are compared by position
             return [(0, len(src), 0, len(dst))]
 
-        # SequenceMatcher does not match up items that occur often in long
-        # lists, so it only gets what is between the common start and end
+        # Only what is between the common start and end is matched up
         shorter = min(len(src), len(dst))
         start = 0
         while start < shorter and src_keys[start] == dst_keys[start]:
@@ -854,9 +858,14 @@ class DiffBuilder(object):
         src_end, dst_end = len(src) - common_end, len(dst) - common_end
         src_keys, dst_keys = src_keys[start:src_end], dst_keys[start:dst_end]
 
+        # Matching up all items can take time proportional to the product of
+        # the list lengths. For longer lists SequenceMatcher does not match
+        # up items that are frequent in them, unless next to other matches
+        matcher = SequenceMatcher(
+            None, src_keys, dst_keys,
+            autojunk=len(src_keys) * len(dst_keys) > _EXACT_MATCH_LIMIT)
         runs = [(start + i1, start + i2, start + j1, start + j2)
-                for tag, i1, i2, j1, j2 in
-                SequenceMatcher(None, src_keys, dst_keys).get_opcodes()
+                for tag, i1, i2, j1, j2 in matcher.get_opcodes()
                 if tag != 'equal']
 
         # Items can be equal by chance, and matching them up can take more
@@ -921,6 +930,19 @@ class DiffBuilder(object):
 
         else:
             self._item_replaced(path, key, dst)
+
+
+def _sorted_members(value):
+    """ Copies the arrays and objects in value, with the members of objects
+    sorted by key """
+    # Most values are scalars, so they are checked for first
+    if value is None or isinstance(value, (str, int, float)):
+        return value
+    if isinstance(value, MutableMapping):
+        return {key: _sorted_members(value[key]) for key in sorted(value)}
+    if isinstance(value, MutableSequence):
+        return [_sorted_members(item) for item in value]
+    return value
 
 
 # The DiffBuilder keeps locations as tuples of object keys (str) and array

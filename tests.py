@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import collections
 import copy
 import json
 import decimal
@@ -945,13 +944,31 @@ class OptimizationTests(unittest.TestCase):
             {'op': 'replace', 'path': '/3', 'value': 4},
         ])
 
+    def test_issue_78_object_member_order(self):
+        """ Objects are matched up whatever the order of their members """
+        self.assertPatch([{'a': 1, 'b': 2}], [{'x': 0}, {'b': 2, 'a': 1}],
+                         [{'op': 'add', 'path': '/0', 'value': {'x': 0}}])
+
+    def test_issue_78_frequent_items(self):
+        """ Items that occur often in long lists are matched up, too """
+        self.assertPatch([0] * 300, [1] + [0] * 300 + [2], [
+            {'op': 'add', 'path': '/0', 'value': 1},
+            {'op': 'add', 'path': '/301', 'value': 2},
+        ])
+        self.assertPatch(
+            [{} for _ in range(300)],
+            [{'a': 1}] + [{} for _ in range(300)] + [{'b': 2}], [
+                {'op': 'add', 'path': '/0', 'value': {'a': 1}},
+                {'op': 'add', 'path': '/301', 'value': {'b': 2}},
+            ])
+
     def test_issue_78_items_not_serializable(self):
-        """ Items that json.dumps does not support are compared by
-        position """
-        src = [collections.UserDict(a=1), collections.UserDict(b=1)]
-        dst = [collections.UserDict(a=2), collections.UserDict(b=1)]
+        """ Items that cannot be serialized with sorted object members are
+        compared by position """
+        src = [{1: 'a', 'b': 0}, {1: 'a'}]
+        dst = [{1: 'a', 'b': 1}, {1: 'a'}]
         self.assertEqual(jsonpatch.make_patch(src, dst).patch,
-                         [{'op': 'replace', 'path': '/0/a', 'value': 2}])
+                         [{'op': 'replace', 'path': '/0/b', 'value': 1}])
 
 
 class ListTests(unittest.TestCase):
