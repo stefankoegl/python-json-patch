@@ -10,6 +10,7 @@ import jsonpatch
 import jsonpointer
 import sys
 from types import MappingProxyType
+from unittest import mock
 
 
 class ApplyPatchTestCase(unittest.TestCase):
@@ -617,6 +618,37 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertIsInstance(res['aaa'][1], bool)
         self.assertIsInstance(res['aaa'][2], bool)
 
+    def test_move_only_values_equal_in_json(self):
+        """[1] and [true] are equal in Python, so the diff moved one to where
+        the other belongs"""
+        cases = [
+            ([[1], [2], [3]], [[2], [3], [True]]),
+            ([{'a': 1}, 2], [2, {'a': True}]),
+            ({'a': [1]}, {'b': [True]}),
+        ]
+        for src, dst in cases:
+            with self.subTest(src=src, dst=dst):
+                patch = jsonpatch.make_patch(src, dst)
+                res = patch.apply(src)
+                self.assertEqual(json.dumps(res), json.dumps(dst))
+
+    def test_values_dumps_cannot_serialize(self):
+        """Such values can be added, removed and moved, as they need not be
+        compared"""
+        value = decimal.Decimal('1.5')
+        cases = [
+            ({}, {'a': value}),
+            ([1], [value, 1]),
+            ({'a': [value]}, {}),
+            ({'a': value}, {'b': value}),
+        ]
+        for src, dst in cases:
+            with self.subTest(src=src, dst=dst):
+                patch = jsonpatch.make_patch(src, dst)
+                self.assertEqual(patch.apply(src), dst)
+        self.assertEqual(jsonpatch.make_patch(*cases[-1]).patch,
+                         [{'op': 'move', 'from': '/a', 'path': '/b'}])
+
     def test_issue119(self):
         """Make sure it avoids casting numeric str dict key to int"""
         src = [
@@ -942,6 +974,27 @@ class OptimizationTests(unittest.TestCase):
         dst = [1] + [0] * 300
         patch = jsonpatch.make_patch(src, dst)
         self.assertLessEqual(len(patch.patch), 2)
+        self.assertEqual(patch.apply(src), dst)
+
+    def test_long_list_of_repeated_items_is_compared_by_index(self):
+        # aligning would compare each item with about 133 equal items, while
+        # only two items differ by index
+        src = [i % 150 for i in range(20000)]
+        dst = [-1] + src[1:-1] + [-2]
+        with mock.patch('difflib.SequenceMatcher',
+                        side_effect=AssertionError('aligned')):
+            patch = jsonpatch.make_patch(src, dst)
+        self.assertEqual(len(patch.patch), 2)
+        self.assertEqual(patch.apply(src), dst)
+
+    def test_shifted_long_list_of_repeated_items_is_aligned(self):
+        # comparing by index would change all 6000 items
+        src = [i % 150 for i in range(6000)]
+        dst = [-1] + src[:-1]
+        patch = jsonpatch.make_patch(src, dst)
+        exp = [{'op': 'add', 'path': '/0', 'value': -1},
+               {'op': 'remove', 'path': '/6000'}]
+        self.assertEqual(patch.patch, exp)
         self.assertEqual(patch.apply(src), dst)
 
     def test_list_alignment_ignores_key_order(self):

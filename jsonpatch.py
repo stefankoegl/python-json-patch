@@ -46,6 +46,10 @@ from jsonpointer import JsonPointer, JsonPointerException
 _ST_ADD = 0
 _ST_REMOVE = 1
 
+# How many comparisons of equal items make_patch may spend on aligning the
+# items of two arrays, if they differ in only a few items by index
+_MAX_ALIGNMENT_COMPARISONS = 10 ** 5
+
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
@@ -651,37 +655,21 @@ class DiffBuilder(object):
         self.dumps = dumps
         self.pointer_cls = pointer_cls
         self.index_storage = [{}, {}]
-        self.index_storage2 = [[], []]
         self.__root = root = []
         self.src_doc = src_doc
         self.dst_doc = dst_doc
         root[:] = [root, root, None]
 
+    # Values are stored by _item_key, so that only values which are equal in
+    # JSON are moved instead of removed and added (e.g. not [1] and [true])
     def store_index(self, value, index, st):
-        typed_key = (value, type(value))
-        try:
-            storage = self.index_storage[st]
-            stored = storage.get(typed_key)
-            if stored is None:
-                storage[typed_key] = [index]
-            else:
-                storage[typed_key].append(index)
-
-        except TypeError:
-            self.index_storage2[st].append((typed_key, index))
+        storage = self.index_storage[st]
+        storage.setdefault(self._item_key(value), []).append(index)
 
     def take_index(self, value, st):
-        typed_key = (value, type(value))
-        try:
-            stored = self.index_storage[st].get(typed_key)
-            if stored:
-                return stored.pop()
-
-        except TypeError:
-            storage = self.index_storage2[st]
-            for i in range(len(storage)-1, -1, -1):
-                if storage[i][0] == typed_key:
-                    return storage.pop(i)[1]
+        stored = self.index_storage[st].get(self._item_key(value))
+        if stored:
+            return stored.pop()
 
     def insert(self, op):
         root = self.__root
@@ -837,7 +825,12 @@ class DiffBuilder(object):
         if isinstance(item, MutableSequence):
             return tuple(self._item_key(value) for value in item)
 
-        return self.dumps(item)
+        try:
+            return self.dumps(item)
+        except TypeError:
+            # dumps cannot compare values it cannot serialize, which can
+            # still be added, removed or moved as long as they are not changed
+            return id(item)
 
     def _compare_lists(self, path, src, dst):
         # Items are aligned first, so that inserting or removing one does not
@@ -991,6 +984,17 @@ def _changed_blocks(src, dst):
         # items are only inserted or only removed
         return positional
 
+    # SequenceMatcher compares each item with the equal items of the other
+    # sequence, which takes quadratic time for long sequences of repeated
+    # items. Comparing items by index takes quadratic time in the number of
+    # changed items, as the diff tries to turn them into moves, so aligning is
+    # only allowed to take about as long
+    changed = _changed_items(src, dst, positional)
+    counts = collections.Counter(dst[start:dst_end])
+    comparisons = sum(counts[item] for item in src[start:src_end])
+    if comparisons > max(_MAX_ALIGNMENT_COMPARISONS, changed ** 2):
+        return positional
+
     matcher = difflib.SequenceMatcher(None, src[start:src_end],
                                       dst[start:dst_end])
     aligned = [(start + i1, start + i2, start + j1, start + j2)
@@ -999,8 +1003,7 @@ def _changed_blocks(src, dst):
 
     # SequenceMatcher ignores items that occur often in long sequences, so
     # its alignment can change more items than comparing them by index
-    if _changed_items(src, dst, aligned) < \
-            _changed_items(src, dst, positional):
+    if _changed_items(src, dst, aligned) < changed:
         return aligned
 
     return positional
