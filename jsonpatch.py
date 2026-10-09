@@ -61,6 +61,15 @@ __license__ = 'BSD-3-Clause'
 class JsonPatchException(Exception):
     """Base Json Patch exception"""
 
+    def __init__(self, op=None):
+        """
+        Initialize a new instance of a JsonPatchException
+        :param op: The operation that failed. Attach to exception if you
+                   desire to catch and modify the original patch operations.
+        :type op: Type[PatchOperation]
+        """
+        self.op = op
+
 
 class InvalidJsonPatch(JsonPatchException):
     """ Raised if an invalid JSON Patch is created """
@@ -237,7 +246,7 @@ class RemoveOperation(PatchOperation):
             del subobj[part]
         except (KeyError, IndexError):
             msg = "can't remove a non-existent object '{0}'".format(part)
-            raise JsonPatchConflict(msg)
+            raise JsonPatchConflict(msg, op=self)
 
         return obj
 
@@ -250,7 +259,7 @@ class AddOperation(PatchOperation):
             value = self.operation["value"]
         except KeyError:
             raise InvalidJsonPatch(
-                "The operation does not contain a 'value' member")
+                "The operation does not contain a 'value' member", op=self)
 
         # Insert a copy so the document does not share mutable values with
         # the patch; otherwise later operations would modify the patch itself.
@@ -267,7 +276,7 @@ class AddOperation(PatchOperation):
                 subobj.append(value)  # pylint: disable=E1103
 
             elif part > len(subobj) or part < 0:
-                raise JsonPatchConflict("can't insert outside of list")
+                raise JsonPatchConflict("can't insert outside of list", op=self)
 
             else:
                 subobj.insert(part, value)  # pylint: disable=E1103
@@ -282,7 +291,7 @@ class AddOperation(PatchOperation):
             if part is None:
                 raise TypeError("invalid document type {0}".format(type(subobj)))
             else:
-                raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part))
+                raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part), op=self)
         return obj
 
 
@@ -294,7 +303,7 @@ class ReplaceOperation(PatchOperation):
             value = self.operation["value"]
         except KeyError:
             raise InvalidJsonPatch(
-                "The operation does not contain a 'value' member")
+                "The operation does not contain a 'value' member", op=self)
 
         # copied for the same reason as in AddOperation.apply
         value = copy.deepcopy(value)
@@ -305,21 +314,21 @@ class ReplaceOperation(PatchOperation):
             return value
 
         if part == "-":
-            raise InvalidJsonPatch("'path' with '-' can't be applied to 'replace' operation")
+            raise InvalidJsonPatch("'path' with '-' can't be applied to 'replace' operation", op=self)
 
         if isinstance(subobj, MutableSequence):
             if part >= len(subobj) or part < 0:
-                raise JsonPatchConflict("can't replace outside of list")
+                raise JsonPatchConflict("can't replace outside of list", op=self)
 
         elif isinstance(subobj, MutableMapping):
             if part not in subobj:
                 msg = "can't replace a non-existent object '{0}'".format(part)
-                raise JsonPatchConflict(msg)
+                raise JsonPatchConflict(msg, op=self)
         else:
             if part is None:
                 raise TypeError("invalid document type {0}".format(type(subobj)))
             else:
-                raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part))
+                raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part), op=self)
 
         subobj[part] = value
         return obj
@@ -336,13 +345,13 @@ class MoveOperation(PatchOperation):
                 from_ptr = self.pointer_cls(self.operation['from'])
         except KeyError:
             raise InvalidJsonPatch(
-                "The operation does not contain a 'from' member")
+                "The operation does not contain a 'from' member", op=self)
 
         subobj, part = _to_last(from_ptr, obj)
         try:
             value = subobj[part]
         except (KeyError, IndexError) as ex:
-            raise JsonPatchConflict(str(ex))
+            raise JsonPatchConflict(str(ex), op=self)
 
         # If source and target are equal, this is a no-op
         if self.pointer == from_ptr:
@@ -350,7 +359,7 @@ class MoveOperation(PatchOperation):
 
         if isinstance(subobj, MutableMapping) and \
                 self.pointer.contains(from_ptr):
-            raise JsonPatchConflict('Cannot move values into their own children')
+            raise JsonPatchConflict('Cannot move values into their own children', op=self)
 
         obj = RemoveOperation({
             'op': 'remove',
@@ -402,18 +411,18 @@ class TestOperation(PatchOperation):
             else:
                 val = self.pointer.walk(subobj, part)
         except JsonPointerException as ex:
-            raise JsonPatchTestFailed(str(ex))
+            raise JsonPatchTestFailed(str(ex), op=self)
 
         try:
             value = self.operation['value']
         except KeyError:
             raise InvalidJsonPatch(
-                "The operation does not contain a 'value' member")
+                "The operation does not contain a 'value' member", op=self)
 
         if val != value:
             msg = '{0} ({1}) is not equal to tested value {2} ({3})'
             raise JsonPatchTestFailed(msg.format(val, type(val),
-                                                 value, type(value)))
+                                                 value, type(value)), op=self)
 
         return obj
 
@@ -426,13 +435,13 @@ class CopyOperation(PatchOperation):
             from_ptr = self.pointer_cls(self.operation['from'])
         except KeyError:
             raise InvalidJsonPatch(
-                "The operation does not contain a 'from' member")
+                "The operation does not contain a 'from' member", op=self)
 
         subobj, part = _to_last(from_ptr, obj)
         try:
             value = copy.deepcopy(subobj if part is None else subobj[part])
         except (KeyError, IndexError) as ex:
-            raise JsonPatchConflict(str(ex))
+            raise JsonPatchConflict(str(ex), op=self)
 
         # value is already a deep copy, no need to copy it again
         obj = AddOperation({
@@ -638,15 +647,15 @@ class JsonPatch(object):
 
     def _get_operation(self, operation):
         if 'op' not in operation:
-            raise InvalidJsonPatch("Operation does not contain 'op' member")
+            raise InvalidJsonPatch("Operation does not contain 'op' member", op=operation)
 
         op = operation['op']
 
         if not isinstance(op, (str, bytes)):
-            raise InvalidJsonPatch("Operation's op must be a string")
+            raise InvalidJsonPatch("Operation's op must be a string", op=operation)
 
         if op not in self.operations:
-            raise InvalidJsonPatch("Unknown operation {0!r}".format(op))
+            raise InvalidJsonPatch("Unknown operation {0!r}".format(op), op=operation)
 
         cls = self.operations[op]
         return cls(operation, pointer_cls=self.pointer_cls)
