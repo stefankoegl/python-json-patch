@@ -422,6 +422,20 @@ class EqualityTestCase(unittest.TestCase):
         self.assertNotEqual(hash(patch1), hash(patch2))
 
 
+    def test_patch_hash_container_values(self):
+        for value in ([], {}, [1, {'b': []}], {'b': [1]}):
+            patch1 = jsonpatch.JsonPatch([{'op': 'add', 'path': '/a', 'value': value}])
+            patch2 = jsonpatch.JsonPatch([{'op': 'add', 'path': '/a', 'value': copy.deepcopy(value)}])
+            self.assertEqual(hash(patch1), hash(patch2))
+            self.assertEqual(len({patch1, patch2}), 1)
+
+
+    def test_patch_hash_ignored_container_member(self):
+        # members an operation doesn't use are ignored, whatever their value
+        patch = jsonpatch.JsonPatch([{'op': 'add', 'path': '/a', 'value': 1, 'from': []}])
+        self.assertIn(patch, {patch})
+
+
     def test_patch_neq_other_objs(self):
         p = [{'op': 'test', 'path': '/test'}]
         patch = jsonpatch.JsonPatch(p)
