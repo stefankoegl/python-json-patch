@@ -500,6 +500,16 @@ class MakePatchTestCase(unittest.TestCase):
         res = patch.apply(src)
         self.assertEqual(res, dst)
 
+    def test_issue_94(self):
+        """Keys containing '/' or '~' are escaped as defined in RFC 6901."""
+        src = {}
+        dst = {'/fields/test': '123456', 'a~b': 1}
+        patch = jsonpatch.make_patch(src, dst)
+        paths = sorted(op['path'] for op in patch)
+        self.assertEqual(paths, ['/a~0b', '/~1fields~1test'])
+        res = patch.apply(src)
+        self.assertEqual(res, dst)
+
     def test_root_list(self):
         """ Test making and applying a patch of the root is a list """
         src = [{'foo': 'bar', 'boo': 'qux'}]
