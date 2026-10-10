@@ -10,6 +10,10 @@ import jsonpatch
 import jsonpointer
 import random
 import sys
+import os
+import stat
+import subprocess
+import tempfile
 from types import MappingProxyType
 from unittest import mock
 
@@ -19,17 +23,22 @@ class ApplyPatchTestCase(unittest.TestCase):
     def test_js_file(self):
         with open('./tests.js', 'r') as f:
             tests = json.load(f)
-            for test in tests:
-                try:
-                    if 'expected' not in test:
+        for test in tests:
+            with self.subTest(comment=test.get('comment'), patch=test['patch']):
+                if 'error' in test:
+                    # json.load keeps only the last of duplicate members, so
+                    # the patch of the disabled "duplicate ops" test is valid
+                    if test.get('disabled'):
                         continue
+                    self.assertRaises(
+                        (jsonpatch.JsonPatchException,
+                         jsonpointer.JsonPointerException),
+                        jsonpatch.apply_patch, test['doc'], test['patch'])
+                else:
+                    # without 'expected', the patch only has to apply
                     result = jsonpatch.apply_patch(test['doc'], test['patch'])
-                    self.assertEqual(result, test['expected'])
-                except Exception:
-                    if test.get('error'):
-                        continue
-                    else:
-                        raise
+                    if 'expected' in test:
+                        self.assertEqual(result, test['expected'])
 
     def test_success_if_replaced_dict(self):
         src = [{'a': 1}, {'b': 2}]
@@ -1245,6 +1254,40 @@ class OptimizationTests(unittest.TestCase):
         ])
 
 
+class ArrayItemsTests(unittest.TestCase):
+    """ The labels that order the items of an array in make_patch run out
+    between two items, and have to be spread out again. make_patch gets there
+    after about 2 ** 16 insertions, e.g. for ['a', 'b'] and
+    list(range(2 ** 16 + 20)), but inserting at the same index halves the
+    space between the labels each time """
+
+    def test_insert_at_same_index(self):
+        items = jsonpatch._ArrayItems()
+        first, last = items.at(0), items.at(1)
+        with mock.patch.object(jsonpatch._ArrayItems, '_relabel', autospec=True,
+                               side_effect=jsonpatch._ArrayItems._relabel) as relabel:
+            inserted = [items.insert(1) for _ in range(40)]
+        relabel.assert_called()
+
+        # each item is inserted directly after the first, in front of the
+        # ones inserted before it
+        expected = [first] + inserted[::-1] + [last]
+        self.assertEqual(items.present, expected)
+        self.assertEqual(items.labels, [item.label for item in expected])
+        self.assertEqual(items.labels, sorted(set(items.labels)))
+        self.assertEqual([item.index() for item in expected], list(range(42)))
+
+        # removed items keep the index they would have in the array
+        items.remove(inserted[0])
+        items.remove(first)
+        self.assertEqual(items.present, inserted[:0:-1] + [last])
+        self.assertEqual(inserted[0].index(), 39)
+        self.assertEqual(first.index(), 0)
+
+        items.reset()
+        self.assertEqual(items.present, [first, last])
+
+
 class ListTests(unittest.TestCase):
 
     def test_fail_prone_list_1(self):
@@ -1309,6 +1352,17 @@ class InvalidInputTests(unittest.TestCase):
                 patch_obj = [ { "op": op, "from": from_, "path": "/baz" } ]
                 self.assertRaises(jsonpatch.InvalidJsonPatch, jsonpatch.apply_patch, src, patch_obj)
 
+    def test_duplicate_members_in_string_patch(self):
+        # an operation with two "op" (or "path") members is invalid, though
+        # json.loads would silently keep the last one
+        src = {"foo": "bar"}
+        for patch_str in [
+            '[{"op": "add", "path": "/baz", "value": "qux", "op": "move", "from": "/foo"}]',
+            '[{"op": "add", "path": "/baz", "path": "/qux", "value": 1}]',
+        ]:
+            self.assertRaises(jsonpatch.InvalidJsonPatch, jsonpatch.apply_patch, src, patch_str)
+            self.assertRaises(jsonpatch.InvalidJsonPatch, jsonpatch.JsonPatch.from_string, patch_str)
+
 
 class ConflictTests(unittest.TestCase):
 
@@ -1367,6 +1421,16 @@ class ConflictTests(unittest.TestCase):
         src = {"foo": 1}
         patch_obj = [ { "op": "replace", "path": "/bar", "value": 10} ]
         self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
+
+    def test_add_replace_in_immutable_sequence(self):
+        # a tuple can be indexed like an array, but not be modified
+        src = {"foo": (1, 2)}
+        for patch_obj in [
+            [ { "op": "add", "path": "/foo/0", "value": 0 } ],
+            [ { "op": "add", "path": "/foo/-", "value": 3 } ],
+            [ { "op": "replace", "path": "/foo/0", "value": 0 } ],
+        ]:
+            self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
 
 
 class StringIndexingTests(unittest.TestCase):
@@ -1682,6 +1746,130 @@ class CustomOperationTests(unittest.TestCase):
         self.assertEqual(res, {})
 
 
+class CommandLineTests(unittest.TestCase):
+    """ The jsondiff and jsonpatch scripts in bin/ """
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.dir = tmp.name
+
+    def write(self, name, value):
+        path = os.path.join(self.dir, name)
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump(value, f)
+        return path
+
+    def read(self, path):
+        with open(path, encoding='utf-8') as f:
+            return json.load(f)
+
+    def run_script(self, script, *args, stdin=''):
+        here = os.path.dirname(os.path.abspath(__file__))
+        # the scripts have to import this jsonpatch, not an installed one
+        pythonpath = [here] + [p for p in [os.environ.get('PYTHONPATH')] if p]
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join(pythonpath),
+                   PYTHONUTF8='1')
+        return subprocess.run(
+            [sys.executable, os.path.join(here, 'bin', script)] + list(args),
+            input=stdin, capture_output=True, encoding='utf-8', env=env)
+
+    def test_jsondiff(self):
+        src = self.write('a.json', {'a': [1, 2], 'b': 0})
+        dst = self.write('b.json', {'a': [1, 2, 3], 'c': 100})
+        res = self.run_script('jsondiff', src, dst)
+        # like diff, it exits with 1 if the files differ
+        self.assertEqual(res.returncode, 1, res.stderr)
+        self.assertEqual(res.stdout.count('\n'), 1)
+        patch = json.loads(res.stdout)
+        self.assertEqual(jsonpatch.apply_patch(self.read(src), patch), self.read(dst))
+
+    def test_jsondiff_equal_files(self):
+        src = self.write('a.json', {'a': [1, 2]})
+        dst = self.write('b.json', {'a': [1, 2]})
+        res = self.run_script('jsondiff', src, dst)
+        self.assertEqual((res.returncode, res.stdout), (0, ''), res.stderr)
+
+    def test_jsondiff_indent(self):
+        src = self.write('a.json', {'a': 1})
+        dst = self.write('b.json', {'b': 1})
+        res = self.run_script('jsondiff', '--indent', '2', src, dst)
+        patch = jsonpatch.make_patch({'a': 1}, {'b': 1}).patch
+        self.assertEqual(res.stdout, json.dumps(patch, indent=2) + '\n')
+
+    def test_jsondiff_preserve_unicode(self):
+        src = self.write('a.json', {'a': 'x'})
+        dst = self.write('b.json', {'a': 'ä'})
+        self.assertIn('"\\u00e4"', self.run_script('jsondiff', src, dst).stdout)
+        self.assertIn('"ä"', self.run_script('jsondiff', '-u', src, dst).stdout)
+
+    def test_jsonpatch(self):
+        doc = self.write('doc.json', {'a': [1, 2], 'b': 0})
+        patch = self.write('patch.json', [{'op': 'add', 'path': '/a/-', 'value': 3},
+                                          {'op': 'remove', 'path': '/b'}])
+        res = self.run_script('jsonpatch', doc, patch)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(json.loads(res.stdout), {'a': [1, 2, 3]})
+        self.assertEqual(self.read(doc), {'a': [1, 2], 'b': 0})
+
+    def test_jsonpatch_patch_from_stdin(self):
+        doc = self.write('doc.json', {'a': 1})
+        res = self.run_script('jsonpatch', doc,
+                              stdin='[{"op": "replace", "path": "/a", "value": 2}]')
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(json.loads(res.stdout), {'a': 2})
+
+    def test_jsonpatch_indent_preserve_unicode(self):
+        doc = self.write('doc.json', {'a': 'x'})
+        patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 'ä'}])
+        res = self.run_script('jsonpatch', '--indent', '2', doc, patch)
+        self.assertEqual(res.stdout, json.dumps({'a': 'ä'}, indent=2) + '\n')
+        res = self.run_script('jsonpatch', '-u', doc, patch)
+        self.assertEqual(res.stdout, '{"a": "ä"}\n')
+
+    def test_jsonpatch_in_place(self):
+        doc = self.write('doc.json', {'a': 1})
+        patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 2}])
+        res = self.run_script('jsonpatch', '-i', doc, patch)
+        self.assertEqual((res.returncode, res.stdout), (0, ''), res.stderr)
+        self.assertEqual(self.read(doc), {'a': 2})
+        # the temporary file has been moved over the original
+        self.assertEqual(sorted(os.listdir(self.dir)), ['doc.json', 'patch.json'])
+
+    @unittest.skipUnless(os.name == 'posix', 'needs POSIX file permissions')
+    def test_jsonpatch_in_place_keeps_permissions(self):
+        doc = self.write('doc.json', {'a': 1})
+        patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 2}])
+        os.chmod(doc, 0o640)
+        res = self.run_script('jsonpatch', '-i', doc, patch)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(stat.S_IMODE(os.stat(doc).st_mode), 0o640)
+
+    def test_jsonpatch_in_place_backup(self):
+        doc = self.write('doc.json', {'a': 1})
+        patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 2}])
+        res = self.run_script('jsonpatch', '-i', '-b', doc, patch)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(self.read(doc), {'a': 2})
+        self.assertEqual(self.read(doc + '.orig'), {'a': 1})
+
+    def test_jsonpatch_in_place_failing_patch(self):
+        # the patch is applied before the file is replaced, so it is kept
+        doc = self.write('doc.json', {'a': 1})
+        patch = self.write('patch.json', [{'op': 'remove', 'path': '/b'}])
+        res = self.run_script('jsonpatch', '-i', '-b', doc, patch)
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn('JsonPatchConflict', res.stderr)
+        self.assertEqual(self.read(doc), {'a': 1})
+        self.assertEqual(sorted(os.listdir(self.dir)), ['doc.json', 'patch.json'])
+
+    def test_version(self):
+        for script in ['jsondiff', 'jsonpatch']:
+            with self.subTest(script=script):
+                res = self.run_script(script, '--version')
+                self.assertEqual(res.stdout, '{0} {1}\n'.format(script, jsonpatch.__version__))
+
+
 if __name__ == '__main__':
     modules = ['jsonpatch']
 
@@ -1697,11 +1885,13 @@ if __name__ == '__main__':
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ConflictTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(StringIndexingTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(OptimizationTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ArrayItemsTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(JsonPointerTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(JsonPatchCreationTest))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(UtilityMethodTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomJsonPointerTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomOperationTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CommandLineTests))
         return suite
 
 
