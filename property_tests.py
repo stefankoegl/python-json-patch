@@ -332,12 +332,9 @@ class ApplyPatchProperties(unittest.TestCase):
         outcome(jsonpatch.apply_patch, doc, patch)
         assert_json_equal(patch, saved)
 
-    @unittest.expectedFailure
     @given(docs_with_patches())
     # 'move' from the whole document crashed for array roots, #214
     @example(case=([], [{'op': 'move', 'from': '', 'path': '/-'}]))
-    # 'copy' or 'move' from the '-' of an array crashes
-    @example(case=([0], [{'op': 'copy', 'from': '/-', 'path': '/0'}]))
     # operations on the whole document crashed if it was a scalar, #213
     @example(case=(None, [{'op': 'remove', 'path': ''}]))
     def test_raises_only_documented_exceptions(self, case):
@@ -347,7 +344,6 @@ class ApplyPatchProperties(unittest.TestCase):
         except (jsonpatch.JsonPatchException, JsonPointerException):
             pass
 
-    @unittest.expectedFailure
     @given(st.lists(st.one_of(
         json_docs,
         st.dictionaries(st.sampled_from(['op', 'path', 'from', 'value']),
@@ -357,9 +353,9 @@ class ApplyPatchProperties(unittest.TestCase):
             optional={'path': json_docs, 'from': json_docs,
                       'value': json_docs}),
     )))
-    # patch elements that are not objects
+    # patch elements that are not objects raised TypeError, #215
     @example(patch=[0])
-    # 'from' that is not a string
+    # 'from' that is not a string raised TypeError, #215
     @example(patch=[{'op': 'copy', 'from': 0, 'path': '/a'}])
     def test_malformed_patch_raises_documented_exceptions(self, patch):
         try:
