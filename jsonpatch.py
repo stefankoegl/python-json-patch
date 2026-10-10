@@ -249,7 +249,7 @@ class RemoveOperation(PatchOperation):
     """Removes an object property or an array element."""
 
     def apply(self, obj):
-        subobj, part = _to_last(self.pointer, obj)
+        subobj, part = self.pointer.to_last(obj)
 
         if part is None:
             raise JsonPatchConflict("can't remove the whole document")
@@ -281,7 +281,7 @@ class AddOperation(PatchOperation):
         return self._add(obj, copy.deepcopy(value))
 
     def _add(self, obj, value):
-        subobj, part = _to_last(self.pointer, obj)
+        subobj, part = self.pointer.to_last(obj)
 
         if part is None:
             return value  # we're replacing the root, whatever its type
@@ -317,7 +317,7 @@ class ReplaceOperation(PatchOperation):
         # copied for the same reason as in AddOperation.apply
         value = copy.deepcopy(value)
 
-        subobj, part = _to_last(self.pointer, obj)
+        subobj, part = self.pointer.to_last(obj)
 
         if part is None:
             return value
@@ -413,7 +413,7 @@ class TestOperation(PatchOperation):
 
     def apply(self, obj):
         try:
-            subobj, part = _to_last(self.pointer, obj)
+            subobj, part = self.pointer.to_last(obj)
             if part is None:
                 val = subobj
             else:
@@ -836,19 +836,18 @@ class DiffBuilder(object):
         if index is not None:
             added_location = index[2]['path']
             added = self._parts(added_location)
-            moved_from = _without_item(source, added)
-            target = _item_after(added, source, False)
-            # RFC 6902 does not allow moving a value into its own children
-            if not _is_inside(target, moved_from):
-                self.remove(index)
-                if moved_from != target:
-                    self._set_present(location, False)
-                    self.insert({'op': 'move', 'from': location,
-                                 'path': added_location})
-                else:
-                    # the removed item stays where the added one would be
-                    self._set_present(added_location, False)
-                return
+            # The documents are compared in order, so the added item is in
+            # the part compared already: it is in front of the removed one,
+            # and neither inside it nor moved by removing it
+            self.remove(index)
+            if _without_item(source, added) != added:
+                self._set_present(location, False)
+                self.insert({'op': 'move', 'from': location,
+                             'path': added_location})
+            else:
+                # the removed item stays where the added one would be
+                self._set_present(added_location, False)
+            return
 
         self._set_present(location, False)
         new_index = self.insert({'op': 'remove', 'path': location})
@@ -1186,44 +1185,13 @@ def _without_item(parts, location):
     return parts
 
 
-def _item_after(location, parts, inserted):
-    """ Where the item at location is after inserting (or removing, if not
-    inserted) the value at parts """
-    depth = len(parts) - 1
-    if not isinstance(parts[-1], int) or not _is_inside(location, parts[:-1]):
-        return location
-
-    if inserted and location[depth] >= parts[-1]:
-        return _shift(location, depth, 1)
-
-    if not inserted and location[depth] > parts[-1]:
-        return _shift(location, depth, -1)
-
-    return location
-
-
-def _to_last(pointer, doc):
-    """Resolve pointer like JsonPointer.to_last, without indexing into strings.
-
-    RFC 6901 only allows reference tokens to be applied to objects and arrays,
-    but older versions of jsonpointer treat strings as sequences.
-    """
-    subobj, part = pointer.to_last(doc)
-
-    if part is not None and isinstance(subobj, str):
-        raise JsonPointerException(
-            "Cannot apply token '{0}' to non-container type {1}".format(
-                part, type(subobj)))
-
-    return subobj, part
-
-
 def _to_existing_last(pointer, doc):
-    """Resolve pointer like _to_last, for a location that has to exist.
+    """Resolve pointer like JsonPointer.to_last, for a location that has to
+    exist.
 
     The '-' of an array refers to the nonexistent element after its last one.
     """
-    subobj, part = _to_last(pointer, doc)
+    subobj, part = pointer.to_last(doc)
 
     if part == '-' and isinstance(subobj, Sequence):
         raise JsonPointerException("invalid array index '{0}'".format(part))
