@@ -6,7 +6,7 @@ help:
 	@echo " - coverage: run tests with coverage"
 	@echo
 	@echo "To install jsonpatch, type"
-	@echo "  python setup.py install"
+	@echo "  pip install ."
 	@echo
 
 test:

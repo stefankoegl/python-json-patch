@@ -2,12 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import re
-try:
-    from setuptools import setup
-    has_setuptools = True
-except ImportError:
-    from distutils.core import setup
-    has_setuptools = False
+from setuptools import setup
 
 src = open('jsonpatch.py', encoding='utf-8').read()
 metadata = dict(re.findall("__([a-z]+)__ = '([^']+)'", src))
@@ -20,13 +15,6 @@ MODULES = (
 )
 
 REQUIREMENTS = list(open('requirements.txt'))
-
-if has_setuptools:
-    OPTIONS = {
-        'install_requires': REQUIREMENTS
-    }
-else:
-    OPTIONS = {}
 
 AUTHOR_EMAIL = metadata['author']
 VERSION = metadata['version']
@@ -41,7 +29,6 @@ CLASSIFIERS = [
     'Development Status :: 5 - Production/Stable',
     'Environment :: Console',
     'Intended Audience :: Developers',
-    'License :: OSI Approved :: BSD License',
     'Operating System :: OS Independent',
     'Programming Language :: Python',
     'Programming Language :: Python :: 3',
@@ -77,8 +64,8 @@ setup(name=PACKAGE,
           'Repository': 'https://github.com/stefankoegl/python-json-patch.git',
           'Documentation': "https://python-json-patch.readthedocs.org/",
           'PyPI': 'https://pypi.org/pypi/jsonpatch',
-          'Tests': 'https://travis-ci.org/stefankoegl/python-json-patch',
+          'Tests': 'https://github.com/stefankoegl/python-json-patch/actions',
           'Test Coverage': 'https://coveralls.io/r/stefankoegl/python-json-patch',
       },
-      **OPTIONS
+      install_requires=REQUIREMENTS,
 )

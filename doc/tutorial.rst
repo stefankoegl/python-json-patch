@@ -1,7 +1,7 @@
 Tutorial
 ========
 
-Please refer to `RFC 6902 <http://tools.ietf.org/html/rfc6902>`_ for the exact
+Please refer to `RFC 6902 <https://datatracker.ietf.org/doc/html/rfc6902>`_ for the exact
 patch syntax.
 
 Creating a Patch
@@ -87,7 +87,7 @@ Paths and Special Characters
 ----------------------------
 
 The ``path`` and ``from`` members of an operation are JSON Pointers
-(`RFC 6901 <https://tools.ietf.org/html/rfc6901>`_). A pointer is a sequence of
+(`RFC 6901 <https://datatracker.ietf.org/doc/html/rfc6901>`_). A pointer is a sequence of
 reference tokens, each starting with ``/``, and every token selects one object
 key or array index. Because ``/`` separates the tokens, a key that contains
 ``/`` or ``~`` has to be escaped: ``~`` is written as ``~0`` and ``/`` as
