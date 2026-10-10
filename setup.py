@@ -12,6 +12,7 @@ PACKAGE = 'jsonpatch'
 
 MODULES = (
         'jsonpatch',
+        'jsonpatch_cli',
 )
 
 REQUIREMENTS = list(open('requirements.txt'))
@@ -56,7 +57,12 @@ setup(name=PACKAGE,
       url=WEBSITE,
       py_modules=MODULES,
       package_data={'': ['requirements.txt']},
-      scripts=['bin/jsondiff', 'bin/jsonpatch'],
+      entry_points={
+          'console_scripts': [
+              'jsondiff = jsonpatch_cli:jsondiff_main',
+              'jsonpatch = jsonpatch_cli:jsonpatch_main',
+          ]
+      },
       classifiers=CLASSIFIERS,
       python_requires='>=3.10',
       project_urls={
