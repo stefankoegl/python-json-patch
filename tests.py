@@ -1595,6 +1595,68 @@ class UtilityMethodTests(unittest.TestCase):
             jsonpatch.CopyOperation({'path': '/target', 'from': '/source'}).apply({})
 
 
+class OperationLocationTests(unittest.TestCase):
+    """ The parts of 'path' and 'from' that operations expose, also to change
+    them in place """
+
+    def test_path_and_key(self):
+        op = jsonpatch.RemoveOperation({'op': 'remove', 'path': '/a/0/b'})
+        # unlike the 'path' member, path is only the parts before the key,
+        # without a leading '/'
+        self.assertEqual(op.path, 'a/0')
+        self.assertEqual(op.key, 'b')
+        # array indices are ints, other parts stay strings
+        self.assertEqual([op.get_part(i) for i in range(3)], ['a', 0, 'b'])
+        self.assertEqual(op.get_part(-2), 0)
+
+        op = jsonpatch.AddOperation({'op': 'add', 'path': '/foo/-', 'value': 1})
+        self.assertEqual((op.path, op.key), ('foo', '-'))
+        op = jsonpatch.AddOperation({'op': 'add', 'path': '/foo', 'value': 1})
+        self.assertEqual((op.path, op.key), ('', 'foo'))
+
+    def test_set_key(self):
+        operation = {'op': 'add', 'path': '/foo/1', 'value': 9}
+        op = jsonpatch.AddOperation(operation)
+        op.key = 0
+        # the operation that was passed is changed as well
+        self.assertEqual(operation['path'], '/foo/0')
+        self.assertEqual((op.location, op.pointer.path), ('/foo/0', '/foo/0'))
+        self.assertEqual(op.apply({'foo': [1, 2]}), {'foo': [9, 1, 2]})
+
+        # the new part is escaped in the path
+        op.key = 'a/b'
+        self.assertEqual(operation['path'], '/foo/a~1b')
+        self.assertEqual(op.key, 'a/b')
+
+    def test_set_part(self):
+        operation = {'op': 'replace', 'path': '/a/0/b', 'value': 9}
+        op = jsonpatch.ReplaceOperation(operation)
+        op.set_part(1, 1)
+        self.assertEqual(operation['path'], '/a/1/b')
+        self.assertEqual(op.location, '/a/1/b')
+        self.assertEqual(op.apply({'a': [{'b': 1}, {'b': 2}]}),
+                         {'a': [{'b': 1}, {'b': 9}]})
+
+    def test_from_path_and_key(self):
+        op = jsonpatch.MoveOperation({'op': 'move', 'from': '/a/1/b', 'path': '/c'})
+        self.assertEqual(op.from_path, 'a/1')
+        self.assertEqual(op.from_key, 'b')
+        self.assertEqual([op.get_from_part(i) for i in range(3)], ['a', 1, 'b'])
+        self.assertEqual((op.path, op.key), ('', 'c'))
+
+    def test_set_from_key(self):
+        operation = {'op': 'move', 'from': '/a/1', 'path': '/b'}
+        op = jsonpatch.MoveOperation(operation)
+        op.from_key = 0
+        self.assertEqual(operation, {'op': 'move', 'from': '/a/0', 'path': '/b'})
+        self.assertEqual(op.apply({'a': ['x', 'y']}), {'a': ['y'], 'b': 'x'})
+
+        # the new part is escaped in 'from', and 'path' is kept
+        op.set_from_part(0, 'c/d')
+        self.assertEqual(operation, {'op': 'move', 'from': '/c~1d/0', 'path': '/b'})
+        self.assertEqual(op.apply({'c/d': ['x']}), {'c/d': [], 'b': 'x'})
+
+
 class CustomJsonPointer(jsonpointer.JsonPointer):
     pass
 
@@ -1889,6 +1951,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(JsonPointerTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(JsonPatchCreationTest))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(UtilityMethodTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(OperationLocationTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomJsonPointerTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomOperationTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CommandLineTests))
