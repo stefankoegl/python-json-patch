@@ -9,6 +9,7 @@ import unittest
 import jsonpatch
 import jsonpointer
 import random
+import runpy  # 2026-10-11: Exercise the CLI file-handle lifecycle.
 import sys
 import os
 import stat
@@ -1897,6 +1898,27 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(self.read(doc), {'a': 2})
         # the temporary file has been moved over the original
         self.assertEqual(sorted(os.listdir(self.dir)), ['doc.json', 'patch.json'])
+
+    # 2026-10-11: Windows cannot replace the original while its input is open.
+    def test_jsonpatch_in_place_closes_original_before_rename(self):
+        doc = self.write('doc.json', {'a': 1})
+        patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 2}])
+        here = os.path.dirname(os.path.abspath(__file__))
+        script = runpy.run_path(os.path.join(here, 'bin', 'jsonpatch'))
+        parser = script['parser']
+        args = parser.parse_args(['-i', doc, patch])
+        self.addCleanup(args.ORIGINAL.close)
+        self.addCleanup(args.PATCH.close)
+        rename = os.rename
+
+        def rename_closed_original(source, target):
+            self.assertTrue(args.ORIGINAL.closed)
+            return rename(source, target)
+
+        with mock.patch.object(parser, 'parse_args', return_value=args), \
+                mock.patch('os.rename', side_effect=rename_closed_original):
+            script['patch_files']()
+        self.assertEqual(self.read(doc), {'a': 2})
 
     @unittest.skipUnless(os.name == 'posix', 'needs POSIX file permissions')
     def test_jsonpatch_in_place_keeps_permissions(self):
