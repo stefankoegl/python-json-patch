@@ -166,6 +166,35 @@ class ApplyPatchTestCase(unittest.TestCase):
         except TypeError:
             self.fail("root add on an array root raised a bare TypeError")
 
+    def test_whole_document_scalar_root(self):
+        # a JSON document can also be a scalar (#213); operations on the whole
+        # document have to work on it as on an object or array root
+        for obj in (None, True, 5, 1.5, 'foo'):
+            with self.subTest(obj=obj):
+                for op in ('add', 'replace'):
+                    res = jsonpatch.apply_patch(
+                        obj, [{'op': op, 'path': '', 'value': {'baz': 'qux'}}])
+                    self.assertEqual(res, {'baz': 'qux'})
+                for op in ('copy', 'move'):
+                    res = jsonpatch.apply_patch(
+                        obj, [{'op': op, 'from': '', 'path': ''}])
+                    self.assertEqual(res, obj)
+
+    def test_remove_whole_document(self):
+        # there would be no document left, whatever the type of the root
+        for obj in (None, True, 5, 1.5, 'foo', {'foo': 'bar'}, ['foo']):
+            with self.subTest(obj=obj):
+                self.assertRaises(jsonpatch.JsonPatchConflict,
+                                  jsonpatch.apply_patch,
+                                  obj, [{'op': 'remove', 'path': ''}])
+
+    def test_move_whole_document_scalar_root_into_child(self):
+        for obj in (None, 5, 'foo'):
+            with self.subTest(obj=obj):
+                self.assertRaises(jsonpatch.JsonPatchConflict,
+                                  jsonpatch.apply_patch,
+                                  obj, [{'op': 'move', 'from': '', 'path': '/foo'}])
+
     def test_replace_array_item(self):
         obj = {'foo': ['bar', 'qux', 'baz']}
         res = jsonpatch.apply_patch(obj, [{'op': 'replace', 'path': '/foo/1',

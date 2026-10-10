@@ -332,11 +332,10 @@ class ApplyPatchProperties(unittest.TestCase):
         outcome(jsonpatch.apply_patch, doc, patch)
         assert_json_equal(patch, saved)
 
-    @unittest.expectedFailure
     @given(docs_with_patches())
     # 'move' from the whole document crashed for array roots, #214
     @example(case=([], [{'op': 'move', 'from': '', 'path': '/-'}]))
-    # operations on the whole document crash if it is a scalar
+    # operations on the whole document crashed if it was a scalar, #213
     @example(case=(None, [{'op': 'remove', 'path': ''}]))
     def test_raises_only_documented_exceptions(self, case):
         doc, patch = case
@@ -382,9 +381,8 @@ class ApplyPatchProperties(unittest.TestCase):
 
 class OperationProperties(unittest.TestCase):
 
-    @unittest.expectedFailure
     @given(whole_document_operations())
-    # 'add' crashes if the document is a scalar, unlike 'replace'
+    # 'add' crashed if the document was a scalar, unlike 'replace', #213
     @example(case=(None, {'op': 'add', 'path': '', 'value': 0}, 0))
     def test_whole_document_as_target(self, case):
         doc, operation, expected = case
