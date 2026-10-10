@@ -1,0 +1,4 @@
+[build-system]
+# license_expression in setup.py requires setuptools >= 77
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
