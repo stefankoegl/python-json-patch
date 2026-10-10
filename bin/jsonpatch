@@ -42,6 +42,8 @@ def patch_files():
     result = jsonpatch.apply_patch(doc, patch)
 
     if args.in_place:
+        # 2026-10-11: Release the input handle before replacing it on Windows.
+        args.ORIGINAL.close()
         dirname = os.path.abspath(os.path.dirname(args.ORIGINAL.name))
 
         try:
