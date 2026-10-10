@@ -25,7 +25,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install flake8 pytest hypothesis
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install coveralls
+          pip install coverage
 #      - name: Lint with flake8
 #        run: |
           # stop the build if there are Python syntax errors or undefined names
@@ -41,3 +41,20 @@ jobs:
       - name: Coverage report
         run: |
           coverage report
+          coverage lcov
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          file: coverage.lcov
+          flag-name: python-${{ matrix.python-version }}
+          parallel: true
+
+  coverage:
+    needs: build
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Finish Coveralls build
+        uses: coverallsapp/github-action@v2
+        with:
+          parallel-finished: true
