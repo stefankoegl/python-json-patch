@@ -221,6 +221,29 @@ class PatchOperation(object):
     def __ne__(self, other):
         return not(self == other)
 
+    @property
+    def path(self):
+        return '/'.join(self.pointer.parts[:-1])
+
+    @property
+    def key(self):
+        return self.get_part(-1)
+
+    @key.setter
+    def key(self, value):
+        self.set_part(-1, value)
+
+    def get_part(self, index):
+        try:
+            return int(self.pointer.parts[index])
+        except ValueError:
+            return self.pointer.parts[index]
+
+    def set_part(self, index, value):
+        self.pointer.parts[index] = str(value)
+        self.location = self.pointer.path
+        self.operation['path'] = self.location
+
 
 class RemoveOperation(PatchOperation):
     """Removes an object property or an array element."""
@@ -358,6 +381,31 @@ class MoveOperation(PatchOperation):
         }, pointer_cls=self.pointer_cls)._add(obj, value)
 
         return obj
+
+    @property
+    def from_path(self):
+        from_ptr = self.pointer_cls(self.operation['from'])
+        return '/'.join(from_ptr.parts[:-1])
+
+    @property
+    def from_key(self):
+        return self.get_from_part(-1)
+
+    @from_key.setter
+    def from_key(self, value):
+        self.set_from_part(-1, value)
+
+    def get_from_part(self, index):
+        from_ptr = self.pointer_cls(self.operation['from'])
+        try:
+            return int(from_ptr.parts[index])
+        except ValueError:
+            return from_ptr.parts[index]
+
+    def set_from_part(self, index, value):
+        from_ptr = self.pointer_cls(self.operation['from'])
+        from_ptr.parts[index] = str(value)
+        self.operation['from'] = from_ptr.path
 
 
 class TestOperation(PatchOperation):
