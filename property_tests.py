@@ -284,9 +284,8 @@ class MakePatchProperties(unittest.TestCase):
         self.assertEqual(list(jsonpatch.make_patch(doc, copy.deepcopy(doc))),
                          [])
 
-    @unittest.expectedFailure
     @given(doc_pairs)
-    # replace of the object member '-' is rejected
+    # replace of the object member '-' was rejected, #212
     @example(docs=({'-': 0}, {'-': 1}))
     def test_roundtrip(self, docs):
         self.check_roundtrip(*docs)
@@ -335,7 +334,7 @@ class ApplyPatchProperties(unittest.TestCase):
 
     @unittest.expectedFailure
     @given(docs_with_patches())
-    # 'move' from the whole document crashes for array roots
+    # 'move' from the whole document crashed for array roots, #214
     @example(case=([], [{'op': 'move', 'from': '', 'path': '/-'}]))
     # operations on the whole document crash if it is a scalar
     @example(case=(None, [{'op': 'remove', 'path': ''}]))
@@ -403,8 +402,7 @@ class OperationProperties(unittest.TestCase):
         assert_json_equal(result, expected)
 
     # RFC 6902, 4.4: a location cannot be moved into one of its children;
-    # only enforced if the location is an object member
-    @unittest.expectedFailure
+    # was only enforced if the location is an object member, #214
     @given(moves_into_own_child())
     @example(case=([[], []], '/0', '/0/0'))
     def test_move_into_own_child_fails(self, case):
@@ -414,9 +412,8 @@ class OperationProperties(unittest.TestCase):
             jsonpatch.apply_patch(
                 doc, [{'op': 'move', 'from': source, 'path': target}])
 
-    # '-' is rejected even where it is an object key, not an array index
-    @unittest.expectedFailure
     @given(docs_with_locations(), json_docs)
+    # '-' was rejected even where it is an object key, not an array index, #212
     @example(case=({'-': None}, ['-']), value=0)
     def test_replace_any_existing_location(self, case, value):
         doc, parts = case
@@ -424,11 +421,13 @@ class OperationProperties(unittest.TestCase):
             doc, [{'op': 'replace', 'path': to_pointer(parts), 'value': value}])
         assert_json_equal(resolve(result, parts), value)
 
-    # RFC 6902, 4.6: literals like true are only equal to themselves, but
-    # 'test' uses Python equality, which considers 1 and True equal
-    @unittest.expectedFailure
+    # RFC 6902, 4.6: literals like true are only equal to themselves, although
+    # Python considers 1 and True equal, #216
     @given(doc_pairs)
     @example(values=(1, True))
+    @example(values=([1], [True]))
+    @example(values=({'a': 0}, {'a': False}))
+    @example(values=(1, 1.0))
     def test_test_operation_uses_json_equality(self, values):
         value, tested = values
         result = outcome(jsonpatch.apply_patch, {'a': value},
@@ -447,8 +446,6 @@ class JsonPatchProperties(unittest.TestCase):
         self.assertEqual(jsonpatch.JsonPatch.from_string(patch.to_string()),
                          patch)
 
-    # hashing fails for operations whose value is an array or object
-    @unittest.expectedFailure
     @given(patches)
     @example(operations=[{'op': 'add', 'path': '/a', 'value': []}])
     def test_equal_patches_have_equal_hashes(self, operations):
