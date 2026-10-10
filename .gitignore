@@ -1,6 +1,7 @@
 *.pyc
 build
 .coverage
+coverage.lcov
 dist
 *.egg-info/
 doc/_build

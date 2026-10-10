@@ -65,7 +65,7 @@ setup(name=PACKAGE,
           'Documentation': "https://python-json-patch.readthedocs.org/",
           'PyPI': 'https://pypi.org/pypi/jsonpatch',
           'Tests': 'https://github.com/stefankoegl/python-json-patch/actions',
-          'Test Coverage': 'https://coveralls.io/r/stefankoegl/python-json-patch',
+          'Test Coverage': 'https://coveralls.io/github/stefankoegl/python-json-patch',
       },
       install_requires=REQUIREMENTS,
 )

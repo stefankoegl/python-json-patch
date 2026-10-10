@@ -4,7 +4,7 @@ python-json-patch
 [![PyPI version](https://img.shields.io/pypi/v/jsonpatch.svg)](https://pypi.org/project/jsonpatch//)
 [![Supported Python versions](https://img.shields.io/pypi/pyversions/jsonpatch.svg)](https://pypi.org/project/jsonpatch//)
 [![Build Status](https://github.com/stefankoegl/python-json-patch/actions/workflows/test.yaml/badge.svg?branch=master)](https://github.com/stefankoegl/python-json-patch/actions/workflows/test.yaml)
-[![Coverage Status](https://coveralls.io/repos/stefankoegl/python-json-patch/badge.png?branch=master)](https://coveralls.io/r/stefankoegl/python-json-patch?branch=master)
+[![Coverage Status](https://coveralls.io/repos/github/stefankoegl/python-json-patch/badge.svg?branch=master)](https://coveralls.io/github/stefankoegl/python-json-patch?branch=master)
 
 Applying JSON Patches in Python
 -------------------------------
@@ -19,7 +19,7 @@ See source code for examples
 * Documentation: https://python-json-patch.readthedocs.org/
 * PyPI: https://pypi.org/project/jsonpatch/
 * CI: https://github.com/stefankoegl/python-json-patch/actions
-* Coveralls: https://coveralls.io/r/stefankoegl/python-json-patch
+* Coveralls: https://coveralls.io/github/stefankoegl/python-json-patch
 
 Running external tests
 ----------------------
