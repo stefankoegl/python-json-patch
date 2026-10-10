@@ -7,9 +7,9 @@ import decimal
 import doctest
 import unittest
 import jsonpatch
+import jsonpatch_cli
 import jsonpointer
 import random
-import runpy  # 2026-10-11: Exercise the CLI file-handle lifecycle.
 import sys
 import os
 import stat
@@ -1810,7 +1810,7 @@ class CustomOperationTests(unittest.TestCase):
 
 
 class CommandLineTests(unittest.TestCase):
-    """ The jsondiff and jsonpatch scripts in bin/ """
+    """ The jsondiff and jsonpatch command line programs """
 
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
@@ -1834,7 +1834,9 @@ class CommandLineTests(unittest.TestCase):
         env = dict(os.environ, PYTHONPATH=os.pathsep.join(pythonpath),
                    PYTHONUTF8='1')
         return subprocess.run(
-            [sys.executable, os.path.join(here, 'bin', script)] + list(args),
+            [sys.executable, '-c',
+             'import jsonpatch_cli; jsonpatch_cli.{0}_main()'.format(script)]
+            + list(args),
             input=stdin, capture_output=True, encoding='utf-8', env=env)
 
     def test_jsondiff(self):
@@ -1903,9 +1905,7 @@ class CommandLineTests(unittest.TestCase):
     def test_jsonpatch_in_place_closes_original_before_rename(self):
         doc = self.write('doc.json', {'a': 1})
         patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 2}])
-        here = os.path.dirname(os.path.abspath(__file__))
-        script = runpy.run_path(os.path.join(here, 'bin', 'jsonpatch'))
-        parser = script['parser']
+        parser = jsonpatch_cli.jsonpatch_parser
         args = parser.parse_args(['-i', doc, patch])
         self.addCleanup(args.ORIGINAL.close)
         self.addCleanup(args.PATCH.close)
@@ -1917,7 +1917,7 @@ class CommandLineTests(unittest.TestCase):
 
         with mock.patch.object(parser, 'parse_args', return_value=args), \
                 mock.patch('os.rename', side_effect=rename_closed_original):
-            script['patch_files']()
+            jsonpatch_cli.patch_files()
         self.assertEqual(self.read(doc), {'a': 2})
 
     @unittest.skipUnless(os.name == 'posix', 'needs POSIX file permissions')

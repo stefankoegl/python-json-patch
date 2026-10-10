@@ -1,5 +1,6 @@
-#!/usr/bin/env python
 # -*- coding: utf-8 -*-
+
+""" The jsondiff and jsonpatch command line programs """
 
 import sys
 import os.path
@@ -9,25 +10,56 @@ import tempfile
 import argparse
 
 
-parser = argparse.ArgumentParser(
-    description='Apply a JSON patch on a JSON file')
-parser.add_argument('ORIGINAL', type=argparse.FileType('r'),
-                    help='Original file')
-parser.add_argument('PATCH', type=argparse.FileType('r'),
-                    nargs='?', default=sys.stdin,
-                    help='Patch file (read from stdin if omitted)')
-parser.add_argument('--indent', type=int, default=None,
-                    help='Indent output by n spaces')
-parser.add_argument('-b', '--backup', action='store_true',
-                    help='Back up ORIGINAL if modifying in-place')
-parser.add_argument('-i', '--in-place', action='store_true',
-                    help='Modify ORIGINAL in-place instead of to stdout')
-parser.add_argument('-v', '--version', action='version',
-                    version='%(prog)s ' + jsonpatch.__version__)
-parser.add_argument('-u', '--preserve-unicode', action='store_true',
-                    help='Output Unicode character as-is without using Code Point')
+jsondiff_parser = argparse.ArgumentParser(
+    prog='jsondiff', description='Diff two JSON files')
+jsondiff_parser.add_argument('FILE1', type=argparse.FileType('r'))
+jsondiff_parser.add_argument('FILE2', type=argparse.FileType('r'))
+jsondiff_parser.add_argument('--indent', type=int, default=None,
+                             help='Indent output by n spaces')
+jsondiff_parser.add_argument('-u', '--preserve-unicode', action='store_true',
+                             help='Output Unicode character as-is without using Code Point')
+jsondiff_parser.add_argument('-v', '--version', action='version',
+                             version='%(prog)s ' + jsonpatch.__version__)
 
-def main():
+
+def jsondiff_main():
+    try:
+        diff_files()
+    except KeyboardInterrupt:
+        sys.exit(1)
+
+
+def diff_files():
+    """ Diffs two JSON files and prints a patch """
+    args = jsondiff_parser.parse_args()
+    doc1 = json.load(args.FILE1)
+    doc2 = json.load(args.FILE2)
+    patch = jsonpatch.make_patch(doc1, doc2)
+    if patch.patch:
+        print(json.dumps(patch.patch, indent=args.indent, ensure_ascii=not(args.preserve_unicode)))
+        sys.exit(1)
+
+
+jsonpatch_parser = argparse.ArgumentParser(
+    prog='jsonpatch',
+    description='Apply a JSON patch on a JSON file')
+jsonpatch_parser.add_argument('ORIGINAL', type=argparse.FileType('r'),
+                              help='Original file')
+jsonpatch_parser.add_argument('PATCH', type=argparse.FileType('r'),
+                              nargs='?', default=sys.stdin,
+                              help='Patch file (read from stdin if omitted)')
+jsonpatch_parser.add_argument('--indent', type=int, default=None,
+                              help='Indent output by n spaces')
+jsonpatch_parser.add_argument('-b', '--backup', action='store_true',
+                              help='Back up ORIGINAL if modifying in-place')
+jsonpatch_parser.add_argument('-i', '--in-place', action='store_true',
+                              help='Modify ORIGINAL in-place instead of to stdout')
+jsonpatch_parser.add_argument('-v', '--version', action='version',
+                              version='%(prog)s ' + jsonpatch.__version__)
+jsonpatch_parser.add_argument('-u', '--preserve-unicode', action='store_true',
+                              help='Output Unicode character as-is without using Code Point')
+
+def jsonpatch_main():
     try:
         patch_files()
     except KeyboardInterrupt:
@@ -35,8 +67,8 @@ def main():
 
 
 def patch_files():
-    """ Diffs two JSON files and prints a patch """
-    args = parser.parse_args()
+    """ Applies a JSON patch on a JSON file """
+    args = jsonpatch_parser.parse_args()
     doc = json.load(args.ORIGINAL)
     patch = json.load(args.PATCH)
     result = jsonpatch.apply_patch(doc, patch)
@@ -103,7 +135,3 @@ def patch_files():
                 
                 os.unlink(args.ORIGINAL.name)
                 os.rename(pathname, args.ORIGINAL.name)
-
-
-if __name__ == "__main__":
-    main()
