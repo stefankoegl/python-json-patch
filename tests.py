@@ -1902,21 +1902,21 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(sorted(os.listdir(self.dir)), ['doc.json', 'patch.json'])
 
     # 2026-10-11: Windows cannot replace the original while its input is open.
-    def test_jsonpatch_in_place_closes_original_before_rename(self):
+    def test_jsonpatch_in_place_closes_original_before_replace(self):
         doc = self.write('doc.json', {'a': 1})
         patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 2}])
         parser = jsonpatch_cli.jsonpatch_parser
         args = parser.parse_args(['-i', doc, patch])
         self.addCleanup(args.ORIGINAL.close)
         self.addCleanup(args.PATCH.close)
-        rename = os.rename
+        replace = os.replace
 
-        def rename_closed_original(source, target):
+        def replace_closed_original(source, target):
             self.assertTrue(args.ORIGINAL.closed)
-            return rename(source, target)
+            return replace(source, target)
 
         with mock.patch.object(parser, 'parse_args', return_value=args), \
-                mock.patch('os.rename', side_effect=rename_closed_original):
+                mock.patch('os.replace', side_effect=replace_closed_original):
             jsonpatch_cli.patch_files()
         self.assertEqual(self.read(doc), {'a': 2})
 
@@ -1936,6 +1936,52 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual(self.read(doc), {'a': 2})
         self.assertEqual(self.read(doc + '.orig'), {'a': 1})
+
+    def test_jsonpatch_in_place_preserves_original_on_replace_error(self):
+        doc = self.write('doc.json', {'a': 1})
+        patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 2}])
+        parser = jsonpatch_cli.jsonpatch_parser
+        args = parser.parse_args(['-i', doc, patch])
+        self.addCleanup(args.ORIGINAL.close)
+        self.addCleanup(args.PATCH.close)
+
+        with mock.patch.object(parser, 'parse_args', return_value=args), \
+                mock.patch('os.rename', side_effect=PermissionError('cannot replace')), \
+                mock.patch('os.replace', side_effect=PermissionError('cannot replace')):
+            with self.assertRaises(PermissionError):
+                jsonpatch_cli.patch_files()
+
+        self.assertTrue(os.path.exists(doc))
+        self.assertEqual(self.read(doc), {'a': 1})
+        self.assertEqual(sorted(os.listdir(self.dir)), ['doc.json', 'patch.json'])
+
+    def test_jsonpatch_in_place_preserves_original_on_chmod_error(self):
+        doc = self.write('doc.json', {'a': 1})
+        patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 2}])
+        parser = jsonpatch_cli.jsonpatch_parser
+        args = parser.parse_args(['-i', doc, patch])
+        self.addCleanup(args.ORIGINAL.close)
+        self.addCleanup(args.PATCH.close)
+
+        with mock.patch.object(parser, 'parse_args', return_value=args), \
+                mock.patch('os.chmod', side_effect=PermissionError('cannot chmod')):
+            with self.assertRaises(PermissionError):
+                jsonpatch_cli.patch_files()
+
+        self.assertEqual(self.read(doc), {'a': 1})
+        self.assertEqual(sorted(os.listdir(self.dir)), ['doc.json', 'patch.json'])
+
+    def test_jsonpatch_in_place_existing_backup(self):
+        doc = self.write('doc.json', {'a': 1})
+        patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 2}])
+        backup = self.write('doc.json.orig', {'previous': True})
+        res = self.run_script('jsonpatch', '-i', '-b', doc, patch)
+
+        self.assertNotEqual(res.returncode, 0)
+        self.assertEqual(self.read(doc), {'a': 1})
+        self.assertEqual(self.read(backup), {'previous': True})
+        self.assertEqual(sorted(os.listdir(self.dir)),
+                         ['doc.json', 'doc.json.orig', 'patch.json'])
 
     def test_jsonpatch_in_place_failing_patch(self):
         # the patch is applied before the file is replaced, so it is kept
