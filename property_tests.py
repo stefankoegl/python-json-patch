@@ -290,6 +290,15 @@ class MakePatchProperties(unittest.TestCase):
     def test_roundtrip(self, docs):
         self.check_roundtrip(*docs)
 
+    @given(doc_pairs)
+    def test_roundtrip_without_move_optimization(self, docs):
+        src, dst = docs
+        patch = jsonpatch.JsonPatch.from_diff(src, dst, optimization=False)
+        note(patch.patch)
+        self.assertTrue(all(op['op'] in ('add', 'remove', 'replace')
+                            for op in patch))
+        assert_json_equal(patch.apply(src), dst)
+
     @given(safe_doc_pairs)
     # the diff considered e.g. 1 and true equal, #180
     @example(docs=([0], [False]))

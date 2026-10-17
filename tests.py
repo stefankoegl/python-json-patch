@@ -21,6 +21,25 @@ from unittest import mock
 
 class ApplyPatchTestCase(unittest.TestCase):
 
+    def test_diff_without_optimization_uses_basic_operations(self):
+        documents = [
+            ({'old': {'value': 1}}, {'new': {'value': 1}}),
+            ([1, 2, 3], [3, 1, 2]),
+            ([{'a': 1}, {'b': 2}], [{'b': 2}, {'a': 1}]),
+            ({'a/b': [1, 2]}, {'~key': [1, 2]}),
+        ]
+        for src, dst in documents:
+            with self.subTest(src=src, dst=dst):
+                original = copy.deepcopy(src)
+                patch = jsonpatch.JsonPatch.from_diff(
+                    src, dst, optimization=False)
+                self.assertTrue(all(operation['op'] in
+                                    ('add', 'remove', 'replace')
+                                    for operation in patch))
+                self.assertEqual(patch.apply(src), dst)
+                self.assertEqual(src, original)
+
+
     def test_js_file(self):
         with open('./tests.js', 'r') as f:
             tests = json.load(f)

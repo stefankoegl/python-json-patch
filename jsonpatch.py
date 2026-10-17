@@ -597,6 +597,10 @@ class JsonPatch(object):
         :param dst: Data target document object.
         :type dst: dict
 
+        :param optimization: Generate move operations for matching values.
+                             Set to False to use only add, remove and replace.
+        :type optimization: bool
+
         :param dumps: A function of one argument that produces a serialized
                       JSON string.
         :type dumps: Callable
@@ -614,7 +618,8 @@ class JsonPatch(object):
         True
         """
         json_dumper = dumps or cls.json_dumper
-        builder = DiffBuilder(src, dst, json_dumper, pointer_cls=pointer_cls)
+        builder = DiffBuilder(src, dst, json_dumper, pointer_cls=pointer_cls,
+                              optimization=optimization)
         builder._compare_values((), None, src, dst)
         ops = list(builder.execute())
         return cls(ops, pointer_cls=pointer_cls)
@@ -670,9 +675,11 @@ class JsonPatch(object):
 
 class DiffBuilder(object):
 
-    def __init__(self, src_doc, dst_doc, dumps=json.dumps, pointer_cls=JsonPointer):
+    def __init__(self, src_doc, dst_doc, dumps=json.dumps, pointer_cls=JsonPointer,
+                 optimization=True):
         self.dumps = dumps
         self.pointer_cls = pointer_cls
+        self.optimization = optimization
         self.index_storage = [{}, {}]
         self.__root = root = []
         self.src_doc = src_doc
@@ -693,10 +700,14 @@ class DiffBuilder(object):
             return id(value)
 
     def store_index(self, value, index, st):
+        if not self.optimization:
+            return
         storage = self.index_storage[st]
         storage.setdefault(self._move_key(value), []).append(index)
 
     def take_index(self, value, st):
+        if not self.optimization:
+            return None
         stored = self.index_storage[st].get(self._move_key(value))
         if stored:
             return stored.pop()
