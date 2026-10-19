@@ -126,12 +126,11 @@ def patch_files():
                 if args.backup:
                     os.link(args.ORIGINAL.name, args.ORIGINAL.name + '.orig')
                 os.chmod(pathname, os.stat(args.ORIGINAL.name).st_mode)
-                os.rename(pathname, args.ORIGINAL.name)
+                os.replace(pathname, args.ORIGINAL.name)
 
             except OSError:
-                # In the event we could not actually do the atomic
-                # replace, unlink the original to move it out of the
-                # way and finally move the temporary file into place.
-                
-                os.unlink(args.ORIGINAL.name)
-                os.rename(pathname, args.ORIGINAL.name)
+                # Preserve the original if backup, permissions, or replacement
+                # fails. replace() can overwrite an existing file on Windows
+                # without unlinking it first.
+                os.unlink(pathname)
+                raise
