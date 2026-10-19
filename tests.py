@@ -21,6 +21,36 @@ from unittest import mock
 
 class ApplyPatchTestCase(unittest.TestCase):
 
+    def test_operation_iterators_remain_reusable_after_validation(self):
+        operations = [
+            {'op': 'add', 'path': '/a', 'value': 1},
+            {'op': 'replace', 'path': '/a', 'value': 2},
+        ]
+        for factory in (iter, lambda ops: (op for op in ops)):
+            with self.subTest(factory=factory):
+                patch = jsonpatch.JsonPatch(factory(operations))
+                self.assertEqual(list(patch), operations)
+                self.assertEqual(json.loads(patch.to_string()), operations)
+                self.assertEqual(patch.apply({}), {'a': 2})
+                self.assertEqual(patch.apply({}), {'a': 2})
+
+    def test_empty_operation_iterator_is_false(self):
+        patch = jsonpatch.JsonPatch(iter([]))
+        self.assertFalse(patch)
+        self.assertEqual(patch.to_string(), '[]')
+
+    def test_invalid_operation_iterator_is_rejected(self):
+        operations = iter([
+            {'op': 'add', 'path': '/a', 'value': 1},
+            {'op': 'not-an-operation', 'path': '/a'},
+        ])
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.JsonPatch(operations)
+
+    def test_list_operations_keep_the_original_container(self):
+        operations = [{'op': 'add', 'path': '/a', 'value': 1}]
+        self.assertIs(jsonpatch.JsonPatch(operations).patch, operations)
+
     def test_diff_without_optimization_uses_basic_operations(self):
         documents = [
             ({'old': {'value': 1}}, {'new': {'value': 1}}),
