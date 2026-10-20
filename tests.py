@@ -1956,6 +1956,55 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(self.read(doc), {'a': 2})
         self.assertEqual(self.read(doc + '.orig'), {'a': 1})
 
+    def test_jsonpatch_in_place_cleans_temp_on_output_error(self):
+        for phase in ('dump', 'newline', 'close', 'dump_and_close'):
+            with self.subTest(phase=phase):
+                tmp = tempfile.TemporaryDirectory()
+                self.addCleanup(tmp.cleanup)
+                self.dir = tmp.name
+                doc = self.write('doc.json', {'a': 1})
+                patch = self.write('patch.json', [])
+                args = jsonpatch_cli.jsonpatch_parser.parse_args(['-i', doc, patch])
+                self.addCleanup(args.ORIGINAL.close)
+                self.addCleanup(args.PATCH.close)
+                failure = OSError('output failed')
+                opened = []
+                fdopen = os.fdopen
+
+                def open_output(fd, mode):
+                    stream = fdopen(fd, mode)
+                    self.addCleanup(stream.close)
+                    opened.append(stream)
+                    proxy = mock.Mock(wraps=stream)
+                    if phase == 'newline':
+                        proxy.write.side_effect = lambda value: (
+                            stream.write(value) if value != '\n' else fail())
+                    if phase in ('close', 'dump_and_close'):
+                        def close():
+                            stream.close()
+                            raise failure if phase == 'close' else OSError('close failed')
+                        proxy.close.side_effect = close
+                    return proxy
+
+                def fail():
+                    raise failure
+
+                def dump(value, stream, **kwargs):
+                    stream.write('{')
+                    if phase in ('dump', 'dump_and_close'):
+                        raise failure
+
+                with mock.patch.object(jsonpatch_cli.jsonpatch_parser, 'parse_args',
+                                       return_value=args), \
+                        mock.patch('os.fdopen', side_effect=open_output), \
+                        mock.patch('json.dump', side_effect=dump):
+                    with self.assertRaises(OSError) as caught:
+                        jsonpatch_cli.patch_files()
+                self.assertIs(caught.exception, failure)
+                self.assertTrue(opened[0].closed)
+                self.assertEqual(self.read(doc), {'a': 1})
+                self.assertEqual(sorted(os.listdir(self.dir)), ['doc.json', 'patch.json'])
+
     def test_jsonpatch_in_place_preserves_original_on_replace_error(self):
         doc = self.write('doc.json', {'a': 1})
         patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 2}])
