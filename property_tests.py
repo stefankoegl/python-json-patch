@@ -324,6 +324,15 @@ class MakePatchProperties(unittest.TestCase):
 
 class ApplyPatchProperties(unittest.TestCase):
 
+    @given(st.one_of(json_scalars, st.dictionaries(json_keys, json_docs)))
+    @example(patch={})
+    @example(patch='')
+    def test_non_array_patch_documents_are_rejected(self, patch):
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.JsonPatch(patch)
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.JsonPatch.from_string(json.dumps(patch))
+
     @given(docs_with_patches())
     def test_does_not_modify_document(self, case):
         doc, patch = case

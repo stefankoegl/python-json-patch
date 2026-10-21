@@ -518,11 +518,18 @@ class JsonPatch(object):
         self.patch = patch
         self.pointer_cls = pointer_cls
 
+        if isinstance(patch, (str, bytes, Mapping)):
+            raise InvalidJsonPatch("Document is expected to be sequence of operations")
+        try:
+            patch_iter = iter(patch)
+        except TypeError:
+            raise InvalidJsonPatch("Document is expected to be sequence of operations")
+
         # Verify that the structure of the patch document
         # is correct by retrieving each patch element.
         # Much of the validation is done in the initializer
         # though some is delayed until the patch is applied.
-        for op in self.patch:
+        for op in patch_iter:
             # We're only checking for strings in the following check
             # for two reasons:
             #

@@ -1533,6 +1533,35 @@ class JsonPointerTests(unittest.TestCase):
 
 class JsonPatchCreationTest(unittest.TestCase):
 
+    def test_creation_rejects_non_sequence_documents(self):
+        for patch in ({}, {'op': 'add', 'path': '/a', 'value': 1},
+                      MappingProxyType({}), '', b'', None, True, False,
+                      0, 1, 1.5):
+            with self.subTest(patch=patch):
+                with self.assertRaises(jsonpatch.InvalidJsonPatch):
+                    jsonpatch.JsonPatch(patch)
+
+    def test_serialized_patch_rejects_non_array_documents(self):
+        for patch in ({}, {'op': 'add', 'path': '/a', 'value': 1},
+                      '', 'text', None, True, False, 0, 1, 1.5):
+            for serialized in (json.dumps(patch), json.dumps(patch).encode()):
+                with self.subTest(patch=serialized):
+                    with self.assertRaises(jsonpatch.InvalidJsonPatch):
+                        jsonpatch.JsonPatch.from_string(serialized)
+                    doc = {'a': 'unchanged'}
+                    with self.assertRaises(jsonpatch.InvalidJsonPatch):
+                        jsonpatch.apply_patch(doc, serialized, in_place=True)
+                    self.assertEqual(doc, {'a': 'unchanged'})
+
+    def test_creation_preserves_operation_sequences(self):
+        for operations in ([], (),
+                           [{'op': 'add', 'path': '/a', 'value': 1}],
+                           ({'op': 'add', 'path': '/a', 'value': 1},)):
+            with self.subTest(operations=operations):
+                patch = jsonpatch.JsonPatch(operations)
+                self.assertIs(patch.patch, operations)
+                self.assertEqual(patch.apply({}), {'a': 1} if operations else {})
+
     def test_creation_fails_with_invalid_patch(self):
         invalid_patches = [
             {             'path': '/foo', 'value': 'bar'},
