@@ -37,7 +37,8 @@ import collections
 import copy
 import functools
 import json
-from collections.abc import Mapping, MutableMapping, MutableSequence, Sequence
+from collections.abc import (Iterator, Mapping, MutableMapping, MutableSequence,
+                             Sequence)
 from difflib import SequenceMatcher
 from types import MappingProxyType
 
@@ -515,7 +516,7 @@ class JsonPatch(object):
     })
 
     def __init__(self, patch, pointer_cls=JsonPointer):
-        self.patch = patch
+        self.patch = list(patch) if isinstance(patch, Iterator) else patch
         self.pointer_cls = pointer_cls
 
         # Verify that the structure of the patch document
