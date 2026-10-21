@@ -108,15 +108,26 @@ def patch_files():
     # By this point we have some sort of file object we can write the 
     # modified JSON to.
     
-    json.dump(result, fp, indent=args.indent, ensure_ascii=not(args.preserve_unicode))
-    fp.write('\n')
+    try:
+        json.dump(result, fp, indent=args.indent, ensure_ascii=not(args.preserve_unicode))
+        fp.write('\n')
+        if args.in_place:
+            fp.close()
+    except BaseException:
+        if args.in_place:
+            # Cleanup must not replace the original output error.
+            try:
+                fp.close()
+            except OSError:
+                pass
+            if atomic:
+                try:
+                    os.unlink(pathname)
+                except OSError:
+                    pass
+        raise
 
     if args.in_place:
-        # Close the new file.  If we aren't replacing atomically, this
-        # is our last step, since everything else is already in place.
-
-        fp.close()
-
         if atomic:
             try:
                 # Complete the atomic replace by linking the original
