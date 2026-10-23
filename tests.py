@@ -1676,6 +1676,34 @@ class OperationLocationTests(unittest.TestCase):
         self.assertEqual(operation, {'op': 'move', 'from': '/c~1d/0', 'path': '/b'})
         self.assertEqual(op.apply({'c/d': ['x']}), {'c/d': [], 'b': 'x'})
 
+    def test_from_path_with_pointer_object(self):
+        for pointer_cls in (jsonpointer.JsonPointer, CustomJsonPointer):
+            with self.subTest(pointer_cls=pointer_cls):
+                op = jsonpatch.MoveOperation(
+                    {'op': 'move', 'from': pointer_cls('/a/1/b'), 'path': '/c'},
+                    pointer_cls=pointer_cls)
+                self.assertEqual(op.from_path, 'a/1')
+
+    def test_from_parts_with_pointer_object(self):
+        for pointer_cls in (jsonpointer.JsonPointer, CustomJsonPointer):
+            with self.subTest(pointer_cls=pointer_cls):
+                op = jsonpatch.MoveOperation(
+                    {'op': 'move', 'from': pointer_cls('/a/1/b'), 'path': '/c'},
+                    pointer_cls=pointer_cls)
+                self.assertEqual(op.from_key, 'b')
+                self.assertEqual(op.get_from_part(1), 1)
+
+    def test_set_from_key_with_pointer_object(self):
+        for pointer_cls in (jsonpointer.JsonPointer, CustomJsonPointer):
+            with self.subTest(pointer_cls=pointer_cls):
+                operation = {'op': 'move', 'from': pointer_cls('/a/1'),
+                             'path': '/b'}
+                op = jsonpatch.MoveOperation(operation, pointer_cls=pointer_cls)
+                op.from_key = 0
+                self.assertEqual(operation['from'], '/a/0')
+                self.assertEqual(op.apply({'a': ['x', 'y']}),
+                                 {'a': ['y'], 'b': 'x'})
+
 
 class CustomJsonPointer(jsonpointer.JsonPointer):
     pass
