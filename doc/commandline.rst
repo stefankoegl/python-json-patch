@@ -4,6 +4,9 @@ Commandline Utilities
 The JSON patch package contains the commandline utilities ``jsondiff`` and
 ``jsonpatch``.
 
+Both utilities read JSON files as UTF-8. When ``jsonpatch`` modifies a file
+in-place, it also writes UTF-8.
+
 ``jsondiff``
 ------------
 
