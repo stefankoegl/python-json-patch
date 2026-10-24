@@ -384,7 +384,7 @@ class MoveOperation(PatchOperation):
 
     @property
     def from_path(self):
-        from_ptr = self.pointer_cls(self.operation['from'])
+        from_ptr = self._from_pointer()
         return '/'.join(from_ptr.parts[:-1])
 
     @property
@@ -396,14 +396,14 @@ class MoveOperation(PatchOperation):
         self.set_from_part(-1, value)
 
     def get_from_part(self, index):
-        from_ptr = self.pointer_cls(self.operation['from'])
+        from_ptr = self._from_pointer()
         try:
             return int(from_ptr.parts[index])
         except ValueError:
             return from_ptr.parts[index]
 
     def set_from_part(self, index, value):
-        from_ptr = self.pointer_cls(self.operation['from'])
+        from_ptr = self._from_pointer()
         from_ptr.parts[index] = str(value)
         self.operation['from'] = from_ptr.path
 
