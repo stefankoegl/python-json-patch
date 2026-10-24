@@ -1865,27 +1865,34 @@ class CommandLineTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.dir = tmp.name
 
-    def write(self, name, value):
+    def write(self, name, value, ensure_ascii=True):
         path = os.path.join(self.dir, name)
         with open(path, 'w', encoding='utf-8') as f:
-            json.dump(value, f)
+            json.dump(value, f, ensure_ascii=ensure_ascii)
         return path
 
     def read(self, path):
         with open(path, encoding='utf-8') as f:
             return json.load(f)
 
-    def run_script(self, script, *args, stdin=''):
+    def run_python(self, code, *args, stdin='', utf8=True):
         here = os.path.dirname(os.path.abspath(__file__))
         # the scripts have to import this jsonpatch, not an installed one
         pythonpath = [here] + [p for p in [os.environ.get('PYTHONPATH')] if p]
         env = dict(os.environ, PYTHONPATH=os.pathsep.join(pythonpath),
                    PYTHONUTF8='1')
+        if not utf8:
+            # Exercise locale-dependent file I/O while keeping pipes in UTF-8.
+            env.update(PYTHONUTF8='0', PYTHONIOENCODING='utf-8',
+                       LC_ALL='C', PYTHONCOERCECLOCALE='0')
         return subprocess.run(
-            [sys.executable, '-c',
-             'import jsonpatch_cli; jsonpatch_cli.{0}_main()'.format(script)]
-            + list(args),
+            [sys.executable, '-c', code] + list(args),
             input=stdin, capture_output=True, encoding='utf-8', env=env)
+
+    def run_script(self, script, *args, stdin='', utf8=True):
+        return self.run_python(
+            'import jsonpatch_cli; jsonpatch_cli.{0}_main()'.format(script),
+            *args, stdin=stdin, utf8=utf8)
 
     def test_jsondiff(self):
         src = self.write('a.json', {'a': [1, 2], 'b': 0})
@@ -1916,6 +1923,18 @@ class CommandLineTests(unittest.TestCase):
         self.assertIn('"\\u00e4"', self.run_script('jsondiff', src, dst).stdout)
         self.assertIn('"ä"', self.run_script('jsondiff', '-u', src, dst).stdout)
 
+    def test_jsondiff_utf8_files_without_utf8_mode(self):
+        src = self.write('a.json', {'a': 'old', 'unchanged': 'ä'},
+                         ensure_ascii=False)
+        dst = self.write('b.json', {'a': '🚀', 'unchanged': 'ä'},
+                         ensure_ascii=False)
+        res = self.run_script('jsondiff', src, dst, utf8=False)
+        self.assertEqual(res.returncode, 1, res.stderr)
+        patch = json.loads(res.stdout)
+        self.assertEqual(patch, [{'op': 'replace', 'path': '/a', 'value': '🚀'}])
+        self.assertEqual(jsonpatch.apply_patch(self.read(src), patch),
+                         self.read(dst))
+
     def test_jsonpatch(self):
         doc = self.write('doc.json', {'a': [1, 2], 'b': 0})
         patch = self.write('patch.json', [{'op': 'add', 'path': '/a/-', 'value': 3},
@@ -1931,6 +1950,17 @@ class CommandLineTests(unittest.TestCase):
                               stdin='[{"op": "replace", "path": "/a", "value": 2}]')
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual(json.loads(res.stdout), {'a': 2})
+
+    def test_jsonpatch_utf8_files_without_utf8_mode(self):
+        doc = self.write('doc.json', {'a': 'ä'}, ensure_ascii=False)
+        patch = self.write('patch.json', [
+            {'op': 'test', 'path': '/a', 'value': 'ä'},
+            {'op': 'replace', 'path': '/a', 'value': '🚀'},
+        ], ensure_ascii=False)
+        res = self.run_script('jsonpatch', doc, patch, utf8=False)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(json.loads(res.stdout), {'a': '🚀'})
+        self.assertEqual(self.read(doc), {'a': 'ä'})
 
     def test_jsonpatch_indent_preserve_unicode(self):
         doc = self.write('doc.json', {'a': 'x'})
@@ -1948,6 +1978,28 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(self.read(doc), {'a': 2})
         # the temporary file has been moved over the original
         self.assertEqual(sorted(os.listdir(self.dir)), ['doc.json', 'patch.json'])
+
+    def test_jsonpatch_in_place_utf8_without_utf8_mode(self):
+        for atomic in (True, False):
+            with self.subTest(atomic=atomic):
+                doc = self.write('doc.json', {'a': 'old'})
+                patch = self.write('patch.json', [
+                    {'op': 'replace', 'path': '/a', 'value': '🚀'},
+                ])
+                if atomic:
+                    code = 'import jsonpatch_cli; jsonpatch_cli.jsonpatch_main()'
+                else:
+                    code = (
+                        'from unittest import mock\n'
+                        'import jsonpatch_cli\n'
+                        'with mock.patch("tempfile.mkstemp", side_effect=OSError):\n'
+                        '    jsonpatch_cli.jsonpatch_main()\n'
+                    )
+                res = self.run_python(code, '-i', '-u', doc, patch, utf8=False)
+                self.assertEqual((res.returncode, res.stdout), (0, ''), res.stderr)
+                self.assertEqual(self.read(doc), {'a': '🚀'})
+                self.assertEqual(sorted(os.listdir(self.dir)),
+                                 ['doc.json', 'patch.json'])
 
     # 2026-10-11: Windows cannot replace the original while its input is open.
     def test_jsonpatch_in_place_closes_original_before_replace(self):
@@ -2000,8 +2052,8 @@ class CommandLineTests(unittest.TestCase):
                 opened = []
                 fdopen = os.fdopen
 
-                def open_output(fd, mode):
-                    stream = fdopen(fd, mode)
+                def open_output(fd, mode, **kwargs):
+                    stream = fdopen(fd, mode, **kwargs)
                     self.addCleanup(stream.close)
                     opened.append(stream)
                     proxy = mock.Mock(wraps=stream)
