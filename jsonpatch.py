@@ -520,7 +520,6 @@ class JsonPatch(object):
     })
 
     def __init__(self, patch, pointer_cls=JsonPointer):
-        self.patch = patch if isinstance(patch, Sequence) else list(patch)
         self.pointer_cls = pointer_cls
 
         if isinstance(patch, (str, bytes, Mapping)):
@@ -530,11 +529,15 @@ class JsonPatch(object):
         except TypeError:
             raise InvalidJsonPatch("Document is expected to be sequence of operations")
 
+        # One-shot iterables are materialized, so that validating them does
+        # not leave nothing to apply
+        self.patch = patch if isinstance(patch, Sequence) else list(patch_iter)
+
         # Verify that the structure of the patch document
         # is correct by retrieving each patch element.
         # Much of the validation is done in the initializer
         # though some is delayed until the patch is applied.
-        for op in patch_iter:
+        for op in self.patch:
             # We're only checking for strings in the following check
             # for two reasons:
             #
