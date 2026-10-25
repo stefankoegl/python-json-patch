@@ -1578,6 +1578,35 @@ class JsonPointerTests(unittest.TestCase):
 
 class JsonPatchCreationTest(unittest.TestCase):
 
+    def test_creation_rejects_non_sequence_documents(self):
+        for patch in ({}, {'op': 'add', 'path': '/a', 'value': 1},
+                      MappingProxyType({}), '', b'', None, True, False,
+                      0, 1, 1.5):
+            with self.subTest(patch=patch):
+                with self.assertRaises(jsonpatch.InvalidJsonPatch):
+                    jsonpatch.JsonPatch(patch)
+
+    def test_serialized_patch_rejects_non_array_documents(self):
+        for patch in ({}, {'op': 'add', 'path': '/a', 'value': 1},
+                      '', 'text', None, True, False, 0, 1, 1.5):
+            for serialized in (json.dumps(patch), json.dumps(patch).encode()):
+                with self.subTest(patch=serialized):
+                    with self.assertRaises(jsonpatch.InvalidJsonPatch):
+                        jsonpatch.JsonPatch.from_string(serialized)
+                    doc = {'a': 'unchanged'}
+                    with self.assertRaises(jsonpatch.InvalidJsonPatch):
+                        jsonpatch.apply_patch(doc, serialized, in_place=True)
+                    self.assertEqual(doc, {'a': 'unchanged'})
+
+    def test_creation_preserves_operation_sequences(self):
+        for operations in ([], (),
+                           [{'op': 'add', 'path': '/a', 'value': 1}],
+                           ({'op': 'add', 'path': '/a', 'value': 1},)):
+            with self.subTest(operations=operations):
+                patch = jsonpatch.JsonPatch(operations)
+                self.assertIs(patch.patch, operations)
+                self.assertEqual(patch.apply({}), {'a': 1} if operations else {})
+
     def test_creation_fails_with_invalid_patch(self):
         invalid_patches = [
             {             'path': '/foo', 'value': 'bar'},
@@ -1720,6 +1749,34 @@ class OperationLocationTests(unittest.TestCase):
         op.set_from_part(0, 'c/d')
         self.assertEqual(operation, {'op': 'move', 'from': '/c~1d/0', 'path': '/b'})
         self.assertEqual(op.apply({'c/d': ['x']}), {'c/d': [], 'b': 'x'})
+
+    def test_from_path_with_pointer_object(self):
+        for pointer_cls in (jsonpointer.JsonPointer, CustomJsonPointer):
+            with self.subTest(pointer_cls=pointer_cls):
+                op = jsonpatch.MoveOperation(
+                    {'op': 'move', 'from': pointer_cls('/a/1/b'), 'path': '/c'},
+                    pointer_cls=pointer_cls)
+                self.assertEqual(op.from_path, 'a/1')
+
+    def test_from_parts_with_pointer_object(self):
+        for pointer_cls in (jsonpointer.JsonPointer, CustomJsonPointer):
+            with self.subTest(pointer_cls=pointer_cls):
+                op = jsonpatch.MoveOperation(
+                    {'op': 'move', 'from': pointer_cls('/a/1/b'), 'path': '/c'},
+                    pointer_cls=pointer_cls)
+                self.assertEqual(op.from_key, 'b')
+                self.assertEqual(op.get_from_part(1), 1)
+
+    def test_set_from_key_with_pointer_object(self):
+        for pointer_cls in (jsonpointer.JsonPointer, CustomJsonPointer):
+            with self.subTest(pointer_cls=pointer_cls):
+                operation = {'op': 'move', 'from': pointer_cls('/a/1'),
+                             'path': '/b'}
+                op = jsonpatch.MoveOperation(operation, pointer_cls=pointer_cls)
+                op.from_key = 0
+                self.assertEqual(operation['from'], '/a/0')
+                self.assertEqual(op.apply({'a': ['x', 'y']}),
+                                 {'a': ['y'], 'b': 'x'})
 
 
 class CustomJsonPointer(jsonpointer.JsonPointer):
@@ -1881,27 +1938,34 @@ class CommandLineTests(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         self.dir = tmp.name
 
-    def write(self, name, value):
+    def write(self, name, value, ensure_ascii=True):
         path = os.path.join(self.dir, name)
         with open(path, 'w', encoding='utf-8') as f:
-            json.dump(value, f)
+            json.dump(value, f, ensure_ascii=ensure_ascii)
         return path
 
     def read(self, path):
         with open(path, encoding='utf-8') as f:
             return json.load(f)
 
-    def run_script(self, script, *args, stdin=''):
+    def run_python(self, code, *args, stdin='', utf8=True):
         here = os.path.dirname(os.path.abspath(__file__))
         # the scripts have to import this jsonpatch, not an installed one
         pythonpath = [here] + [p for p in [os.environ.get('PYTHONPATH')] if p]
         env = dict(os.environ, PYTHONPATH=os.pathsep.join(pythonpath),
                    PYTHONUTF8='1')
+        if not utf8:
+            # Exercise locale-dependent file I/O while keeping pipes in UTF-8.
+            env.update(PYTHONUTF8='0', PYTHONIOENCODING='utf-8',
+                       LC_ALL='C', PYTHONCOERCECLOCALE='0')
         return subprocess.run(
-            [sys.executable, '-c',
-             'import jsonpatch_cli; jsonpatch_cli.{0}_main()'.format(script)]
-            + list(args),
+            [sys.executable, '-c', code] + list(args),
             input=stdin, capture_output=True, encoding='utf-8', env=env)
+
+    def run_script(self, script, *args, stdin='', utf8=True):
+        return self.run_python(
+            'import jsonpatch_cli; jsonpatch_cli.{0}_main()'.format(script),
+            *args, stdin=stdin, utf8=utf8)
 
     def test_jsondiff(self):
         src = self.write('a.json', {'a': [1, 2], 'b': 0})
@@ -1932,6 +1996,18 @@ class CommandLineTests(unittest.TestCase):
         self.assertIn('"\\u00e4"', self.run_script('jsondiff', src, dst).stdout)
         self.assertIn('"ä"', self.run_script('jsondiff', '-u', src, dst).stdout)
 
+    def test_jsondiff_utf8_files_without_utf8_mode(self):
+        src = self.write('a.json', {'a': 'old', 'unchanged': 'ä'},
+                         ensure_ascii=False)
+        dst = self.write('b.json', {'a': '🚀', 'unchanged': 'ä'},
+                         ensure_ascii=False)
+        res = self.run_script('jsondiff', src, dst, utf8=False)
+        self.assertEqual(res.returncode, 1, res.stderr)
+        patch = json.loads(res.stdout)
+        self.assertEqual(patch, [{'op': 'replace', 'path': '/a', 'value': '🚀'}])
+        self.assertEqual(jsonpatch.apply_patch(self.read(src), patch),
+                         self.read(dst))
+
     def test_jsonpatch(self):
         doc = self.write('doc.json', {'a': [1, 2], 'b': 0})
         patch = self.write('patch.json', [{'op': 'add', 'path': '/a/-', 'value': 3},
@@ -1947,6 +2023,17 @@ class CommandLineTests(unittest.TestCase):
                               stdin='[{"op": "replace", "path": "/a", "value": 2}]')
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual(json.loads(res.stdout), {'a': 2})
+
+    def test_jsonpatch_utf8_files_without_utf8_mode(self):
+        doc = self.write('doc.json', {'a': 'ä'}, ensure_ascii=False)
+        patch = self.write('patch.json', [
+            {'op': 'test', 'path': '/a', 'value': 'ä'},
+            {'op': 'replace', 'path': '/a', 'value': '🚀'},
+        ], ensure_ascii=False)
+        res = self.run_script('jsonpatch', doc, patch, utf8=False)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(json.loads(res.stdout), {'a': '🚀'})
+        self.assertEqual(self.read(doc), {'a': 'ä'})
 
     def test_jsonpatch_indent_preserve_unicode(self):
         doc = self.write('doc.json', {'a': 'x'})
@@ -1964,6 +2051,28 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(self.read(doc), {'a': 2})
         # the temporary file has been moved over the original
         self.assertEqual(sorted(os.listdir(self.dir)), ['doc.json', 'patch.json'])
+
+    def test_jsonpatch_in_place_utf8_without_utf8_mode(self):
+        for atomic in (True, False):
+            with self.subTest(atomic=atomic):
+                doc = self.write('doc.json', {'a': 'old'})
+                patch = self.write('patch.json', [
+                    {'op': 'replace', 'path': '/a', 'value': '🚀'},
+                ])
+                if atomic:
+                    code = 'import jsonpatch_cli; jsonpatch_cli.jsonpatch_main()'
+                else:
+                    code = (
+                        'from unittest import mock\n'
+                        'import jsonpatch_cli\n'
+                        'with mock.patch("tempfile.mkstemp", side_effect=OSError):\n'
+                        '    jsonpatch_cli.jsonpatch_main()\n'
+                    )
+                res = self.run_python(code, '-i', '-u', doc, patch, utf8=False)
+                self.assertEqual((res.returncode, res.stdout), (0, ''), res.stderr)
+                self.assertEqual(self.read(doc), {'a': '🚀'})
+                self.assertEqual(sorted(os.listdir(self.dir)),
+                                 ['doc.json', 'patch.json'])
 
     # 2026-10-11: Windows cannot replace the original while its input is open.
     def test_jsonpatch_in_place_closes_original_before_replace(self):
@@ -2000,6 +2109,55 @@ class CommandLineTests(unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual(self.read(doc), {'a': 2})
         self.assertEqual(self.read(doc + '.orig'), {'a': 1})
+
+    def test_jsonpatch_in_place_cleans_temp_on_output_error(self):
+        for phase in ('dump', 'newline', 'close', 'dump_and_close'):
+            with self.subTest(phase=phase):
+                tmp = tempfile.TemporaryDirectory()
+                self.addCleanup(tmp.cleanup)
+                self.dir = tmp.name
+                doc = self.write('doc.json', {'a': 1})
+                patch = self.write('patch.json', [])
+                args = jsonpatch_cli.jsonpatch_parser.parse_args(['-i', doc, patch])
+                self.addCleanup(args.ORIGINAL.close)
+                self.addCleanup(args.PATCH.close)
+                failure = OSError('output failed')
+                opened = []
+                fdopen = os.fdopen
+
+                def open_output(fd, mode, **kwargs):
+                    stream = fdopen(fd, mode, **kwargs)
+                    self.addCleanup(stream.close)
+                    opened.append(stream)
+                    proxy = mock.Mock(wraps=stream)
+                    if phase == 'newline':
+                        proxy.write.side_effect = lambda value: (
+                            stream.write(value) if value != '\n' else fail())
+                    if phase in ('close', 'dump_and_close'):
+                        def close():
+                            stream.close()
+                            raise failure if phase == 'close' else OSError('close failed')
+                        proxy.close.side_effect = close
+                    return proxy
+
+                def fail():
+                    raise failure
+
+                def dump(value, stream, **kwargs):
+                    stream.write('{')
+                    if phase in ('dump', 'dump_and_close'):
+                        raise failure
+
+                with mock.patch.object(jsonpatch_cli.jsonpatch_parser, 'parse_args',
+                                       return_value=args), \
+                        mock.patch('os.fdopen', side_effect=open_output), \
+                        mock.patch('json.dump', side_effect=dump):
+                    with self.assertRaises(OSError) as caught:
+                        jsonpatch_cli.patch_files()
+                self.assertIs(caught.exception, failure)
+                self.assertTrue(opened[0].closed)
+                self.assertEqual(self.read(doc), {'a': 1})
+                self.assertEqual(sorted(os.listdir(self.dir)), ['doc.json', 'patch.json'])
 
     def test_jsonpatch_in_place_preserves_original_on_replace_error(self):
         doc = self.write('doc.json', {'a': 1})
