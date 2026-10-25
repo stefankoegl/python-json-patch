@@ -26,8 +26,19 @@ class ApplyPatchTestCase(unittest.TestCase):
             {'op': 'add', 'path': '/a', 'value': 1},
             {'op': 'replace', 'path': '/a', 'value': 2},
         ]
-        for factory in (iter, lambda ops: (op for op in ops)):
-            with self.subTest(factory=factory):
+        class OneShotIterable:
+            def __init__(self, ops):
+                self.iterator = iter(ops)
+
+            def __iter__(self):
+                return self.iterator
+
+        for name, factory in (
+            ('iterator', iter),
+            ('generator', lambda ops: (op for op in ops)),
+            ('one-shot iterable', OneShotIterable),
+        ):
+            with self.subTest(name=name):
                 patch = jsonpatch.JsonPatch(factory(operations))
                 self.assertEqual(list(patch), operations)
                 self.assertEqual(json.loads(patch.to_string()), operations)
@@ -47,9 +58,13 @@ class ApplyPatchTestCase(unittest.TestCase):
         with self.assertRaises(jsonpatch.InvalidJsonPatch):
             jsonpatch.JsonPatch(operations)
 
-    def test_list_operations_keep_the_original_container(self):
+    def test_sequence_operations_preserve_contents(self):
         operations = [{'op': 'add', 'path': '/a', 'value': 1}]
-        self.assertIs(jsonpatch.JsonPatch(operations).patch, operations)
+        for sequence in (operations, tuple(operations)):
+            with self.subTest(sequence=type(sequence).__name__):
+                patch = jsonpatch.JsonPatch(sequence)
+                self.assertEqual(list(patch), operations)
+                self.assertEqual(patch.apply({}), {'a': 1})
 
     def test_diff_without_optimization_uses_basic_operations(self):
         documents = [

@@ -37,7 +37,7 @@ import collections
 import copy
 import functools
 import json
-from collections.abc import (Iterator, Mapping, MutableMapping, MutableSequence,
+from collections.abc import (Mapping, MutableMapping, MutableSequence,
                              Sequence)
 from difflib import SequenceMatcher
 from types import MappingProxyType
@@ -101,13 +101,13 @@ _jsonloads = functools.partial(json.loads, object_pairs_hook=multidict)
 
 
 def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
-    """Apply list of patches to specified json document.
+    """Apply patch operations to the specified JSON document.
 
     :param doc: Document object.
     :type doc: dict
 
-    :param patch: JSON patch as list of dicts or raw JSON-encoded string.
-    :type patch: list or str
+    :param patch: Iterable of operation dicts or a raw JSON-encoded string.
+    :type patch: iterable or str
 
     :param in_place: While ``True`` patch will modify target document.
                      By default patch will be applied to document copy.
@@ -458,7 +458,11 @@ class CopyOperation(PatchOperation):
 
 
 class JsonPatch(object):
-    """A JSON Patch is a list of Patch Operations.
+    """A JSON Patch is an iterable of Patch Operations.
+
+    Accepts sequences, iterators, generators, and other iterables of operation
+    dictionaries. Non-sequence inputs are materialized before validation so
+    the resulting patch can be applied repeatedly.
 
     >>> patch = JsonPatch([
     ...     {'op': 'add', 'path': '/foo', 'value': 'bar'},
@@ -516,7 +520,7 @@ class JsonPatch(object):
     })
 
     def __init__(self, patch, pointer_cls=JsonPointer):
-        self.patch = list(patch) if isinstance(patch, Iterator) else patch
+        self.patch = patch if isinstance(patch, Sequence) else list(patch)
         self.pointer_cls = pointer_cls
 
         # Verify that the structure of the patch document
