@@ -55,7 +55,7 @@ _EXACT_MATCH_LIMIT = 500 ** 2
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
-__version__ = '1.36'
+__version__ = '1.37'
 __website__ = 'https://github.com/stefankoegl/python-json-patch'
 __license__ = 'BSD-3-Clause'
 
@@ -385,7 +385,7 @@ class MoveOperation(PatchOperation):
 
     @property
     def from_path(self):
-        from_ptr = self.pointer_cls(self.operation['from'])
+        from_ptr = self._from_pointer()
         return '/'.join(from_ptr.parts[:-1])
 
     @property
@@ -397,14 +397,14 @@ class MoveOperation(PatchOperation):
         self.set_from_part(-1, value)
 
     def get_from_part(self, index):
-        from_ptr = self.pointer_cls(self.operation['from'])
+        from_ptr = self._from_pointer()
         try:
             return int(from_ptr.parts[index])
         except ValueError:
             return from_ptr.parts[index]
 
     def set_from_part(self, index, value):
-        from_ptr = self.pointer_cls(self.operation['from'])
+        from_ptr = self._from_pointer()
         from_ptr.parts[index] = str(value)
         self.operation['from'] = from_ptr.path
 
@@ -520,8 +520,14 @@ class JsonPatch(object):
     })
 
     def __init__(self, patch, pointer_cls=JsonPointer):
-        self.patch = patch if isinstance(patch, Sequence) else list(patch)
         self.pointer_cls = pointer_cls
+
+        if isinstance(patch, (str, bytes, Mapping)):
+            raise InvalidJsonPatch("Document is expected to be sequence of operations")
+        try:
+            self.patch = patch if isinstance(patch, Sequence) else list(patch)
+        except TypeError:
+            raise InvalidJsonPatch("Document is expected to be sequence of operations")
 
         # Verify that the structure of the patch document
         # is correct by retrieving each patch element.

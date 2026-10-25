@@ -12,8 +12,8 @@ import argparse
 
 jsondiff_parser = argparse.ArgumentParser(
     prog='jsondiff', description='Diff two JSON files')
-jsondiff_parser.add_argument('FILE1', type=argparse.FileType('r'))
-jsondiff_parser.add_argument('FILE2', type=argparse.FileType('r'))
+jsondiff_parser.add_argument('FILE1', type=argparse.FileType('r', encoding='utf-8'))
+jsondiff_parser.add_argument('FILE2', type=argparse.FileType('r', encoding='utf-8'))
 jsondiff_parser.add_argument('--indent', type=int, default=None,
                              help='Indent output by n spaces')
 jsondiff_parser.add_argument('-u', '--preserve-unicode', action='store_true',
@@ -43,9 +43,9 @@ def diff_files():
 jsonpatch_parser = argparse.ArgumentParser(
     prog='jsonpatch',
     description='Apply a JSON patch on a JSON file')
-jsonpatch_parser.add_argument('ORIGINAL', type=argparse.FileType('r'),
+jsonpatch_parser.add_argument('ORIGINAL', type=argparse.FileType('r', encoding='utf-8'),
                               help='Original file')
-jsonpatch_parser.add_argument('PATCH', type=argparse.FileType('r'),
+jsonpatch_parser.add_argument('PATCH', type=argparse.FileType('r', encoding='utf-8'),
                               nargs='?', default=sys.stdin,
                               help='Patch file (read from stdin if omitted)')
 jsonpatch_parser.add_argument('--indent', type=int, default=None,
@@ -86,7 +86,7 @@ def patch_files():
 	    # because atomic renames do not work across mount points.)
 
             fd, pathname = tempfile.mkstemp(dir=dirname)
-            fp = os.fdopen(fd, 'w')
+            fp = os.fdopen(fd, 'w', encoding='utf-8')
             atomic = True
 
         except OSError:
@@ -96,7 +96,7 @@ def patch_files():
 
             if args.backup:
                 os.rename(args.ORIGINAL.name, args.ORIGINAL.name + '.orig')
-            fp = open(args.ORIGINAL.name, 'w')
+            fp = open(args.ORIGINAL.name, 'w', encoding='utf-8')
             atomic = False
 
     else:
@@ -108,15 +108,26 @@ def patch_files():
     # By this point we have some sort of file object we can write the 
     # modified JSON to.
     
-    json.dump(result, fp, indent=args.indent, ensure_ascii=not(args.preserve_unicode))
-    fp.write('\n')
+    try:
+        json.dump(result, fp, indent=args.indent, ensure_ascii=not(args.preserve_unicode))
+        fp.write('\n')
+        if args.in_place:
+            fp.close()
+    except BaseException:
+        if args.in_place:
+            # Cleanup must not replace the original output error.
+            try:
+                fp.close()
+            except OSError:
+                pass
+            if atomic:
+                try:
+                    os.unlink(pathname)
+                except OSError:
+                    pass
+        raise
 
     if args.in_place:
-        # Close the new file.  If we aren't replacing atomically, this
-        # is our last step, since everything else is already in place.
-
-        fp.close()
-
         if atomic:
             try:
                 # Complete the atomic replace by linking the original
