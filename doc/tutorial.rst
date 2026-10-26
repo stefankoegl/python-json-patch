@@ -42,7 +42,7 @@ Another way is to *diff* two objects.
 Applying a Patch
 ----------------
 
-A patch is always applied to an object. The patch created by diffing ``src``
+A patch is applied to a JSON document. The patch created by diffing ``src``
 and ``dst`` above turns ``src`` into ``dst``:
 
 .. code-block:: python
@@ -81,6 +81,46 @@ explicitly.
     # or from a list
     >>> patch = [{'op': 'add', 'path': '/baz', 'value': 'qux'}]
     >>> res = jsonpatch.apply_patch(obj, patch)
+
+
+Replacing the Whole Document
+----------------------------
+
+A document can be an object, array, string, number, boolean, or ``null``.
+An empty ``path`` (``""``) selects the whole document, so a replacement can
+also change its type:
+
+.. code-block:: python
+
+    >>> import jsonpatch
+    >>> original = {'old': True}
+    >>> patch = jsonpatch.JsonPatch([
+    ...     {'op': 'replace', 'path': '', 'value': [1, 2]}
+    ... ])
+    >>> result = patch.apply(original, in_place=True)
+    >>> result
+    [1, 2]
+    >>> original
+    {'old': True}
+
+Always use the return value when an operation can replace the root, even
+with ``in_place=True``. Replacing the root returns a new value; it cannot
+rebind the caller's variable. Changes to members of the original container
+can still happen in place.
+
+The empty pointer differs from ``"/"``, which selects an object member
+whose key is the empty string:
+
+.. code-block:: python
+
+    >>> jsonpatch.apply_patch({'': 1}, [
+    ...     {'op': 'replace', 'path': '/', 'value': 2}
+    ... ])
+    {'': 2}
+    >>> jsonpatch.apply_patch(None, [
+    ...     {'op': 'add', 'path': '', 'value': False}
+    ... ])
+    False
 
 
 Paths and Special Characters

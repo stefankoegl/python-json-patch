@@ -102,8 +102,8 @@ _jsonloads = functools.partial(json.loads, object_pairs_hook=multidict)
 def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
     """Apply list of patches to specified json document.
 
-    :param doc: Document object.
-    :type doc: dict
+    :param doc: JSON document, including arrays and scalar values.
+    :type doc: object
 
     :param patch: JSON patch as list of dicts or raw JSON-encoded string.
     :type patch: list or str
@@ -115,8 +115,8 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
     :param pointer_cls: JSON pointer class to use.
     :type pointer_cls: Type[JsonPointer]
 
-    :return: Patched document object.
-    :rtype: dict
+    :return: Resulting document, which may have a different type from ``doc``.
+    :rtype: object
 
     >>> doc = {'foo': 'bar'}
     >>> patch = [{'op': 'add', 'path': '/baz', 'value': 'qux'}]
@@ -145,11 +145,11 @@ def make_patch(src, dst, pointer_cls=JsonPointer):
     transforms `src` into `dst`, so it has to be applied to `src` (or to a
     document equal to it).
 
-    :param src: Data source document object.
-    :type src: dict
+    :param src: Source JSON document, including arrays and scalar values.
+    :type src: object
 
-    :param dst: Data target document object.
-    :type dst: dict
+    :param dst: Target JSON document, including arrays and scalar values.
+    :type dst: object
 
     :param pointer_cls: JSON pointer class to use.
     :type pointer_cls: Type[JsonPointer]
@@ -598,11 +598,11 @@ class JsonPatch(object):
         one. The resulting patch transforms `src` into `dst`, so it has to be
         applied to `src` (or to a document equal to it).
 
-        :param src: Data source document object.
-        :type src: dict
+        :param src: Source JSON document, including arrays and scalar values.
+        :type src: object
 
-        :param dst: Data target document object.
-        :type dst: dict
+        :param dst: Target JSON document, including arrays and scalar values.
+        :type dst: object
 
         :param optimization: Generate move operations for matching values.
                              Set to False to use only add, remove and replace.
@@ -643,14 +643,16 @@ class JsonPatch(object):
     def apply(self, obj, in_place=False):
         """Applies the patch to a given object.
 
-        :param obj: Document object.
-        :type obj: dict
+        :param obj: JSON document, including arrays and scalar values.
+        :type obj: object
 
         :param in_place: Tweaks the way how patch would be applied - directly to
                          specified `obj` or to its copy.
         :type in_place: bool
 
-        :return: Modified `obj`.
+        :return: Resulting document. Use this return value even with
+                 ``in_place=True``, because a root replacement returns a new
+                 value rather than modifying the original container.
         """
 
         if not in_place:
