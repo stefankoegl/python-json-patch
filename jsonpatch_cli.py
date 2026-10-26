@@ -78,6 +78,7 @@ def patch_files():
         args.ORIGINAL.close()
         dirname = os.path.abspath(os.path.dirname(args.ORIGINAL.name))
 
+        fd = None
         try:
             # Attempt to replace the file atomically.  We do this by
             # creating a temporary file in the same directory as the
@@ -90,6 +91,17 @@ def patch_files():
             atomic = True
 
         except OSError:
+            # mkstemp may have succeeded before fdopen failed. Neither the
+            # descriptor nor the temporary file belongs to the fallback.
+            if fd is not None:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
+                try:
+                    os.unlink(pathname)
+                except OSError:
+                    pass
             # We failed to create the temporary file for an atomic
             # replace, so fall back to non-atomic mode by backing up
             # the original (if desired) and writing a new file.

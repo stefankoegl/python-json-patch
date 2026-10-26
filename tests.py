@@ -2159,6 +2159,45 @@ class CommandLineTests(unittest.TestCase):
                 self.assertEqual(self.read(doc), {'a': 1})
                 self.assertEqual(sorted(os.listdir(self.dir)), ['doc.json', 'patch.json'])
 
+    def test_jsonpatch_in_place_cleans_temp_on_fdopen_error(self):
+        for backup in (False, True):
+            with self.subTest(backup=backup):
+                tmp = tempfile.TemporaryDirectory()
+                self.addCleanup(tmp.cleanup)
+                self.dir = tmp.name
+                doc = self.write('doc.json', {'a': 1})
+                patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 2}])
+                parser = jsonpatch_cli.jsonpatch_parser
+                args = parser.parse_args(['-i', doc, patch] + (['-b'] if backup else []))
+                self.addCleanup(args.ORIGINAL.close)
+                self.addCleanup(args.PATCH.close)
+                descriptors = []
+
+                def close_if_open(fd):
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+
+                def fail_fdopen(fd, *args, **kwargs):
+                    descriptors.append(fd)
+                    self.addCleanup(close_if_open, fd)
+                    raise OSError('cannot wrap temporary descriptor')
+
+                with mock.patch.object(parser, 'parse_args', return_value=args), \
+                        mock.patch('os.fdopen', side_effect=fail_fdopen):
+                    jsonpatch_cli.patch_files()
+
+                self.assertEqual(self.read(doc), {'a': 2})
+                if backup:
+                    self.assertEqual(self.read(doc + '.orig'), {'a': 1})
+                with self.assertRaises(OSError):
+                    os.fstat(descriptors[0])
+                expected = ['doc.json', 'patch.json']
+                if backup:
+                    expected.append('doc.json.orig')
+                self.assertEqual(sorted(os.listdir(self.dir)), sorted(expected))
+
     def test_jsonpatch_in_place_preserves_original_on_replace_error(self):
         doc = self.write('doc.json', {'a': 1})
         patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 2}])
