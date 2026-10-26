@@ -5,14 +5,77 @@ on:
     branches: [master]
   pull_request: {}
 
-jobs:
-  build:
+permissions:
+  contents: read
 
+jobs:
+  lint:
+    name: "flake8 on code"
     runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8
+      - name: Lint with flake8
+        run: |
+          # stop the build if there are Python syntax errors or undefined names
+          flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+          # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
+          flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+
+  build:
+    name: "Build and check distributions"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+      - name: Build sdist and wheel
+        run: python -m build
+      - name: Check distributions
+        run: twine check --strict dist/*
+
+  docs:
+    name: "Build documentation"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r doc/requirements.txt
+      - name: Build HTML docs
+        run: sphinx-build -W --keep-going -b html doc doc/_build/html
+
+  test:
+    needs: [lint]
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        os: [ubuntu-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14", "pypy3.10", "pypy3.11"]
+        include:
+          - os: windows-latest
+            python-version: "3.13"
+          - os: macos-latest
+            python-version: "3.13"
 
     steps:
       - uses: actions/checkout@v7
@@ -23,15 +86,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install flake8 pytest hypothesis
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install coverage
-#      - name: Lint with flake8
-#        run: |
-          # stop the build if there are Python syntax errors or undefined names
-          # flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
-          # exit-zero treats all errors as warnings. The GitHub editor is 127 chars wide
-          # flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+          pip install -r requirements.txt -r requirements-dev.txt
       - name: Test
         run: |
           coverage run tests.py
@@ -46,11 +101,11 @@ jobs:
         uses: coverallsapp/github-action@v2
         with:
           file: coverage.lcov
-          flag-name: python-${{ matrix.python-version }}
+          flag-name: ${{ matrix.os }}-python-${{ matrix.python-version }}
           parallel: true
 
   coverage:
-    needs: build
+    needs: test
     if: ${{ always() }}
     runs-on: ubuntu-latest
     steps:
