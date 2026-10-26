@@ -8,7 +8,10 @@ Creating a Patch
 ----------------
 
 Patches can be created in two ways. One way is to  explicitly create a
-``JsonPatch`` object from a list of operations. For convenience, the method
+``JsonPatch`` object from an iterable of operation dictionaries, such as a
+list, tuple, iterator, or generator. Non-sequence iterables are materialized
+before validation so that the patch can be applied repeatedly.
+For convenience, the method
 ``JsonPatch.from_string()`` accepts a string, parses it and constructs the
 patch object from it.
 

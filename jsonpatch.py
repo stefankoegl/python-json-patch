@@ -37,7 +37,8 @@ import collections
 import copy
 import functools
 import json
-from collections.abc import Mapping, MutableMapping, MutableSequence, Sequence
+from collections.abc import (Mapping, MutableMapping, MutableSequence,
+                             Sequence)
 from difflib import SequenceMatcher
 from types import MappingProxyType
 
@@ -100,13 +101,13 @@ _jsonloads = functools.partial(json.loads, object_pairs_hook=multidict)
 
 
 def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
-    """Apply list of patches to specified json document.
+    """Apply patch operations to the specified JSON document.
 
     :param doc: JSON document, including arrays and scalar values.
     :type doc: object
 
-    :param patch: JSON patch as list of dicts or raw JSON-encoded string.
-    :type patch: list or str
+    :param patch: Iterable of operation dicts or a raw JSON-encoded string.
+    :type patch: iterable or str
 
     :param in_place: While ``True`` patch will modify target document.
                      By default patch will be applied to document copy.
@@ -457,7 +458,11 @@ class CopyOperation(PatchOperation):
 
 
 class JsonPatch(object):
-    """A JSON Patch is a list of Patch Operations.
+    """A JSON Patch is an iterable of Patch Operations.
+
+    Accepts sequences, iterators, generators, and other iterables of operation
+    dictionaries. Non-sequence inputs are materialized before validation so
+    the resulting patch can be applied repeatedly.
 
     >>> patch = JsonPatch([
     ...     {'op': 'add', 'path': '/foo', 'value': 'bar'},
@@ -515,13 +520,12 @@ class JsonPatch(object):
     })
 
     def __init__(self, patch, pointer_cls=JsonPointer):
-        self.patch = patch
         self.pointer_cls = pointer_cls
 
         if isinstance(patch, (str, bytes, Mapping)):
             raise InvalidJsonPatch("Document is expected to be sequence of operations")
         try:
-            patch_iter = iter(patch)
+            self.patch = patch if isinstance(patch, Sequence) else list(patch)
         except TypeError:
             raise InvalidJsonPatch("Document is expected to be sequence of operations")
 
@@ -529,7 +533,7 @@ class JsonPatch(object):
         # is correct by retrieving each patch element.
         # Much of the validation is done in the initializer
         # though some is delayed until the patch is applied.
-        for op in patch_iter:
+        for op in self.patch:
             # We're only checking for strings in the following check
             # for two reasons:
             #
