@@ -86,6 +86,44 @@ explicitly.
     >>> res = jsonpatch.apply_patch(obj, patch)
 
 
+When an Operation Fails
+~~~~~~~~~~~~~~~~~~~~~~~
+
+Operations are applied in order. If an operation raises an exception,
+application stops. With the default ``in_place=False``, operations affect a
+copy, so the original document is unchanged:
+
+.. code-block:: python
+
+    >>> import jsonpatch
+    >>> original = {'value': 1}
+    >>> patch = [
+    ...     {'op': 'replace', 'path': '/value', 'value': 2},
+    ...     {'op': 'test', 'path': '/value', 'value': 3},
+    ... ]
+    >>> try:
+    ...     jsonpatch.apply_patch(original, patch)
+    ... except jsonpatch.JsonPatchTestFailed:
+    ...     print('Test failed')
+    Test failed
+    >>> original
+    {'value': 1}
+
+With ``in_place=True``, the same patch raises ``JsonPatchTestFailed``, but
+the earlier replacement remains in the original document. Failed patches
+do not roll back changes already made in place:
+
+.. code-block:: python
+
+    >>> try:
+    ...     jsonpatch.apply_patch(original, patch, in_place=True)
+    ... except jsonpatch.JsonPatchTestFailed:
+    ...     print('Test failed')
+    Test failed
+    >>> original
+    {'value': 2}
+
+
 Replacing the Whole Document
 ----------------------------
 
