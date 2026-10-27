@@ -19,16 +19,25 @@ patch object from it.
 
     >>> import jsonpatch
     >>> patch = jsonpatch.JsonPatch([
-        {'op': 'add', 'path': '/foo', 'value': 'bar'},
-        {'op': 'add', 'path': '/baz', 'value': [1, 2, 3]},
-        {'op': 'remove', 'path': '/baz/1'},
-        {'op': 'test', 'path': '/baz', 'value': [1, 3]},
-        {'op': 'replace', 'path': '/baz/0', 'value': 42},
-        {'op': 'remove', 'path': '/baz/1'},
-    ])
+    ...     {'op': 'add', 'path': '/foo', 'value': 'bar'},
+    ...     {'op': 'add', 'path': '/baz', 'value': [1, 2, 3]},
+    ...     {'op': 'remove', 'path': '/baz/1'},
+    ...     {'op': 'test', 'path': '/baz', 'value': [1, 3]},
+    ...     {'op': 'replace', 'path': '/baz/0', 'value': 42},
+    ...     {'op': 'remove', 'path': '/baz/1'},
+    ... ])
 
     # or equivalently
-    >>> patch = jsonpatch.JsonPatch.from_string('[{"op": "add", ....}]')
+    >>> patch = jsonpatch.JsonPatch.from_string('''[
+    ...     {"op": "add", "path": "/foo", "value": "bar"},
+    ...     {"op": "add", "path": "/baz", "value": [1, 2, 3]},
+    ...     {"op": "remove", "path": "/baz/1"},
+    ...     {"op": "test", "path": "/baz", "value": [1, 3]},
+    ...     {"op": "replace", "path": "/baz/0", "value": 42},
+    ...     {"op": "remove", "path": "/baz/1"}
+    ... ]''')
+    >>> patch.apply({})
+    {'foo': 'bar', 'baz': [42]}
 
 Another way is to *diff* two objects.
 
@@ -177,38 +186,45 @@ support for Python's ``Decimal`` type, can be used to create a custom
     >>> import simplejson
 
     >>> class DecimalJsonPatch(jsonpatch.JsonPatch):
-            @staticmethod
-            def json_dumper(obj):
-                return simplejson.dumps(obj)
-
-            @staticmethod
-            def json_loader(obj):
-                return simplejson.loads(obj, use_decimal=True,
-                                        object_pairs_hook=jsonpatch.multidict)
+    ...     @staticmethod
+    ...     def json_dumper(obj):
+    ...         return simplejson.dumps(obj)
+    ...
+    ...     @staticmethod
+    ...     def json_loader(obj):
+    ...         return simplejson.loads(obj, use_decimal=True,
+    ...                                 object_pairs_hook=jsonpatch.multidict)
 
     >>> src = {}
     >>> dst = {'bar': decimal.Decimal('1.10')}
     >>> patch = DecimalJsonPatch.from_diff(src, dst)
     >>> doc = {'foo': 1}
-    >>> result = patch.apply(doc)
+    >>> patch.apply(doc)
     {'foo': 1, 'bar': Decimal('1.10')}
 
 Instead of subclassing it is also possible to pass a dump function to
 ``from_diff``:
 
+.. code-block:: python
+
     >>> patch = jsonpatch.JsonPatch.from_diff(src, dst, dumps=simplejson.dumps)
 
 a dumps function to ``to_string``:
 
+.. code-block:: python
+
     >>> serialized_patch = patch.to_string(dumps=simplejson.dumps)
+    >>> serialized_patch
     '[{"op": "add", "path": "/bar", "value": 1.10}]'
 
 and load  function to ``from_string``:
 
+.. code-block:: python
+
     >>> import functools
     >>> loads = functools.partial(simplejson.loads, use_decimal=True,
-                                  object_pairs_hook=jsonpatch.multidict)
-    >>> patch.from_string(serialized_patch, loads=loads)
+    ...                           object_pairs_hook=jsonpatch.multidict)
+    >>> patch = jsonpatch.JsonPatch.from_string(serialized_patch, loads=loads)
     >>> doc = {'foo': 1}
-    >>> result = patch.apply(doc)
+    >>> patch.apply(doc)
     {'foo': 1, 'bar': Decimal('1.10')}
