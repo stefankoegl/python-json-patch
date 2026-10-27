@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import contextlib
 import copy
+import io
 import json
 import decimal
 import doctest
@@ -10,6 +12,7 @@ import jsonpatch
 import jsonpatch_cli
 import jsonpointer
 import random
+import shlex
 import sys
 import os
 import stat
@@ -1930,7 +1933,31 @@ class CustomOperationTests(unittest.TestCase):
         self.assertEqual(res, {})
 
 
-class CommandLineTests(unittest.TestCase):
+class ScriptRunner:
+    """ Runs the command line programs of this checkout """
+
+    def run_python(self, code, *args, stdin='', utf8=True, cwd=None):
+        here = os.path.dirname(os.path.abspath(__file__))
+        # the scripts have to import this jsonpatch, not an installed one
+        pythonpath = [here] + [p for p in [os.environ.get('PYTHONPATH')] if p]
+        env = dict(os.environ, PYTHONPATH=os.pathsep.join(pythonpath),
+                   PYTHONUTF8='1')
+        if not utf8:
+            # Exercise locale-dependent file I/O while keeping pipes in UTF-8.
+            env.update(PYTHONUTF8='0', PYTHONIOENCODING='utf-8',
+                       LC_ALL='C', PYTHONCOERCECLOCALE='0')
+        return subprocess.run(
+            [sys.executable, '-c', code] + list(args),
+            input=stdin, capture_output=True, encoding='utf-8', env=env,
+            cwd=cwd)
+
+    def run_script(self, script, *args, stdin='', utf8=True, cwd=None):
+        return self.run_python(
+            'import jsonpatch_cli; jsonpatch_cli.{0}_main()'.format(script),
+            *args, stdin=stdin, utf8=utf8, cwd=cwd)
+
+
+class CommandLineTests(ScriptRunner, unittest.TestCase):
     """ The jsondiff and jsonpatch command line programs """
 
     def setUp(self):
@@ -1947,25 +1974,6 @@ class CommandLineTests(unittest.TestCase):
     def read(self, path):
         with open(path, encoding='utf-8') as f:
             return json.load(f)
-
-    def run_python(self, code, *args, stdin='', utf8=True):
-        here = os.path.dirname(os.path.abspath(__file__))
-        # the scripts have to import this jsonpatch, not an installed one
-        pythonpath = [here] + [p for p in [os.environ.get('PYTHONPATH')] if p]
-        env = dict(os.environ, PYTHONPATH=os.pathsep.join(pythonpath),
-                   PYTHONUTF8='1')
-        if not utf8:
-            # Exercise locale-dependent file I/O while keeping pipes in UTF-8.
-            env.update(PYTHONUTF8='0', PYTHONIOENCODING='utf-8',
-                       LC_ALL='C', PYTHONCOERCECLOCALE='0')
-        return subprocess.run(
-            [sys.executable, '-c', code] + list(args),
-            input=stdin, capture_output=True, encoding='utf-8', env=env)
-
-    def run_script(self, script, *args, stdin='', utf8=True):
-        return self.run_python(
-            'import jsonpatch_cli; jsonpatch_cli.{0}_main()'.format(script),
-            *args, stdin=stdin, utf8=utf8)
 
     def test_jsondiff(self):
         src = self.write('a.json', {'a': [1, 2], 'b': 0})
@@ -2261,6 +2269,92 @@ class CommandLineTests(unittest.TestCase):
                 self.assertEqual(res.stdout, '{0} {1}\n'.format(script, jsonpatch.__version__))
 
 
+class DocumentationTests(ScriptRunner, unittest.TestCase):
+    """ The code examples in the documentation run and give the shown output """
+
+    doc_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'doc')
+
+    def doc_path(self, name):
+        path = os.path.join(self.doc_dir, name)
+        if not os.path.exists(path):
+            self.skipTest('documentation not available')
+        return path
+
+    def test_tutorial(self):
+        path = self.doc_path('tutorial.rst')
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            failed, attempted = doctest.testfile(
+                path, module_relative=False, optionflags=doctest.ELLIPSIS)
+        self.assertGreater(attempted, 0)
+        self.assertEqual(failed, 0, out.getvalue())
+
+    def shell_sessions(self, path):
+        """ Yield (command, expected output) for each "$ " line of the
+        shell examples in ``.. code-block:: bash`` blocks """
+        with open(path, encoding='utf-8') as f:
+            lines = f.read().splitlines()
+        in_block = False
+        command, output = None, []
+        for line in lines + ['']:
+            if line.startswith('.. code-block:: bash'):
+                in_block = True
+                continue
+            if in_block and line and not line[0].isspace():
+                in_block = False
+            text = line.strip()
+            if command is not None and (not in_block or not text or
+                                        text.startswith(('$ ', '#'))):
+                yield command, output
+                command, output = None, []
+            if not in_block:
+                continue
+            if text.startswith('$ '):
+                command = text[2:]
+            elif command is not None:
+                # keep indentation relative to the code block
+                output.append(line[4:])
+
+    def test_commandline(self):
+        path = self.doc_path('commandline.rst')
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        sessions = list(self.shell_sessions(path))
+        self.assertGreater(len(sessions), 0)
+
+        for command, output in sessions:
+            with self.subTest(command=command):
+                args = shlex.split(command)
+                expected = ''.join(line + '\n' for line in output)
+                program, args = args[0], args[1:]
+
+                if program == 'cat':
+                    # "cat" introduces the input files of the examples
+                    filename = os.path.join(tmp.name, args[0])
+                    if not os.path.exists(filename):
+                        with open(filename, 'w', encoding='utf-8') as f:
+                            f.write(expected)
+                    with open(filename, encoding='utf-8') as f:
+                        self.assertEqual(f.read(), expected)
+                    continue
+
+                self.assertIn(program, ['jsondiff', 'jsonpatch'])
+                redirect = None
+                if '>' in args:
+                    redirect = args[args.index('>') + 1]
+                    args = args[:args.index('>')]
+
+                res = self.run_script(program, *args, cwd=tmp.name)
+                self.assertEqual(res.stderr, "")
+
+                if redirect:
+                    with open(os.path.join(tmp.name, redirect), 'w',
+                              encoding='utf-8') as f:
+                        f.write(res.stdout)
+                    res.stdout = ''
+                self.assertEqual(res.stdout, expected)
+
+
 if __name__ == '__main__':
     modules = ['jsonpatch']
 
@@ -2284,6 +2378,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomJsonPointerTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomOperationTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CommandLineTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(DocumentationTests))
         return suite
 
 
