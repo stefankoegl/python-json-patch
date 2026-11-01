@@ -263,6 +263,8 @@ class RemoveOperation(PatchOperation):
         except (KeyError, IndexError):
             msg = "can't remove a non-existent object '{0}'".format(part)
             raise JsonPatchConflict(msg)
+        except TypeError as ex:
+            raise JsonPatchConflict(str(ex))
 
         return obj
 
