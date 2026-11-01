@@ -1449,6 +1449,56 @@ class ConflictTests(unittest.TestCase):
         patch_obj = [ { "op": "remove", "path": "/foo/non-existent"} ]
         self.assertRaises(jsonpatch.JsonPatchConflict, jsonpatch.apply_patch, src, patch_obj)
 
+    def test_remove_from_immutable_sequence(self):
+        for src, path in [((1, 2), '/0'), ({'foo': (1, 2)}, '/foo/0')]:
+            for in_place in (False, True):
+                with self.subTest(src=src, in_place=in_place):
+                    original = copy.deepcopy(src)
+                    patch_obj = [{'op': 'remove', 'path': path}]
+                    with self.assertRaises(jsonpatch.JsonPatchConflict):
+                        jsonpatch.apply_patch(src, patch_obj, in_place=in_place)
+                    self.assertEqual(src, original)
+
+    def test_remove_from_read_only_mapping(self):
+        for nested in (False, True):
+            with self.subTest(nested=nested):
+                data = {'foo': 1}
+                src = MappingProxyType(data)
+                path = '/foo'
+                if nested:
+                    src = {'bar': src}
+                    path = '/bar/foo'
+                patch_obj = [{'op': 'remove', 'path': path}]
+                with self.assertRaises(jsonpatch.JsonPatchConflict):
+                    jsonpatch.apply_patch(src, patch_obj, in_place=True)
+                self.assertEqual(data, {'foo': 1})
+
+    def test_move_from_immutable_sequence(self):
+        for in_place in (False, True):
+            with self.subTest(in_place=in_place):
+                src = {'foo': (1, 2), 'bar': []}
+                patch_obj = [{'op': 'move', 'from': '/foo/0', 'path': '/bar/-'}]
+                with self.assertRaises(jsonpatch.JsonPatchConflict):
+                    jsonpatch.apply_patch(src, patch_obj, in_place=in_place)
+                self.assertEqual(src, {'foo': (1, 2), 'bar': []})
+
+    def test_remove_from_duck_typed_mapping(self):
+        class IndexedObject:
+            def __init__(self):
+                self.data = {'foo': 1, 'bar': 2}
+
+            def __getitem__(self, key):
+                return self.data[key]
+
+            def __delitem__(self, key):
+                del self.data[key]
+
+        src = IndexedObject()
+        patch_obj = [{'op': 'remove', 'path': '/foo'}]
+        result = jsonpatch.apply_patch(src, patch_obj, in_place=True)
+        self.assertIs(result, src)
+        self.assertEqual(src.data, {'bar': 2})
+
     def test_insert_oob(self):
         src = {"foo": [1, 2]}
         patch_obj = [ { "op": "add", "path": "/foo/10", "value": 1} ]
