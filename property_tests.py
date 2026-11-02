@@ -299,6 +299,25 @@ class MakePatchProperties(unittest.TestCase):
                             for op in patch))
         assert_json_equal(patch.apply(src), dst)
 
+    @given(doc_pairs, st.booleans())
+    def test_generate_test_ops(self, docs, optimization):
+        src, dst = docs
+        plain = jsonpatch.JsonPatch.from_diff(
+            src, dst, optimization=optimization).patch
+        patch = jsonpatch.JsonPatch.from_diff(
+            src, dst, optimization=optimization, generate_test_ops=True)
+        note(patch.patch)
+        # the same operations, each remove and replace preceded by a test
+        # of the value it changes, which holds when applied to src
+        self.assertEqual([op for op in patch if op['op'] != 'test'], plain)
+        expected = []
+        for op in plain:
+            if op['op'] in ('remove', 'replace'):
+                expected.append(('test', op['path']))
+            expected.append((op['op'], op['path']))
+        self.assertEqual([(op['op'], op['path']) for op in patch], expected)
+        assert_json_equal(patch.apply(src), dst)
+
     @given(safe_doc_pairs)
     # the diff considered e.g. 1 and true equal, #180
     @example(docs=([0], [False]))

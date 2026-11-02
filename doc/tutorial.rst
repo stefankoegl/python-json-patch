@@ -79,6 +79,25 @@ Applying it to any other object, such as ``dst``, usually fails with a
       ...
     jsonpatch.JsonPatchConflict: can't remove a non-existent object 'foo'
 
+Applying it to an object with the same structure but different values may
+succeed, though, and overwrite those values. With ``generate_test_ops=True``
+each ``remove`` and ``replace`` operation is preceded by a ``test`` operation
+that checks the value it removes or replaces. The patch then also records the
+previous values, and fails with a ``JsonPatchTestFailed`` if they differ:
+
+.. code-block:: python
+
+    >>> patch = jsonpatch.make_patch({'a': 1, 'b': 2}, {'a': 3},
+    ...                              generate_test_ops=True)
+    >>> patch.patch  # doctest: +NORMALIZE_WHITESPACE
+    [{'op': 'test', 'path': '/b', 'value': 2}, {'op': 'remove', 'path': '/b'},
+     {'op': 'test', 'path': '/a', 'value': 1},
+     {'op': 'replace', 'path': '/a', 'value': 3}]
+    >>> patch.apply({'a': 5, 'b': 2})
+    Traceback (most recent call last):
+      ...
+    jsonpatch.JsonPatchTestFailed: 5 (<class 'int'>) is not equal to tested value 1 (<class 'int'>)
+
 If a patch is only used once, it is not necessary to create a patch object
 explicitly.
 

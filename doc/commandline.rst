@@ -13,7 +13,7 @@ in-place, it also writes UTF-8.
 The program ``jsondiff`` can be used to create a JSON patch by comparing two
 JSON files ::
 
-    usage: jsondiff [-h] [--indent INDENT] [-u] [-v] FILE1 FILE2
+    usage: jsondiff [-h] [--indent INDENT] [-u] [-t] [-v] FILE1 FILE2
 
     Diff two JSON files
 
@@ -27,6 +27,8 @@ JSON files ::
       -u, --preserve-unicode
                             Output Unicode character as-is without using Code
                             Point
+      -t, --test-ops        Precede each remove and replace operation by a test of
+                            the value it changes
       -v, --version         show program's version number and exit
 
 Example
