@@ -7,8 +7,7 @@ build-backend = "setuptools.build_meta"
 strict = true
 
 # Released versions of jsonpointer do not ship type information yet. Remove
-# this once one does
-# (and raise the jsonpointer requirement accordingly).
+# this once one does (and raise the jsonpointer requirement accordingly).
 [[tool.mypy.overrides]]
 module = ["jsonpointer"]
 ignore_missing_imports = true
