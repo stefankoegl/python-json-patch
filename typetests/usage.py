@@ -67,9 +67,14 @@ assert_type(operation.pointer, JsonPointer)
 move = jsonpatch.MoveOperation({'op': 'move', 'from': '/a', 'path': '/b'})
 assert_type(move.from_key, int | str)
 
-# pointer classes
-jsonpatch.apply_patch(doc, ops, pointer_cls=JsonPointer)
-JsonPatch(ops, pointer_cls=JsonPointer)
+
+# a custom pointer class
+class MyPointer(JsonPointer):
+    pass
+
+
+jsonpatch.apply_patch(doc, ops, pointer_cls=MyPointer)
+JsonPatch(ops, pointer_cls=MyPointer)
 
 # exceptions
 try:
@@ -84,3 +89,4 @@ jsonpatch.apply_patch(doc, ops, in_place='yes')  # type: ignore[arg-type]
 jsonpatch.make_patch(doc)  # type: ignore[call-arg]
 JsonPatch(ops).to_string(dumps=len)  # type: ignore[arg-type]
 JsonPatch([1, 2])  # type: ignore[list-item]
+JsonPatch(ops, pointer_cls=str)  # type: ignore[arg-type]
