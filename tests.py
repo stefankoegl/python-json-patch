@@ -1961,6 +1961,67 @@ class CustomJsonPointerTests(unittest.TestCase):
         self.assertEqual(res, {'foo': {'bar': {'baz': 'qux'}}})
 
 
+class ExceptionOperationTests(unittest.TestCase):
+    """ The failing operation is attached to raised exceptions """
+
+    def test_conflict_has_operation(self):
+        patch = jsonpatch.JsonPatch([{'op': 'remove', 'path': '/missing'}])
+        with self.assertRaises(jsonpatch.JsonPatchConflict) as cm:
+            patch.apply({'foo': 1})
+        self.assertIsInstance(cm.exception.op, jsonpatch.RemoveOperation)
+        self.assertEqual(cm.exception.op.location, '/missing')
+        self.assertEqual(str(cm.exception),
+                         "can't remove a non-existent object 'missing'")
+
+    def test_test_failed_has_operation(self):
+        patch = jsonpatch.JsonPatch([{'op': 'test', 'path': '/foo', 'value': 2}])
+        with self.assertRaises(jsonpatch.JsonPatchTestFailed) as cm:
+            patch.apply({'foo': 1})
+        self.assertIsInstance(cm.exception.op, jsonpatch.TestOperation)
+
+    def test_invalid_patch_has_raw_operation(self):
+        operation = {'op': 'frobnicate', 'path': '/foo'}
+        with self.assertRaises(jsonpatch.InvalidJsonPatch) as cm:
+            jsonpatch.apply_patch({}, [operation])
+        self.assertIs(cm.exception.op, operation)
+
+    def test_move_failed_add_reports_move_operation(self):
+        patch = jsonpatch.JsonPatch(
+            [{'op': 'move', 'from': '/foo', 'path': '/bar/5'}])
+        with self.assertRaises(jsonpatch.JsonPatchConflict) as cm:
+            patch.apply({'foo': 1, 'bar': []})
+        self.assertIsInstance(cm.exception.op, jsonpatch.MoveOperation)
+        self.assertIs(cm.exception.op.operation, patch.patch[0])
+
+    def test_move_failed_remove_reports_move_operation(self):
+        # the value can be read from the immutable tuple, but the internal
+        # remove operation fails
+        patch = jsonpatch.JsonPatch(
+            [{'op': 'move', 'from': '/foo/0', 'path': '/bar'}])
+        with self.assertRaises(jsonpatch.JsonPatchConflict) as cm:
+            patch.apply({'foo': (1, 2)})
+        self.assertIsInstance(cm.exception.op, jsonpatch.MoveOperation)
+        self.assertIs(cm.exception.op.operation, patch.patch[0])
+
+    def test_copy_failed_add_reports_copy_operation(self):
+        patch = jsonpatch.JsonPatch(
+            [{'op': 'copy', 'from': '/foo', 'path': '/bar/5'}])
+        with self.assertRaises(jsonpatch.JsonPatchConflict) as cm:
+            patch.apply({'foo': 1, 'bar': []})
+        self.assertIsInstance(cm.exception.op, jsonpatch.CopyOperation)
+        self.assertIs(cm.exception.op.operation, patch.patch[0])
+
+    def test_string_entry_has_raw_operation(self):
+        with self.assertRaises(jsonpatch.InvalidJsonPatch) as cm:
+            jsonpatch.JsonPatch(['invalid operation'])
+        self.assertEqual(cm.exception.op, 'invalid operation')
+
+    def test_op_defaults_to_none(self):
+        ex = jsonpatch.JsonPatchException('message')
+        self.assertIsNone(ex.op)
+        self.assertEqual(str(ex), 'message')
+
+
 class CustomOperationTests(unittest.TestCase):
 
     def test_custom_operation(self):
@@ -2448,6 +2509,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(OperationLocationTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomJsonPointerTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomOperationTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ExceptionOperationTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CommandLineTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(DocumentationTests))
         return suite
