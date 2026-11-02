@@ -1961,6 +1961,36 @@ class CustomJsonPointerTests(unittest.TestCase):
         self.assertEqual(res, {'foo': {'bar': {'baz': 'qux'}}})
 
 
+class ExceptionOperationTests(unittest.TestCase):
+    """ The failing operation is attached to raised exceptions """
+
+    def test_conflict_has_operation(self):
+        patch = jsonpatch.JsonPatch([{'op': 'remove', 'path': '/missing'}])
+        with self.assertRaises(jsonpatch.JsonPatchConflict) as cm:
+            patch.apply({'foo': 1})
+        self.assertIsInstance(cm.exception.op, jsonpatch.RemoveOperation)
+        self.assertEqual(cm.exception.op.location, '/missing')
+        self.assertEqual(str(cm.exception),
+                         "can't remove a non-existent object 'missing'")
+
+    def test_test_failed_has_operation(self):
+        patch = jsonpatch.JsonPatch([{'op': 'test', 'path': '/foo', 'value': 2}])
+        with self.assertRaises(jsonpatch.JsonPatchTestFailed) as cm:
+            patch.apply({'foo': 1})
+        self.assertIsInstance(cm.exception.op, jsonpatch.TestOperation)
+
+    def test_invalid_patch_has_raw_operation(self):
+        operation = {'op': 'frobnicate', 'path': '/foo'}
+        with self.assertRaises(jsonpatch.InvalidJsonPatch) as cm:
+            jsonpatch.apply_patch({}, [operation])
+        self.assertIs(cm.exception.op, operation)
+
+    def test_op_defaults_to_none(self):
+        ex = jsonpatch.JsonPatchException('message')
+        self.assertIsNone(ex.op)
+        self.assertEqual(str(ex), 'message')
+
+
 class CustomOperationTests(unittest.TestCase):
 
     def test_custom_operation(self):
@@ -2427,6 +2457,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(OperationLocationTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomJsonPointerTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomOperationTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ExceptionOperationTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CommandLineTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(DocumentationTests))
         return suite
