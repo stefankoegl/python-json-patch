@@ -18,6 +18,9 @@ jsondiff_parser.add_argument('--indent', type=int, default=None,
                              help='Indent output by n spaces')
 jsondiff_parser.add_argument('-u', '--preserve-unicode', action='store_true',
                              help='Output Unicode character as-is without using Code Point')
+jsondiff_parser.add_argument('-t', '--test-ops', action='store_true',
+                             help='Precede each remove and replace operation '
+                                  'by a test of the value it changes')
 jsondiff_parser.add_argument('-v', '--version', action='version',
                              version='%(prog)s ' + jsonpatch.__version__)
 
@@ -34,7 +37,7 @@ def diff_files():
     args = jsondiff_parser.parse_args()
     doc1 = json.load(args.FILE1)
     doc2 = json.load(args.FILE2)
-    patch = jsonpatch.make_patch(doc1, doc2)
+    patch = jsonpatch.make_patch(doc1, doc2, generate_test_ops=args.test_ops)
     if patch.patch:
         print(json.dumps(patch.patch, indent=args.indent, ensure_ascii=not(args.preserve_unicode)))
         sys.exit(1)

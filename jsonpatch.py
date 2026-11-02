@@ -140,7 +140,7 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
     return patch.apply(doc, in_place)
 
 
-def make_patch(src, dst, pointer_cls=JsonPointer):
+def make_patch(src, dst, pointer_cls=JsonPointer, generate_test_ops=False):
     """Generates patch by comparing two document objects. Actually is
     a proxy to :meth:`JsonPatch.from_diff` method. The resulting patch
     transforms `src` into `dst`, so it has to be applied to `src` (or to a
@@ -155,6 +155,12 @@ def make_patch(src, dst, pointer_cls=JsonPointer):
     :param pointer_cls: JSON pointer class to use.
     :type pointer_cls: Type[JsonPointer]
 
+    :param generate_test_ops: Precede each ``remove`` and ``replace``
+                              operation by a ``test`` operation that checks
+                              the value it removes or replaces, so the patch
+                              fails on documents that differ from `src` there.
+    :type generate_test_ops: bool
+
     >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
     >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
     >>> patch = make_patch(src, dst)
@@ -163,7 +169,8 @@ def make_patch(src, dst, pointer_cls=JsonPointer):
     True
     """
 
-    return JsonPatch.from_diff(src, dst, pointer_cls=pointer_cls)
+    return JsonPatch.from_diff(src, dst, pointer_cls=pointer_cls,
+                               generate_test_ops=generate_test_ops)
 
 
 class PatchOperation(object):
@@ -597,7 +604,7 @@ class JsonPatch(object):
     @classmethod
     def from_diff(
             cls, src, dst, optimization=True, dumps=None,
-            pointer_cls=JsonPointer,
+            pointer_cls=JsonPointer, generate_test_ops=False,
     ):
         """Creates JsonPatch instance based on comparison of two document
         objects. Json patch would be created for `src` argument against `dst`
@@ -621,6 +628,12 @@ class JsonPatch(object):
         :param pointer_cls: JSON pointer class to use.
         :type pointer_cls: Type[JsonPointer]
 
+        :param generate_test_ops: Precede each ``remove`` and ``replace``
+                                  operation by a ``test`` operation that checks
+                                  the value it removes or replaces, so the patch
+                                  fails on documents that differ from `src` there.
+        :type generate_test_ops: bool
+
         :return: :class:`JsonPatch` instance.
 
         >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
@@ -632,7 +645,8 @@ class JsonPatch(object):
         """
         json_dumper = dumps or cls.json_dumper
         builder = DiffBuilder(src, dst, json_dumper, pointer_cls=pointer_cls,
-                              optimization=optimization)
+                              optimization=optimization,
+                              generate_test_ops=generate_test_ops)
         builder._compare_values((), None, src, dst)
         ops = list(builder.execute())
         return cls(ops, pointer_cls=pointer_cls)
@@ -691,10 +705,14 @@ class JsonPatch(object):
 class DiffBuilder(object):
 
     def __init__(self, src_doc, dst_doc, dumps=json.dumps, pointer_cls=JsonPointer,
-                 optimization=True):
+                 optimization=True, generate_test_ops=False):
         self.dumps = dumps
         self.pointer_cls = pointer_cls
         self.optimization = optimization
+        self.generate_test_ops = generate_test_ops
+        # the index of the test operation preceding a remove operation, by
+        # the id of the remove operation
+        self.remove_tests = {}
         self.index_storage = [{}, {}]
         self.__root = root = []
         self.src_doc = src_doc
@@ -841,6 +859,10 @@ class DiffBuilder(object):
             source = self._parts(removed)
             # RFC 6902 does not allow moving a value into its own children
             if not _is_inside(target, source):
+                # the value is moved rather than removed, so it is not tested
+                test_index = self.remove_tests.pop(id(index[2]), None)
+                if test_index is not None:
+                    self.remove(test_index)
                 self.remove(index)
                 if source != target:
                     self.insert({'op': 'move', 'from': removed,
@@ -875,14 +897,26 @@ class DiffBuilder(object):
                 self._set_present(added_location, False)
             return
 
+        test_index = self._insert_test(location, item)
         self._set_present(location, False)
         new_index = self.insert({'op': 'remove', 'path': location})
+        if test_index is not None:
+            self.remove_tests[id(new_index[2])] = test_index
         self.store_index(item, new_index, _ST_REMOVE)
 
-    def _item_replaced(self, path, key, item):
+    def _insert_test(self, location, value):
+        """ Inserts a test operation that checks the value at location, if
+        test operations are generated """
+        if self.generate_test_ops:
+            return self.insert({'op': 'test', 'path': location,
+                                'value': value})
+
+    def _item_replaced(self, path, key, item, old_item):
+        location = self._location(_path_join(path, key))
+        self._insert_test(location, old_item)
         self.insert({
             'op': 'replace',
-            'path': self._location(_path_join(path, key)),
+            'path': location,
             'value': item,
         })
 
@@ -1017,7 +1051,7 @@ class DiffBuilder(object):
             return
 
         else:
-            self._item_replaced(path, key, dst)
+            self._item_replaced(path, key, dst, src)
 
 
 def _positional_cost(old, new):
