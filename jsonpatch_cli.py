@@ -70,8 +70,7 @@ def patch_files():
     """ Applies a JSON patch on a JSON file """
     args = jsonpatch_parser.parse_args()
     doc = json.load(args.ORIGINAL)
-    patch = json.load(args.PATCH)
-    result = jsonpatch.apply_patch(doc, patch)
+    result = jsonpatch.apply_patch(doc, args.PATCH.read())
 
     if args.in_place:
         # 2026-10-11: Release the input handle before replacing it on Windows.

@@ -2082,6 +2082,27 @@ class CommandLineTests(ScriptRunner, unittest.TestCase):
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual(json.loads(res.stdout), {'a': 2})
 
+    def test_jsonpatch_rejects_invalid_patch_text_before_in_place_write(self):
+        remove = '[{"op":"remove","path":"/keep"}]'
+        for patch in ('[{"op":"test","op":"remove","path":"/keep","value":13}]',
+                      json.dumps(remove)):
+            for use_stdin in (False, True):
+                with self.subTest(patch=patch, stdin=use_stdin):
+                    doc = self.write('doc.json', {'keep': 7})
+                    with open(doc, 'rb') as f:
+                        original = f.read()
+                    if use_stdin:
+                        res = self.run_script('jsonpatch', '-i', doc, stdin=patch)
+                    else:
+                        path = os.path.join(self.dir, 'patch.json')
+                        with open(path, 'w', encoding='utf-8') as f:
+                            f.write(patch)
+                        res = self.run_script('jsonpatch', '-i', doc, path)
+                    self.assertNotEqual(res.returncode, 0)
+                    self.assertIn('InvalidJsonPatch', res.stderr)
+                    with open(doc, 'rb') as f:
+                        self.assertEqual(f.read(), original)
+
     def test_jsonpatch_utf8_files_without_utf8_mode(self):
         doc = self.write('doc.json', {'a': 'ä'}, ensure_ascii=False)
         patch = self.write('patch.json', [
