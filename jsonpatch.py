@@ -908,8 +908,9 @@ class DiffBuilder(object):
         """ Inserts a test operation that checks the value at location, if
         test operations are generated """
         if self.generate_test_ops:
+            # a copy, so that changing src afterwards does not change the test
             return self.insert({'op': 'test', 'path': location,
-                                'value': value})
+                                'value': copy.deepcopy(value)})
 
     def _item_replaced(self, path, key, item, old_item):
         location = self._location(_path_join(path, key))

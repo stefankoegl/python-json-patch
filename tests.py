@@ -1422,6 +1422,23 @@ class GenerateTestOpsTests(unittest.TestCase):
                 with self.assertRaises(jsonpatch.JsonPatchTestFailed):
                     patch.apply(doc)
 
+    def test_tested_values_are_copies(self):
+        # changing src after diffing does not change what is tested
+        src = {'a': {'nested': [1]}, 'b': [1]}
+        original = copy.deepcopy(src)
+        patch = jsonpatch.make_patch(src, {'b': 2}, generate_test_ops=True)
+        src['a']['nested'].append(2)
+        src['b'].append(2)
+        self.assertEqual(patch.patch, [
+            {'op': 'test', 'path': '/a', 'value': {'nested': [1]}},
+            {'op': 'remove', 'path': '/a'},
+            {'op': 'test', 'path': '/b', 'value': [1]},
+            {'op': 'replace', 'path': '/b', 'value': 2},
+        ])
+        self.assertEqual(patch.apply(original), {'b': 2})
+        with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+            patch.apply(src)
+
     def test_from_diff(self):
         patch = jsonpatch.JsonPatch.from_diff({'a': 1}, {},
                                               generate_test_ops=True)
