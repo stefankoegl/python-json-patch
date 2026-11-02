@@ -45,6 +45,7 @@ assert_type(bool(patch), bool)
 assert_type(list(patch), list[Mapping[str, Any]])
 assert_type(JsonPatch.from_string('[]'), JsonPatch)
 assert_type(JsonPatch.from_string(b'[]', loads=json.loads), JsonPatch)
+assert_type(JsonPatch.from_string(bytearray(b'[]')), JsonPatch)
 assert_type(JsonPatch.from_diff(doc, {}, optimization=False), JsonPatch)
 assert_type(JsonPatch.operations['add'], type[PatchOperation])
 
@@ -98,3 +99,5 @@ jsonpatch.make_patch(doc)  # type: ignore[call-arg]
 JsonPatch(ops).to_string(dumps=len)  # type: ignore[arg-type]
 JsonPatch([1, 2])  # type: ignore[list-item]
 JsonPatch(ops, pointer_cls=str)  # type: ignore[arg-type]
+# apply_patch treats a bytearray as a sequence of operations, and fails
+jsonpatch.apply_patch(doc, bytearray(b'[]'))  # type: ignore[arg-type]

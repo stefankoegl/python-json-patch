@@ -103,7 +103,7 @@ class JsonPatch:
     @classmethod
     def from_string(
         cls,
-        patch_str: str | bytes,
+        patch_str: str | bytes | bytearray,
         loads: Callable[[Any], Any] | None = None,
         pointer_cls: type[JsonPointer] = ...,
     ) -> Self: ...
