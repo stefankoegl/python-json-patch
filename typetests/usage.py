@@ -11,6 +11,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+import jsonpointer
 from jsonpointer import JsonPointer
 from typing_extensions import assert_type
 
@@ -83,6 +84,13 @@ except (InvalidJsonPatch, JsonPatchConflict, JsonPatchTestFailed) as ex:
     assert_type(ex, InvalidJsonPatch | JsonPatchConflict | JsonPatchTestFailed)
     failed = ex.op
 JsonPatchException('message', op=None)
+
+# names that jsonpatch re-exports from jsonpointer
+try:
+    patch.apply(doc)
+except jsonpatch.JsonPointerException as ex:
+    assert_type(ex, jsonpointer.JsonPointerException)
+assert_type(jsonpatch.JsonPointer('/a'), jsonpointer.JsonPointer)
 
 # wrong usage is rejected
 jsonpatch.apply_patch(doc, ops, in_place='yes')  # type: ignore[arg-type]

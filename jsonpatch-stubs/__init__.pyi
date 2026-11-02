@@ -12,7 +12,11 @@
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from typing import Any, ClassVar
 
-from jsonpointer import JsonPointer
+# Re-exported, as jsonpatch.py imports them and users rely on that, e.g. to
+# catch jsonpatch.JsonPointerException. stubtest does not check these, as
+# they are defined in another module.
+from jsonpointer import JsonPointer as JsonPointer
+from jsonpointer import JsonPointerException as JsonPointerException
 from typing_extensions import Self
 
 __author__: str
