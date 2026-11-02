@@ -385,16 +385,23 @@ class MoveOperation(PatchOperation):
         if self.pointer == from_ptr:
             return obj
 
-        obj = RemoveOperation({
-            'op': 'remove',
-            'path': self.operation['from']
-        }, pointer_cls=self.pointer_cls).apply(obj)
+        try:
+            obj = RemoveOperation({
+                'op': 'remove',
+                'path': self.operation['from']
+            }, pointer_cls=self.pointer_cls).apply(obj)
 
-        # the value has been detached from its old location, so no copy needed
-        obj = AddOperation({
-            'op': 'add',
-            'path': self.location,
-        }, pointer_cls=self.pointer_cls)._add(obj, value)
+            # the value has been detached from its old location, so no copy
+            # needed
+            obj = AddOperation({
+                'op': 'add',
+                'path': self.location,
+            }, pointer_cls=self.pointer_cls)._add(obj, value)
+        except JsonPatchException as ex:
+            # report the failure against this operation rather than the
+            # internal, synthetic remove / add operations
+            ex.op = self
+            raise
 
         return obj
 
@@ -464,10 +471,16 @@ class CopyOperation(PatchOperation):
             raise JsonPatchConflict(str(ex), op=self)
 
         # value is already a deep copy, no need to copy it again
-        obj = AddOperation({
-            'op': 'add',
-            'path': self.location,
-        }, pointer_cls=self.pointer_cls)._add(obj, value)
+        try:
+            obj = AddOperation({
+                'op': 'add',
+                'path': self.location,
+            }, pointer_cls=self.pointer_cls)._add(obj, value)
+        except JsonPatchException as ex:
+            # report the failure against this operation rather than the
+            # internal, synthetic add operation
+            ex.op = self
+            raise
 
         return obj
 
@@ -560,7 +573,8 @@ class JsonPatch(object):
             #   of mappings, this won't raise.
             if isinstance(op, (str, bytes)):
                 raise InvalidJsonPatch("Document is expected to be sequence of "
-                                       "operations, got a sequence of strings.")
+                                       "operations, got a sequence of strings.",
+                                       op=op)
 
             self._get_operation(op)
 
