@@ -47,6 +47,27 @@ jobs:
       - name: Check distributions
         run: twine check --strict dist/*
 
+  typing:
+    name: "Check type stubs"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mypy .
+      - name: Check that the stubs match jsonpatch.py
+        run: python -m mypy.stubtest --mypy-config-file pyproject.toml jsonpatch
+      - name: Type-check typical usage against the installed stubs
+        # run from typetests/, so that the installed stubs are used and not
+        # jsonpatch.py from the repository root
+        working-directory: typetests
+        run: mypy --config-file ../pyproject.toml usage.py
+
   docs:
     name: "Build documentation"
     runs-on: ubuntu-latest

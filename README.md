@@ -21,6 +21,20 @@ See source code for examples
 * CI: https://github.com/stefankoegl/python-json-patch/actions
 * Coveralls: https://coveralls.io/github/stefankoegl/python-json-patch
 
+Type hints
+----------
+jsonpatch ships type stubs (in the `jsonpatch-stubs` directory, as
+jsonpatch.py is a single-file module), so type checkers such as mypy and
+pyright work with it without further setup. JSON documents are typed as `Any`.
+
+When changing the public API of jsonpatch.py, update
+`jsonpatch-stubs/__init__.pyi` as well. These check that both agree, and that
+typical usage in `typetests/usage.py` type-checks:
+
+    pip install mypy .
+    python -m mypy.stubtest --mypy-config-file pyproject.toml jsonpatch
+    cd typetests && mypy --config-file ../pyproject.toml usage.py
+
 Running external tests
 ----------------------
 To run external tests (such as those from https://github.com/json-patch/json-patch-tests) use ext_tests.py

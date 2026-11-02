@@ -43,6 +43,7 @@ CLASSIFIERS = [
     'Programming Language :: Python :: Implementation :: PyPy',
     'Topic :: Software Development :: Libraries',
     'Topic :: Utilities',
+    'Typing :: Typed',
 ]
 
 
@@ -56,7 +57,10 @@ setup(name=PACKAGE,
       license_expression=LICENSE,
       url=WEBSITE,
       py_modules=MODULES,
-      package_data={'': ['requirements.txt']},
+      # jsonpatch is a single-file module, which can't be marked as typed
+      # with py.typed (PEP 561), so its type stubs are a stub-only package
+      packages=['jsonpatch-stubs'],
+      package_data={'': ['requirements.txt'], 'jsonpatch-stubs': ['*.pyi']},
       entry_points={
           'console_scripts': [
               'jsondiff = jsonpatch_cli:jsondiff_main',
