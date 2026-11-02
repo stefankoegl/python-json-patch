@@ -6,5 +6,6 @@ include doc/*.rst
 include property_tests.py
 include pytest.ini
 include ext_tests.py
+include typetests/usage.py
 include AUTHORS
 include tests.js

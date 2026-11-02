@@ -1,0 +1,146 @@
+# Type stubs for jsonpatch.
+#
+# jsonpatch is a single-file module, and PEP 561 has no py.typed marker for
+# those, so its types are shipped as this stub-only package in the same
+# distribution. Keep it in sync with jsonpatch.py; CI runs mypy's stubtest to
+# check that both agree.
+#
+# JSON documents are typed as Any: they can be any JSON value, and the module
+# also accepts arbitrary Mapping / Sequence types, which a recursive JSON type
+# would reject.
+
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from typing import Any, ClassVar
+
+# Re-exported, as jsonpatch.py imports them and users rely on that, e.g. to
+# catch jsonpatch.JsonPointerException. stubtest does not check these, as
+# they are defined in another module.
+from jsonpointer import JsonPointer as JsonPointer
+from jsonpointer import JsonPointerException as JsonPointerException
+from typing_extensions import Self
+
+__author__: str
+__version__: str
+__website__: str
+__license__: str
+
+# A single patch operation, e.g. {'op': 'add', 'path': '/a', 'value': 1}
+_Operation = Mapping[str, Any]
+
+class JsonPatchException(Exception):
+    # The failing operation: a PatchOperation, or the raw operation object if
+    # none could be constructed from it, or None.
+    op: Any
+    def __init__(self, *args: object, op: Any = None) -> None: ...
+
+class InvalidJsonPatch(JsonPatchException): ...
+class JsonPatchConflict(JsonPatchException): ...
+class JsonPatchTestFailed(JsonPatchException, AssertionError): ...
+
+def multidict(ordered_pairs: Iterable[tuple[str, Any]]) -> dict[str, Any]: ...
+def apply_patch(
+    doc: Any,
+    patch: str | bytes | Iterable[_Operation],
+    in_place: bool = False,
+    pointer_cls: type[JsonPointer] = ...,
+) -> Any: ...
+def make_patch(
+    src: Any,
+    dst: Any,
+    pointer_cls: type[JsonPointer] = ...,
+    generate_test_ops: bool = False,
+) -> JsonPatch: ...
+
+class PatchOperation:
+    pointer_cls: type[JsonPointer]
+    location: str
+    pointer: JsonPointer
+    operation: _Operation
+    def __init__(self, operation: _Operation, pointer_cls: type[JsonPointer] = ...) -> None: ...
+    def apply(self, obj: Any) -> Any: ...
+    def __hash__(self) -> int: ...
+    def __eq__(self, other: object) -> bool: ...
+    def __ne__(self, other: object) -> bool: ...
+    @property
+    def path(self) -> str: ...
+    @property
+    def key(self) -> int | str: ...
+    @key.setter
+    def key(self, value: int | str) -> None: ...
+    def get_part(self, index: int) -> int | str: ...
+    def set_part(self, index: int, value: int | str) -> None: ...
+
+class RemoveOperation(PatchOperation): ...
+class AddOperation(PatchOperation): ...
+class ReplaceOperation(PatchOperation): ...
+
+class MoveOperation(PatchOperation):
+    @property
+    def from_path(self) -> str: ...
+    @property
+    def from_key(self) -> int | str: ...
+    @from_key.setter
+    def from_key(self, value: int | str) -> None: ...
+    def get_from_part(self, index: int) -> int | str: ...
+    def set_from_part(self, index: int, value: int | str) -> None: ...
+
+class TestOperation(PatchOperation): ...
+class CopyOperation(PatchOperation): ...
+
+class JsonPatch:
+    json_dumper: ClassVar[Callable[..., str]]
+    json_loader: ClassVar[Callable[..., Any]]
+    operations: ClassVar[Mapping[str, type[PatchOperation]]]
+    pointer_cls: type[JsonPointer]
+    patch: Sequence[_Operation]
+    def __init__(self, patch: Iterable[_Operation], pointer_cls: type[JsonPointer] = ...) -> None: ...
+    def __bool__(self) -> bool: ...
+    def __iter__(self) -> Iterator[_Operation]: ...
+    def __hash__(self) -> int: ...
+    def __eq__(self, other: object) -> bool: ...
+    def __ne__(self, other: object) -> bool: ...
+    __nonzero__ = __bool__
+    @classmethod
+    def from_string(
+        cls,
+        patch_str: str | bytes | bytearray,
+        loads: Callable[[Any], Any] | None = None,
+        pointer_cls: type[JsonPointer] = ...,
+    ) -> Self: ...
+    @classmethod
+    def from_diff(
+        cls,
+        src: Any,
+        dst: Any,
+        optimization: bool = True,
+        dumps: Callable[[Any], str] | None = None,
+        pointer_cls: type[JsonPointer] = ...,
+        generate_test_ops: bool = False,
+    ) -> Self: ...
+    def to_string(self, dumps: Callable[[Any], str] | None = None) -> str: ...
+    def apply(self, obj: Any, in_place: bool = False) -> Any: ...
+
+# Computes the operations for JsonPatch.from_diff; mostly an implementation
+# detail, so its internal methods are typed loosely.
+class DiffBuilder:
+    dumps: Callable[[Any], str]
+    pointer_cls: type[JsonPointer]
+    optimization: bool
+    generate_test_ops: bool
+    src_doc: Any
+    dst_doc: Any
+    def __init__(
+        self,
+        src_doc: Any,
+        dst_doc: Any,
+        dumps: Callable[[Any], str] = ...,
+        pointer_cls: type[JsonPointer] = ...,
+        optimization: bool = True,
+        generate_test_ops: bool = False,
+    ) -> None: ...
+    def store_index(self, value: Any, index: Any, st: int) -> None: ...
+    def take_index(self, value: Any, st: int) -> Any: ...
+    def insert(self, op: Any) -> Any: ...
+    def remove(self, index: Any) -> None: ...
+    def __iter__(self) -> Iterator[Any]: ...
+    def execute(self) -> Iterator[dict[str, Any]]: ...
