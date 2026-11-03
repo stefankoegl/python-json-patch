@@ -243,10 +243,16 @@ class _Journal(object):
     undone, so list indices still refer to the same items. Removed and
     replaced values are kept as they are; they are detached from the
     document, so restoring them needs no copy.
+
+    Restoring a removed member adds it at the end of its mapping, so the
+    order of the members of each mapping that loses one is recorded once,
+    and restored after all steps have been undone.
     """
 
     def __init__(self):
         self._undo = []
+        # id of a mapping -> (mapping, its keys before the first removal)
+        self._orders = {}
 
     def setitem(self, container, key, value):
         if isinstance(container, MutableMapping) and key not in container:
@@ -266,10 +272,10 @@ class _Journal(object):
             del container[key]
             self._undo.append((_undo_insert, container, key, old))
         elif isinstance(container, MutableMapping):
-            # remember the position, to restore the order of the members
-            index = _key_index(container, key)
+            if id(container) not in self._orders:
+                self._orders[id(container)] = (container, list(container))
             del container[key]
-            self._undo.append((_undo_reinsert, container, index, key, old))
+            self._undo.append((_undo_setitem, container, key, old))
         else:
             del container[key]
             self._undo.append((_undo_setitem, container, key, old))
@@ -289,6 +295,9 @@ class _Journal(object):
         while self._undo:
             step = self._undo.pop()
             step[0](*step[1:])
+        for mapping, keys in self._orders.values():
+            _reorder(mapping, keys)
+        self._orders.clear()
 
 
 def _undo_setitem(container, key, value):
@@ -303,17 +312,13 @@ def _undo_insert(container, index, value):
     container.insert(index, value)
 
 
-def _key_index(mapping, key):
-    return next(index for index, k in enumerate(mapping) if k == key)
-
-
-def _undo_reinsert(mapping, index, key, value):
-    """Inserts a member into a mapping at its former position, by
-    re-adding the members that came after it."""
-    following = [(k, mapping.pop(k)) for k in list(mapping)[index:]]
-    mapping[key] = value
-    for k, v in following:
-        mapping[k] = v
+def _reorder(mapping, keys):
+    """Restores the order of the members of a mapping, whose keys are
+    ``keys`` again after a rollback."""
+    if list(mapping) != keys:
+        items = [(key, mapping[key]) for key in keys]
+        mapping.clear()
+        mapping.update(items)
 
 
 class PatchOperation(object):
