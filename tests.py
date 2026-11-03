@@ -2214,6 +2214,13 @@ class AtomicApplyTests(unittest.TestCase):
                                          {'op': 'add', 'path': '/b',
                                           'value': 0}]),
             ({'a': 1, 'b': 2}, [{'op': 'replace', 'path': '/a', 'value': 3}]),
+            # members added before the first removal from the same object
+            ({'a': 1, 'b': 2}, [{'op': 'add', 'path': '/c', 'value': 3},
+                                {'op': 'remove', 'path': '/a'}]),
+            ({'a': 1, 'b': 2}, [{'op': 'add', 'path': '/c', 'value': 3},
+                                {'op': 'remove', 'path': '/c'},
+                                {'op': 'remove', 'path': '/a'},
+                                {'op': 'add', 'path': '/c', 'value': 4}]),
             # array elements
             ({'l': [1, 2, 3]}, [{'op': 'add', 'path': '/l/-', 'value': 4}]),
             ({'l': [1, 2, 3]}, [{'op': 'add', 'path': '/l/0', 'value': 4}]),

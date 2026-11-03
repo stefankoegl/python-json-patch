@@ -409,6 +409,11 @@ class ApplyPatchProperties(unittest.TestCase):
                     copy.deepcopy(patch), in_place=True))
 
     @given(docs_with_patches())
+    # a member added before the first removal from the same object
+    @example(case=({'a': 1, 'b': 2},
+                   [{'op': 'add', 'path': '/c', 'value': 3},
+                    {'op': 'remove', 'path': '/a'},
+                    {'op': 'remove', 'path': '/missing'}]))
     def test_atomic_in_place_gives_same_result(self, case):
         doc, patch = case
         saved = copy.deepcopy(doc)

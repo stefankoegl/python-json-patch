@@ -313,8 +313,13 @@ def _undo_insert(container, index, value):
 
 
 def _reorder(mapping, keys):
-    """Restores the order of the members of a mapping, whose keys are
-    ``keys`` again after a rollback."""
+    """Restores the order of the members of a mapping after a rollback.
+
+    ``keys`` are its keys before its first removal. They can include
+    members that the patch added before, and that the rollback has removed
+    again; the original members appear in it in their original order.
+    """
+    keys = [key for key in keys if key in mapping]
     if list(mapping) != keys:
         items = [(key, mapping[key]) for key in keys]
         mapping.clear()
