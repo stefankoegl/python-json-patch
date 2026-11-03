@@ -170,9 +170,10 @@ raised, so the document is either fully patched or left unchanged:
 This only keeps the values that the patch removes or replaces until it has
 been applied, so it needs much less memory than ``in_place=False`` for large
 documents. The original containers are restored, so references into the
-document stay valid. Custom operations (see :class:`jsonpatch.JsonPatch`'s
-``operations``) whose changes can't be undone are first tried on a copy of
-the document instead.
+document stay valid. If a patch contains custom operations (see
+:class:`jsonpatch.JsonPatch`'s ``operations``), whose changes can't be undone,
+the document is copied instead, and its contents are restored from the copy
+if an operation fails.
 
 
 Replacing the Whole Document

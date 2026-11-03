@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import collections
 import contextlib
 import copy
 import io
@@ -2378,6 +2379,70 @@ class AtomicApplyTests(unittest.TestCase):
                 self.assertIs(res, doc)
                 self.assertIs(res['l'], l)
                 self.assertEqual(res, expected)
+
+    def test_custom_operation_failing_on_original(self):
+        # the document is restored even if a custom operation fails only on
+        # the original document, not on a copy of it
+        originals = []
+
+        class FailsOnOriginal(jsonpatch.PatchOperation):
+            def apply(self, obj):
+                if any(obj is original for original in originals):
+                    raise RuntimeError('original document')
+                return obj
+
+        class JsonPatch(jsonpatch.JsonPatch):
+            operations = MappingProxyType(dict(
+                jsonpatch.JsonPatch.operations, fail=FailsOnOriginal))
+
+        cases = [
+            ({'a': 1, 'b': [1]}, [{'op': 'remove', 'path': '/a'},
+                                  {'op': 'add', 'path': '/b/-', 'value': 2}]),
+            ([1, {'a': 2}], [{'op': 'add', 'path': '/-', 'value': 0},
+                             {'op': 'remove', 'path': '/1/a'}]),
+        ]
+        for doc, ops in cases:
+            with self.subTest(doc=doc):
+                originals[:] = [doc]
+                saved = copy.deepcopy(doc)
+                patch = JsonPatch(ops + [{'op': 'fail', 'path': ''}])
+                with self.assertRaises(RuntimeError):
+                    patch.apply(doc, in_place=True, atomic=True)
+                self.assertUnchanged(doc, saved)
+
+        # nothing can be changed in place in a scalar document
+        originals[:] = ['scalar']
+        patch = JsonPatch([{'op': 'fail', 'path': ''}])
+        with self.assertRaises(RuntimeError):
+            patch.apply('scalar', in_place=True, atomic=True)
+
+    def test_add_subclass_without_journal_parameter(self):
+        # _add was called without a journal before atomic application
+        class OldAdd(jsonpatch.AddOperation):
+            def _add(self, obj, value):
+                return super()._add(obj, value)
+
+        class JsonPatch(jsonpatch.JsonPatch):
+            operations = MappingProxyType(dict(
+                jsonpatch.JsonPatch.operations, add=OldAdd))
+
+        patch = JsonPatch([{'op': 'add', 'path': '/a', 'value': 1}])
+        self.assertEqual(patch.apply({}), {'a': 1})
+        doc = {}
+        self.assertEqual(patch.apply(doc, in_place=True, atomic=True),
+                         {'a': 1})
+        self.assertEqual(doc, {'a': 1})
+
+    def test_remove_missing_member_of_defaultdict(self):
+        # reading a missing member of a defaultdict creates it
+        for atomic in (False, True):
+            with self.subTest(atomic=atomic):
+                doc = collections.defaultdict(int, a=1)
+                with self.assertRaises(jsonpatch.JsonPatchConflict):
+                    jsonpatch.apply_patch(
+                        doc, [{'op': 'remove', 'path': '/missing'}],
+                        in_place=True, atomic=atomic)
+                self.assertEqual(doc, {'a': 1})
 
     def test_supports_journal(self):
         patch = jsonpatch.JsonPatch([

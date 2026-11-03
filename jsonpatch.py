@@ -240,6 +240,9 @@ class _Journal(object):
             self._undo.append((_undo_setitem, container, key, old))
 
     def delitem(self, container, key):
+        # reading a missing member can create it, e.g. in a defaultdict
+        if isinstance(container, Mapping) and key not in container:
+            raise KeyError(key)
         old = container[key]
         if isinstance(container, MutableSequence):
             del container[key]
@@ -418,7 +421,11 @@ class AddOperation(PatchOperation):
 
         # Insert a copy so the document does not share mutable values with
         # the patch; otherwise later operations would modify the patch itself.
-        return self._add(obj, copy.deepcopy(value), journal)
+        value = copy.deepcopy(value)
+        if journal is _NO_JOURNAL:
+            # subclasses may override _add without the journal parameter
+            return self._add(obj, value)
+        return self._add(obj, value, journal)
 
     def _add(self, obj, value, journal=_NO_JOURNAL):
         subobj, part = self.pointer.to_last(obj)
@@ -607,6 +614,15 @@ class CopyOperation(PatchOperation):
             raise
 
         return obj
+
+
+def _restore(obj, saved):
+    """Restores the contents of a document from a copy of it."""
+    if isinstance(obj, MutableMapping):
+        obj.clear()
+        obj.update(saved)
+    elif isinstance(obj, MutableSequence):
+        obj[:] = saved
 
 
 _JOURNALED_OPERATIONS = (
@@ -840,8 +856,10 @@ class JsonPatch(object):
                        `obj` is either fully patched or left unchanged. This
                        does not copy the document; it only keeps the values
                        that the patch removes or replaces until it is
-                       applied. Without ``in_place=True``, `obj` is never
-                       changed, so this has no effect.
+                       applied. Patches with custom operations, whose
+                       changes can't be undone, copy the document instead.
+                       Without ``in_place=True``, `obj` is never changed, so
+                       this has no effect.
         :type atomic: bool
 
         :return: Resulting document. Use this return value even with
@@ -861,15 +879,16 @@ class JsonPatch(object):
             return obj
 
         if not all(map(_supports_journal, ops)):
-            # The changes of custom operations can't be undone, so check
-            # that the patch applies to a copy before changing the document
-            dry_run = copy.deepcopy(obj)
-            for operation in ops:
-                dry_run = operation.apply(dry_run)
-            del dry_run
-
-            for operation in ops:
-                obj = operation.apply(obj)
+            # The changes of custom operations can't be undone, so restore
+            # the document from a copy instead
+            saved = copy.deepcopy(obj)
+            original = obj
+            try:
+                for operation in ops:
+                    obj = operation.apply(obj)
+            except BaseException:
+                _restore(original, saved)
+                raise
             return obj
 
         journal = _Journal()
