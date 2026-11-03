@@ -247,10 +247,9 @@ class _Journal(object):
     Restoring a removed member adds it at the end of its mapping, so the
     order of the members of each dict that loses one is recorded once, and
     restored after all steps have been undone. This is limited to dicts
-    (including subclasses such as OrderedDict), whose order is the order of
-    insertion and which clear() and update() restore exactly; other mappings,
-    such as a ChainMap, would take over members of the mappings they refer
-    to.
+    (including subclasses such as OrderedDict or Counter), whose order is the
+    order of insertion; moving a member of other mappings, such as a
+    ChainMap, to the end can add it to a different underlying mapping.
     """
 
     def __init__(self):
