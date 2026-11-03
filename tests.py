@@ -2253,6 +2253,29 @@ class AtomicApplyTests(unittest.TestCase):
         self.assertRollsBack(doc, patch)
         self.assertIs(doc['a'], inner)
 
+    def test_duck_typed_mapping(self):
+        class IndexedObject:
+            def __init__(self):
+                self.data = {'foo': 1}
+
+            def __getitem__(self, key):
+                return self.data[key]
+
+            def __setitem__(self, key, value):
+                self.data[key] = value
+
+            def __delitem__(self, key):
+                del self.data[key]
+
+        obj = IndexedObject()
+        doc = {'obj': obj}
+        patch = [{'op': 'remove', 'path': '/obj/foo'},
+                 {'op': 'remove', 'path': '/missing'}]
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            jsonpatch.apply_patch(doc, patch, in_place=True, atomic=True)
+        self.assertIs(doc['obj'], obj)
+        self.assertEqual(obj.data, {'foo': 1})
+
     def test_rolls_back_json_pointer_errors(self):
         doc = {'a': 1, 'l': [1]}
         patch = [{'op': 'add', 'path': '/b', 'value': 1},

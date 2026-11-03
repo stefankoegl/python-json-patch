@@ -283,10 +283,7 @@ def _undo_insert(container, index, value):
 
 
 def _key_index(mapping, key):
-    for index, k in enumerate(mapping):
-        if k == key:
-            return index
-    return len(mapping)
+    return next(index for index, k in enumerate(mapping) if k == key)
 
 
 def _undo_reinsert(mapping, index, key, value):
