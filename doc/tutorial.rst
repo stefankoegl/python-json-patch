@@ -70,14 +70,16 @@ The operations of a patch refer to locations in the object it is applied to.
 A patch created with ``make_patch(src, dst)`` or ``JsonPatch.from_diff(src,
 dst)`` must therefore be applied to ``src`` (or to an object equal to it).
 Applying it to any other object, such as ``dst``, usually fails with a
-``JsonPatchConflict``, because the locations it refers to don't exist there:
+``JsonPatchConflict``, because the locations it refers to don't exist there.
+Here it is a ``JsonPatchPathNotFound``, the subclass of ``JsonPatchConflict``
+that is raised when the location an operation acts on doesn't exist:
 
 .. code-block:: python
 
     >>> patch.apply(dst)
     Traceback (most recent call last):
       ...
-    jsonpatch.JsonPatchConflict: can't remove a non-existent object 'foo'
+    jsonpatch.JsonPatchPathNotFound: can't remove a non-existent object 'foo'
 
 Applying it to an object with the same structure but different values may
 succeed, though, and overwrite those values. With ``generate_test_ops=True``
@@ -174,6 +176,69 @@ document stay valid. If a patch contains custom operations (see
 :class:`jsonpatch.JsonPatch`'s ``operations``), whose changes can't be undone,
 the document is copied instead, and its contents are restored from the copy
 if an operation fails.
+
+
+Ignoring Missing Locations
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+`RFC 6902 <https://tools.ietf.org/html/rfc6902#section-4.2>`_ requires a
+``remove`` to fail if the location it removes doesn't exist, and this library
+follows it: such an operation raises ``JsonPatchPathNotFound``. A ``replace``
+of a missing location, and a ``move`` or ``copy`` from one, raise it as well.
+
+.. code-block:: python
+
+    >>> patch = [{'op': 'remove', 'path': '/data/another'}]
+    >>> try:
+    ...     jsonpatch.apply_patch({'data': {}}, patch)
+    ... except jsonpatch.JsonPatchPathNotFound as ex:
+    ...     print(ex, ex.op.location)
+    can't remove a non-existent object 'another' /data/another
+
+Catching the exception around ``apply`` does not skip just that operation,
+though: application stops, and the operations after it are not applied.
+
+If removing a member that is already absent should count as success (an
+idempotent ``remove``), the recommended way is a ``JsonPatch`` subclass that
+uses its own ``remove`` operation. The ``operations`` attribute of a
+``JsonPatch`` class maps each operation name to the class implementing it:
+
+.. code-block:: python
+
+    >>> from types import MappingProxyType
+    >>> class IdempotentRemoveOperation(jsonpatch.RemoveOperation):
+    ...     def apply(self, obj):
+    ...         try:
+    ...             return super().apply(obj)
+    ...         except jsonpatch.JsonPatchPathNotFound:
+    ...             return obj  # nothing to remove
+    >>> class IdempotentJsonPatch(jsonpatch.JsonPatch):
+    ...     operations = MappingProxyType(dict(
+    ...         jsonpatch.JsonPatch.operations,
+    ...         remove=IdempotentRemoveOperation,
+    ...     ))
+
+    >>> patch = IdempotentJsonPatch([
+    ...     {'op': 'remove', 'path': '/data/another'},
+    ...     {'op': 'add', 'path': '/data/new', 'value': 1},
+    ... ])
+    >>> patch.apply({'data': {}})
+    {'data': {'new': 1}}
+
+Only a missing member or element is ignored. Other errors still raise, such
+as a ``JsonPatchConflict`` for removing the whole document, or a
+``JsonPointerException`` if a parent of the location doesn't exist:
+
+.. code-block:: python
+
+    >>> patch = IdempotentJsonPatch([{'op': 'remove', 'path': '/missing/key'}])
+    >>> patch.apply({'data': {}})
+    Traceback (most recent call last):
+      ...
+    jsonpointer.JsonPointerException: member 'missing' not found in {'data': {}}
+
+Patches applied this way don't conform to RFC 6902, so only use this where
+both sides of an exchange agree on it.
 
 
 Replacing the Whole Document

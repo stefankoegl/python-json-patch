@@ -90,6 +90,24 @@ class JsonPatchConflict(JsonPatchException):
     """
 
 
+class JsonPatchPathNotFound(JsonPatchConflict):
+    """Raised if the location an operation has to act on does not exist.
+
+    This is the case for
+
+    - a ``remove`` or ``replace`` whose ``path`` refers to a non-existent
+      object member or array element, and
+    - a ``move`` or ``copy`` whose ``from`` refers to a non-existent object
+      member or array element.
+
+    It is a subclass of :class:`JsonPatchConflict`, so existing code that
+    catches :class:`JsonPatchConflict` continues to work. It can be caught on
+    its own to tell a missing location apart from other conflicts, for
+    example to implement a ``remove`` that ignores members which are already
+    absent (see the tutorial).
+    """
+
+
 class JsonPatchTestFailed(JsonPatchException, AssertionError):
     """ A Test operation failed """
 
@@ -402,7 +420,7 @@ class RemoveOperation(PatchOperation):
             journal.delitem(subobj, part)
         except (KeyError, IndexError):
             msg = "can't remove a non-existent object '{0}'".format(part)
-            raise JsonPatchConflict(msg, op=self)
+            raise JsonPatchPathNotFound(msg, op=self)
         except TypeError as ex:
             raise JsonPatchConflict(str(ex), op=self)
 
@@ -476,12 +494,12 @@ class ReplaceOperation(PatchOperation):
                 raise InvalidJsonPatch("'path' with '-' can't be applied to 'replace' operation", op=self)
 
             if part >= len(subobj) or part < 0:
-                raise JsonPatchConflict("can't replace outside of list", op=self)
+                raise JsonPatchPathNotFound("can't replace outside of list", op=self)
 
         elif isinstance(subobj, MutableMapping):
             if part not in subobj:
                 msg = "can't replace a non-existent object '{0}'".format(part)
-                raise JsonPatchConflict(msg, op=self)
+                raise JsonPatchPathNotFound(msg, op=self)
         else:
             raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part), op=self)
 
@@ -510,7 +528,7 @@ class MoveOperation(PatchOperation):
         try:
             value = subobj[part]
         except (KeyError, IndexError) as ex:
-            raise JsonPatchConflict(str(ex), op=self)
+            raise JsonPatchPathNotFound(str(ex), op=self)
 
         # If source and target are equal, this is a no-op
         if self.pointer == from_ptr:
@@ -599,7 +617,7 @@ class CopyOperation(PatchOperation):
         try:
             value = copy.deepcopy(subobj if part is None else subobj[part])
         except (KeyError, IndexError) as ex:
-            raise JsonPatchConflict(str(ex), op=self)
+            raise JsonPatchPathNotFound(str(ex), op=self)
 
         # value is already a deep copy, no need to copy it again
         try:
