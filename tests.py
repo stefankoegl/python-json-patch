@@ -2294,7 +2294,8 @@ class AtomicApplyTests(unittest.TestCase):
     def test_mapping_order(self):
         # the order of dicts is restored, including dict subclasses
         for cls in (dict, collections.OrderedDict,
-                    lambda items: collections.defaultdict(int, items)):
+                    lambda items: collections.defaultdict(int, items),
+                    lambda items: collections.Counter(dict(items))):
             with self.subTest(cls=cls):
                 doc = {'m': cls([('a', 1), ('b', 2), ('c', 3)])}
                 with self.assertRaises(jsonpatch.JsonPatchPathNotFound):
@@ -2318,6 +2319,36 @@ class AtomicApplyTests(unittest.TestCase):
                                {'op': 'remove', 'path': '/missing'}],
                 in_place=True, atomic=True)
         self.assertEqual(chain.maps, [{'a': 1, 'c': 3}, {'b': 2}])
+        self.assertIs(chain.maps[1], parent)
+
+        # replacing a member of another mapping adds it to the first one
+        chain = collections.ChainMap({'a': 1}, parent)
+        with self.assertRaises(jsonpatch.JsonPatchPathNotFound):
+            jsonpatch.apply_patch(
+                {'m': chain}, [{'op': 'replace', 'path': '/m/b', 'value': 5},
+                               {'op': 'replace', 'path': '/m/b', 'value': 6},
+                               {'op': 'remove', 'path': '/missing'}],
+                in_place=True, atomic=True)
+        self.assertEqual(chain.maps, [{'a': 1}, {'b': 2}])
+
+        # a document restored from a copy
+        class ChangesParent(jsonpatch.PatchOperation):
+            def apply(self, obj):
+                obj['b'] = 5
+                obj.maps[1]['b'] = 6
+                raise RuntimeError('after a change')
+
+        class JsonPatch(jsonpatch.JsonPatch):
+            operations = MappingProxyType(dict(
+                jsonpatch.JsonPatch.operations, change=ChangesParent))
+
+        first = {'a': 1}
+        chain = collections.ChainMap(first, parent)
+        with self.assertRaises(RuntimeError):
+            JsonPatch([{'op': 'change', 'path': ''}]).apply(
+                chain, in_place=True, atomic=True)
+        self.assertEqual(chain.maps, [{'a': 1}, {'b': 2}])
+        self.assertIs(chain.maps[0], first)
         self.assertIs(chain.maps[1], parent)
 
     def test_operation_overriding_apply_on_the_instance(self):

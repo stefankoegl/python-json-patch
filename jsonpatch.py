@@ -259,7 +259,11 @@ class _Journal(object):
         self._orders = {}
 
     def setitem(self, container, key, value):
-        if isinstance(container, MutableMapping) and key not in container:
+        if (isinstance(container, MutableMapping) and key not in container or
+                # a ChainMap adds the members of its other mappings that are
+                # set to its first one
+                isinstance(container, collections.ChainMap) and
+                key not in container.maps[0]):
             container[key] = value
             self._undo.append((_undo_delitem, container, key))
         else:
@@ -341,10 +345,14 @@ def _reorder(mapping, keys):
     again; the original members appear in it in their original order.
     """
     keys = [key for key in keys if key in mapping]
-    if list(mapping) != keys:
-        items = [(key, mapping[key]) for key in keys]
-        mapping.clear()
-        mapping.update(items)
+    start = next((index for index, (key, original)
+                  in enumerate(zip(mapping, keys)) if key != original),
+                 len(keys))
+    # Move the members from the first misplaced one on to the end. Unlike
+    # update(), which e.g. a Counter uses to add counts, this only uses the
+    # operations the rollback itself uses
+    for key in keys[start:]:
+        mapping[key] = mapping.pop(key)
 
 
 class PatchOperation(object):
@@ -667,7 +675,11 @@ class CopyOperation(PatchOperation):
 
 def _restore(obj, saved):
     """Restores the contents of a document from a copy of it."""
-    if isinstance(obj, MutableMapping):
+    if isinstance(obj, collections.ChainMap):
+        # restore each mapping, so that none takes over another's members
+        for mapping, saved_mapping in zip(obj.maps, saved.maps):
+            _restore(mapping, saved_mapping)
+    elif isinstance(obj, MutableMapping):
         obj.clear()
         obj.update(saved)
     elif isinstance(obj, MutableSequence):
