@@ -177,6 +177,13 @@ document stay valid. If a patch contains custom operations (see
 the document is copied instead, and its contents are restored from the copy
 if an operation fails.
 
+Only the changes that the operations make are undone. Containers that change
+when they are merely read, such as a ``collections.defaultdict``, which adds
+a missing key on lookup, are not supported: looking up a location, testing a
+value or reading the ``from`` of a ``move`` or ``copy`` can add members to
+them that remain after a rollback. Documents parsed from JSON consist of
+plain ``dict`` and ``list`` objects and are not affected.
+
 
 Ignoring Missing Locations
 ~~~~~~~~~~~~~~~~~~~~~~~~~~

@@ -885,6 +885,8 @@ class JsonPatch(object):
                        that the patch removes or replaces until it is
                        applied. Patches with custom operations, whose
                        changes can't be undone, copy the document instead.
+                       Members that containers such as ``defaultdict`` add
+                       when they are only read are not removed again.
                        Without ``in_place=True``, `obj` is never changed, so
                        this has no effect.
         :type atomic: bool
