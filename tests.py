@@ -2528,7 +2528,7 @@ class CommandLineTests(ScriptRunner, unittest.TestCase):
         patch = self.write('patch.json', [{'op': 'remove', 'path': '/b'}])
         res = self.run_script('jsonpatch', '-i', '-b', doc, patch)
         self.assertNotEqual(res.returncode, 0)
-        self.assertIn('JsonPatchConflict', res.stderr)
+        self.assertIn('JsonPatchPathNotFound', res.stderr)
         self.assertEqual(self.read(doc), {'a': 1})
         self.assertEqual(sorted(os.listdir(self.dir)), ['doc.json', 'patch.json'])
 
@@ -2537,6 +2537,87 @@ class CommandLineTests(ScriptRunner, unittest.TestCase):
             with self.subTest(script=script):
                 res = self.run_script(script, '--version')
                 self.assertEqual(res.stdout, '{0} {1}\n'.format(script, jsonpatch.__version__))
+
+
+class PathNotFoundTests(unittest.TestCase):
+    """ JsonPatchPathNotFound is raised for locations that don't exist """
+
+    def assertNotFound(self, doc, operation):
+        with self.assertRaises(jsonpatch.JsonPatchPathNotFound) as cm:
+            jsonpatch.apply_patch(doc, [operation])
+        self.assertIsInstance(cm.exception, jsonpatch.JsonPatchConflict)
+        self.assertEqual(cm.exception.op.operation, operation)
+
+    def assertOtherConflict(self, doc, operation):
+        with self.assertRaises(jsonpatch.JsonPatchConflict) as cm:
+            jsonpatch.apply_patch(doc, [operation])
+        self.assertNotIsInstance(cm.exception, jsonpatch.JsonPatchPathNotFound)
+
+    def test_is_conflict(self):
+        self.assertTrue(issubclass(jsonpatch.JsonPatchPathNotFound,
+                                   jsonpatch.JsonPatchConflict))
+
+    def test_remove_missing_member(self):
+        self.assertNotFound({'data': {}},
+                            {'op': 'remove', 'path': '/data/another'})
+
+    def test_remove_missing_element(self):
+        self.assertNotFound({'a': [1]}, {'op': 'remove', 'path': '/a/1'})
+
+    def test_replace_missing_member(self):
+        self.assertNotFound({'a': {}},
+                            {'op': 'replace', 'path': '/a/b', 'value': 1})
+
+    def test_replace_missing_element(self):
+        self.assertNotFound({'a': [1]},
+                            {'op': 'replace', 'path': '/a/1', 'value': 1})
+
+    def test_move_missing_from(self):
+        self.assertNotFound({'a': {}},
+                            {'op': 'move', 'from': '/a/b', 'path': '/c'})
+        self.assertNotFound({'a': []},
+                            {'op': 'move', 'from': '/a/0', 'path': '/c'})
+
+    def test_copy_missing_from(self):
+        self.assertNotFound({'a': {}},
+                            {'op': 'copy', 'from': '/a/b', 'path': '/c'})
+        self.assertNotFound({'a': []},
+                            {'op': 'copy', 'from': '/a/0', 'path': '/c'})
+
+    def test_other_conflicts(self):
+        self.assertOtherConflict({}, {'op': 'remove', 'path': ''})
+        self.assertOtherConflict({'a': []},
+                                 {'op': 'add', 'path': '/a/5', 'value': 1})
+        self.assertOtherConflict({'a': (1, 2)},
+                                 {'op': 'remove', 'path': '/a/0'})
+        self.assertOtherConflict({'a': {}},
+                                 {'op': 'move', 'from': '/a', 'path': '/a/b'})
+
+    def test_idempotent_remove_subclass(self):
+        """ The recipe from the tutorial """
+        class IdempotentRemoveOperation(jsonpatch.RemoveOperation):
+            def apply(self, obj):
+                try:
+                    return super().apply(obj)
+                except jsonpatch.JsonPatchPathNotFound:
+                    return obj
+
+        class IdempotentJsonPatch(jsonpatch.JsonPatch):
+            operations = MappingProxyType(dict(
+                jsonpatch.JsonPatch.operations,
+                remove=IdempotentRemoveOperation,
+            ))
+
+        patch = IdempotentJsonPatch([
+            {'op': 'remove', 'path': '/data/another'},
+            {'op': 'remove', 'path': '/list/3'},
+            {'op': 'add', 'path': '/x', 'value': 1},
+        ])
+        doc = {'data': {}, 'list': [1]}
+        self.assertEqual(patch.apply(doc),
+                         {'data': {}, 'list': [1], 'x': 1})
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            IdempotentJsonPatch([{'op': 'remove', 'path': ''}]).apply(doc)
 
 
 class DocumentationTests(ScriptRunner, unittest.TestCase):
@@ -2649,6 +2730,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomJsonPointerTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomOperationTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ExceptionOperationTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(PathNotFoundTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CommandLineTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(DocumentationTests))
         return suite
