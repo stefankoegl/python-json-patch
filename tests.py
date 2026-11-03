@@ -2291,6 +2291,70 @@ class AtomicApplyTests(unittest.TestCase):
                 self.assertEqual(deque, collections.deque(items))
                 self.assertEqual(deque.maxlen, maxlen)
 
+    def test_mapping_order(self):
+        # the order of dicts is restored, including dict subclasses
+        for cls in (dict, collections.OrderedDict,
+                    lambda items: collections.defaultdict(int, items)):
+            with self.subTest(cls=cls):
+                doc = {'m': cls([('a', 1), ('b', 2), ('c', 3)])}
+                with self.assertRaises(jsonpatch.JsonPatchPathNotFound):
+                    jsonpatch.apply_patch(
+                        doc, [{'op': 'remove', 'path': '/m/a'},
+                              {'op': 'remove', 'path': '/m/b'},
+                              {'op': 'add', 'path': '/m/b', 'value': 4},
+                              {'op': 'remove', 'path': '/missing'}],
+                        in_place=True, atomic=True)
+                self.assertEqual(list(doc['m'].items()),
+                                 [('a', 1), ('b', 2), ('c', 3)])
+
+    def test_chain_map(self):
+        # a ChainMap only changes its first mapping; restoring the order of
+        # its members would add the members of the others to it
+        parent = {'b': 2}
+        chain = collections.ChainMap({'a': 1, 'c': 3}, parent)
+        with self.assertRaises(jsonpatch.JsonPatchPathNotFound):
+            jsonpatch.apply_patch(
+                {'m': chain}, [{'op': 'remove', 'path': '/m/a'},
+                               {'op': 'remove', 'path': '/missing'}],
+                in_place=True, atomic=True)
+        self.assertEqual(chain.maps, [{'a': 1, 'c': 3}, {'b': 2}])
+        self.assertIs(chain.maps[1], parent)
+
+    def test_operation_overriding_apply_on_the_instance(self):
+        calls = []
+
+        class LoggingRemove(jsonpatch.RemoveOperation):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                apply = self.apply
+
+                def logging_apply(obj):
+                    calls.append(self)
+                    return apply(obj)
+
+                self.apply = logging_apply
+
+        class JsonPatch(jsonpatch.JsonPatch):
+            operations = MappingProxyType(dict(
+                jsonpatch.JsonPatch.operations, remove=LoggingRemove))
+
+        patch = JsonPatch([{'op': 'add', 'path': '/b', 'value': 2},
+                           {'op': 'remove', 'path': '/a'}])
+        self.assertFalse(jsonpatch._supports_journal(patch._ops[1]))
+        doc = {'a': 1}
+        self.assertEqual(patch.apply(doc, in_place=True, atomic=True),
+                         {'b': 2})
+        self.assertEqual(len(calls), 1)
+
+        patch = JsonPatch([{'op': 'add', 'path': '/b', 'value': 2},
+                           {'op': 'remove', 'path': '/a'},
+                           {'op': 'remove', 'path': '/missing'}])
+        doc = {'a': 1}
+        with self.assertRaises(jsonpatch.JsonPatchPathNotFound):
+            patch.apply(doc, in_place=True, atomic=True)
+        self.assertEqual(doc, {'a': 1})
+        self.assertEqual(len(calls), 3)
+
     def test_restores_original_containers(self):
         inner = {'x': [1, 2]}
         doc = {'a': inner, 'b': 1}

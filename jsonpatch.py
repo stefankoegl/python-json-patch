@@ -245,8 +245,12 @@ class _Journal(object):
     document, so restoring them needs no copy.
 
     Restoring a removed member adds it at the end of its mapping, so the
-    order of the members of each mapping that loses one is recorded once,
-    and restored after all steps have been undone.
+    order of the members of each dict that loses one is recorded once, and
+    restored after all steps have been undone. This is limited to dicts
+    (including subclasses such as OrderedDict), whose order is the order of
+    insertion and which clear() and update() restore exactly; other mappings,
+    such as a ChainMap, would take over members of the mappings they refer
+    to.
     """
 
     def __init__(self):
@@ -272,7 +276,8 @@ class _Journal(object):
             del container[key]
             self._undo.append((_undo_insert, container, key, old))
         elif isinstance(container, MutableMapping):
-            if id(container) not in self._orders:
+            if (isinstance(container, dict) and
+                    id(container) not in self._orders):
                 self._orders[id(container)] = (container, list(container))
             del container[key]
             self._undo.append((_undo_setitem, container, key, old))
@@ -686,8 +691,11 @@ _JOURNALED_OPERATIONS = (
 
 def _supports_journal(operation):
     """Whether all changes of ``operation`` go through its journal, which is
-    the case for the built-in operations unless a subclass changes how they
-    are applied."""
+    the case for the built-in operations unless a subclass, or the operation
+    object itself, changes how they are applied."""
+    overridden = getattr(operation, '__dict__', {})
+    if any(name in overridden for name in ('apply', '_apply', '_add')):
+        return False
     cls = type(operation)
     if getattr(cls, 'apply', None) is not PatchOperation.apply:
         return False
