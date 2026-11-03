@@ -17,7 +17,8 @@ from typing_extensions import assert_type
 
 import jsonpatch
 from jsonpatch import (InvalidJsonPatch, JsonPatch, JsonPatchConflict,
-                       JsonPatchException, JsonPatchTestFailed,
+                       JsonPatchException, JsonPatchPathNotFound,
+                       JsonPatchTestFailed,
                        PatchOperation)
 
 doc = {'foo': 'bar'}
@@ -85,6 +86,11 @@ except (InvalidJsonPatch, JsonPatchConflict, JsonPatchTestFailed) as ex:
     assert_type(ex, InvalidJsonPatch | JsonPatchConflict | JsonPatchTestFailed)
     failed = ex.op
 JsonPatchException('message', op=None)
+try:
+    patch.apply(doc)
+except JsonPatchPathNotFound as ex:
+    assert_type(ex, JsonPatchPathNotFound)
+    conflict: JsonPatchConflict = ex
 
 # names that jsonpatch re-exports from jsonpointer
 try:
