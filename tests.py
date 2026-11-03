@@ -19,6 +19,7 @@ import os
 import stat
 import subprocess
 import tempfile
+from collections.abc import Mapping
 from types import MappingProxyType
 from unittest import mock
 
@@ -2409,6 +2410,41 @@ class AtomicApplyTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     patch.apply(doc, in_place=True, atomic=True)
                 self.assertUnchanged(doc, saved)
+
+        # immutable containers can't change, but their children can
+        class ChangesChild(jsonpatch.PatchOperation):
+            def apply(self, obj):
+                self.pointer.resolve(obj)['a'] = 2
+                raise RuntimeError('after a change')
+
+        class ChildPatch(jsonpatch.JsonPatch):
+            operations = MappingProxyType(dict(
+                jsonpatch.JsonPatch.operations, change=ChangesChild))
+
+        class FrozenMapping(Mapping):
+            def __init__(self, data):
+                self._data = data
+
+            def __getitem__(self, key):
+                return self._data[key]
+
+            def __iter__(self):
+                return iter(self._data)
+
+            def __len__(self):
+                return len(self._data)
+
+        for doc, path in [(({'a': 1}, 'b'), '/0'),
+                          (((({'a': 1},),),), '/0/0/0'),
+                          (FrozenMapping({'x': {'a': 1}, 'y': 'b'}), '/x')]:
+            with self.subTest(doc=doc):
+                saved = copy.deepcopy(dict(doc) if isinstance(doc, Mapping)
+                                      else doc)
+                patch = ChildPatch([{'op': 'change', 'path': path}])
+                with self.assertRaises(RuntimeError):
+                    patch.apply(doc, in_place=True, atomic=True)
+                self.assertEqual(
+                    dict(doc) if isinstance(doc, Mapping) else doc, saved)
 
         # nothing can be changed in place in a scalar document
         originals[:] = ['scalar']

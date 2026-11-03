@@ -623,6 +623,13 @@ def _restore(obj, saved):
         obj.update(saved)
     elif isinstance(obj, MutableSequence):
         obj[:] = saved
+    # Immutable containers can't have changed, but their children can
+    elif isinstance(obj, Mapping):
+        for key in saved:
+            _restore(obj[key], saved[key])
+    elif isinstance(obj, Sequence) and not isinstance(obj, (str, bytes)):
+        for item, saved_item in zip(obj, saved):
+            _restore(item, saved_item)
 
 
 _JOURNALED_OPERATIONS = (
