@@ -285,6 +285,17 @@ class _Journal(object):
         self._undo.append((_undo_delitem, container, index))
 
     def append(self, container, value):
+        if (isinstance(container, collections.deque) and
+                container.maxlen is not None and
+                len(container) == container.maxlen):
+            # A full bounded deque drops its first item to make room
+            if container.maxlen:
+                dropped = container[0]
+                container.append(value)
+                self._undo.append((_undo_dropping_append, container, dropped))
+            else:
+                container.append(value)  # it stays empty
+            return
         container.append(value)
         # the list may shrink again before this step is undone, but by then
         # it has the same length as right after the append
@@ -310,6 +321,11 @@ def _undo_delitem(container, key):
 
 def _undo_insert(container, index, value):
     container.insert(index, value)
+
+
+def _undo_dropping_append(deque, dropped):
+    del deque[-1]
+    deque.appendleft(dropped)
 
 
 def _reorder(mapping, keys):

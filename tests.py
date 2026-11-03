@@ -2253,6 +2253,44 @@ class AtomicApplyTests(unittest.TestCase):
             with self.subTest(doc=doc, patch=patch):
                 self.assertRollsBack(doc, patch + [fail])
 
+    def test_bounded_deque(self):
+        # appending to a full bounded deque drops its first item
+        fail = {'op': 'remove', 'path': '/missing'}
+        cases = [
+            (3, [{'op': 'add', 'path': '/d/-', 'value': 4}]),
+            (3, [{'op': 'remove', 'path': '/d/0'},
+                 {'op': 'add', 'path': '/d/-', 'value': 4},
+                 {'op': 'add', 'path': '/d/-', 'value': 5},
+                 {'op': 'replace', 'path': '/d/0', 'value': 6}]),
+            (4, [{'op': 'add', 'path': '/d/-', 'value': 4},
+                 {'op': 'add', 'path': '/d/-', 'value': 5},
+                 {'op': 'move', 'from': '/d/0', 'path': '/d/-'}]),
+            (0, [{'op': 'add', 'path': '/d/-', 'value': 4}]),
+        ]
+        for maxlen, patch in cases:
+            with self.subTest(maxlen=maxlen, patch=patch):
+                items = [1, 2, 3][:maxlen]
+
+                def make_doc():
+                    return {'d': collections.deque(items, maxlen=maxlen)}
+
+                # the same result as without atomic
+                expected = jsonpatch.apply_patch(make_doc(), patch,
+                                                 in_place=True)
+                doc = make_doc()
+                res = jsonpatch.apply_patch(doc, patch, in_place=True,
+                                            atomic=True)
+                self.assertEqual(res, expected)
+
+                doc = make_doc()
+                deque = doc['d']
+                with self.assertRaises(jsonpatch.JsonPatchPathNotFound):
+                    jsonpatch.apply_patch(doc, patch + [fail],
+                                          in_place=True, atomic=True)
+                self.assertIs(doc['d'], deque)
+                self.assertEqual(deque, collections.deque(items))
+                self.assertEqual(deque.maxlen, maxlen)
+
     def test_restores_original_containers(self):
         inner = {'x': [1, 2]}
         doc = {'a': inner, 'b': 1}
