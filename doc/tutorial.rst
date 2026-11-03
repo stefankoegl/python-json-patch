@@ -151,6 +151,29 @@ do not roll back changes already made in place:
     >>> original
     {'value': 2}
 
+To get all-or-nothing behaviour without copying the document, pass
+``atomic=True`` together with ``in_place=True``. If an operation fails, the
+changes of the preceding operations are undone before the exception is
+raised, so the document is either fully patched or left unchanged:
+
+.. code-block:: python
+
+    >>> original = {'value': 1}
+    >>> try:
+    ...     jsonpatch.apply_patch(original, patch, in_place=True, atomic=True)
+    ... except jsonpatch.JsonPatchTestFailed:
+    ...     print('Test failed')
+    Test failed
+    >>> original
+    {'value': 1}
+
+This only keeps the values that the patch removes or replaces until it has
+been applied, so it needs much less memory than ``in_place=False`` for large
+documents. The original containers are restored, so references into the
+document stay valid. Custom operations (see :class:`jsonpatch.JsonPatch`'s
+``operations``) whose changes can't be undone are first tried on a copy of
+the document instead.
+
 
 Replacing the Whole Document
 ----------------------------

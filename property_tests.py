@@ -409,6 +409,18 @@ class ApplyPatchProperties(unittest.TestCase):
                     copy.deepcopy(patch), in_place=True))
 
     @given(docs_with_patches())
+    def test_atomic_in_place_gives_same_result(self, case):
+        doc, patch = case
+        saved = copy.deepcopy(doc)
+        expected = outcome(jsonpatch.apply_patch, doc, copy.deepcopy(patch))
+        res = outcome(jsonpatch.apply_patch, doc, copy.deepcopy(patch),
+                      in_place=True, atomic=True)
+        assert_same_outcome(expected, res)
+        if res[0] == 'error':
+            # unchanged, including the order of object members
+            assert json.dumps(doc) == json.dumps(saved), (doc, saved)
+
+    @given(docs_with_patches())
     def test_patch_as_string_gives_same_result(self, case):
         doc, patch = case
         assert_same_outcome(

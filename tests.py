@@ -2168,6 +2168,218 @@ class CustomOperationTests(unittest.TestCase):
         self.assertEqual(res, {})
 
 
+class AtomicApplyTests(unittest.TestCase):
+
+    def assertUnchanged(self, doc, saved):
+        # also compares the order of object members
+        self.assertEqual(json.dumps(doc), json.dumps(saved))
+
+    def assertRollsBack(self, doc, patch, exc=jsonpatch.JsonPatchException):
+        saved = copy.deepcopy(doc)
+        with self.assertRaises(exc):
+            jsonpatch.apply_patch(doc, patch, in_place=True, atomic=True)
+        self.assertUnchanged(doc, saved)
+
+    def test_issue_example(self):
+        patch = [
+            {'op': 'add', 'path': '/attrs/language', 'value': 'de-DE'},
+            {'op': 'add', 'path': '/attrs/country', 'value': 'US'},
+            {'op': 'remove', 'path': '/fish'},
+            {'op': 'remove', 'path': '/attrs/copyright'},
+        ]
+        doc = {'attrs': {'copyright': 'me'}}
+        attrs = doc['attrs']
+        self.assertRollsBack(doc, patch, jsonpatch.JsonPatchConflict)
+        self.assertIs(doc['attrs'], attrs)
+
+    def test_not_atomic_by_default(self):
+        doc = {'a': 1}
+        patch = [{'op': 'replace', 'path': '/a', 'value': 2},
+                 {'op': 'test', 'path': '/a', 'value': 3}]
+        with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+            jsonpatch.apply_patch(doc, patch, in_place=True)
+        self.assertEqual(doc, {'a': 2})
+
+    def test_failed_operations_are_rolled_back(self):
+        fail = {'op': 'test', 'path': '/missing', 'value': 1}
+        cases = [
+            # object members
+            ({'a': 1, 'b': 2}, [{'op': 'add', 'path': '/c', 'value': 3}]),
+            ({'a': 1, 'b': 2}, [{'op': 'add', 'path': '/a', 'value': 3}]),
+            ({'a': 1, 'b': 2, 'c': 3}, [{'op': 'remove', 'path': '/a'}]),
+            ({'a': 1, 'b': 2, 'c': 3}, [{'op': 'remove', 'path': '/b'},
+                                         {'op': 'remove', 'path': '/a'},
+                                         {'op': 'add', 'path': '/b',
+                                          'value': 0}]),
+            ({'a': 1, 'b': 2}, [{'op': 'replace', 'path': '/a', 'value': 3}]),
+            # array elements
+            ({'l': [1, 2, 3]}, [{'op': 'add', 'path': '/l/-', 'value': 4}]),
+            ({'l': [1, 2, 3]}, [{'op': 'add', 'path': '/l/0', 'value': 4}]),
+            ({'l': [1, 2, 3]}, [{'op': 'add', 'path': '/l/3', 'value': 4}]),
+            ({'l': [1, 2, 3]}, [{'op': 'remove', 'path': '/l/1'}]),
+            ({'l': [1, 2, 3]}, [{'op': 'replace', 'path': '/l/2', 'value': 4}]),
+            ({'l': [1, 2, 3]}, [{'op': 'add', 'path': '/l/-', 'value': 4},
+                                {'op': 'remove', 'path': '/l/0'},
+                                {'op': 'remove', 'path': '/l/2'},
+                                {'op': 'add', 'path': '/l/-', 'value': 5}]),
+            # move and copy
+            ({'a': {'x': 1}, 'b': {}},
+             [{'op': 'move', 'from': '/a/x', 'path': '/b/y'}]),
+            ({'a': 1, 'b': 2}, [{'op': 'move', 'from': '/a', 'path': '/b'}]),
+            ({'l': [1, 2, 3, 4]},
+             [{'op': 'move', 'from': '/l/0', 'path': '/l/3'}]),
+            ({'l': [1, 2, 3, 4]},
+             [{'op': 'move', 'from': '/l/3', 'path': '/l/-'}]),
+            ({'a': [1], 'b': {}},
+             [{'op': 'copy', 'from': '/a', 'path': '/b/c'},
+              {'op': 'add', 'path': '/b/c/-', 'value': 2}]),
+            # nested changes
+            ({'a': {'b': [{'c': 1}]}},
+             [{'op': 'add', 'path': '/a/b/0/d', 'value': {'e': []}},
+              {'op': 'add', 'path': '/a/b/0/d/e/-', 'value': 1},
+              {'op': 'replace', 'path': '/a/b', 'value': None},
+              {'op': 'add', 'path': '/a/c', 'value': 1}]),
+        ]
+        for doc, patch in cases:
+            with self.subTest(doc=doc, patch=patch):
+                self.assertRollsBack(doc, patch + [fail])
+
+    def test_restores_original_containers(self):
+        inner = {'x': [1, 2]}
+        doc = {'a': inner, 'b': 1}
+        patch = [{'op': 'remove', 'path': '/a'},
+                 {'op': 'add', 'path': '/c', 'value': 1},
+                 {'op': 'remove', 'path': '/missing'}]
+        self.assertRollsBack(doc, patch)
+        self.assertIs(doc['a'], inner)
+
+    def test_rolls_back_json_pointer_errors(self):
+        doc = {'a': 1, 'l': [1]}
+        patch = [{'op': 'add', 'path': '/b', 'value': 1},
+                 {'op': 'remove', 'path': '/l/x'}]
+        self.assertRollsBack(doc, patch, jsonpointer.JsonPointerException)
+
+    def test_rolls_back_unexpected_errors(self):
+        doc = {'a': {'b': 1}}
+        patch = [{'op': 'add', 'path': '/c', 'value': 1},
+                 {'op': 'remove', 'path': '/a/b'}]
+        original = jsonpatch.RemoveOperation._apply
+
+        def broken(self, obj, journal):
+            raise RuntimeError('boom')
+
+        with mock.patch.object(jsonpatch.RemoveOperation, '_apply', broken):
+            self.assertRollsBack(doc, patch, RuntimeError)
+        self.assertIs(jsonpatch.RemoveOperation._apply, original)
+
+    def test_replaced_root(self):
+        doc = {'a': 1}
+        patch = [{'op': 'remove', 'path': '/a'},
+                 {'op': 'replace', 'path': '', 'value': {'b': []}},
+                 {'op': 'add', 'path': '/b/-', 'value': 1},
+                 {'op': 'remove', 'path': '/missing'}]
+        self.assertRollsBack(doc, patch)
+
+    def test_success(self):
+        doc = {'a': 1, 'l': [1, 2]}
+        patch = [{'op': 'add', 'path': '/b', 'value': 2},
+                 {'op': 'remove', 'path': '/a'},
+                 {'op': 'move', 'from': '/l/0', 'path': '/l/-'},
+                 {'op': 'test', 'path': '/l', 'value': [2, 1]}]
+        expected = jsonpatch.apply_patch(doc, patch)
+        res = jsonpatch.apply_patch(doc, patch, in_place=True, atomic=True)
+        self.assertIs(res, doc)
+        self.assertEqual(res, expected)
+
+    def test_success_replacing_root(self):
+        doc = {'a': 1}
+        patch = [{'op': 'replace', 'path': '', 'value': [1]}]
+        res = jsonpatch.JsonPatch(patch).apply(doc, in_place=True, atomic=True)
+        self.assertEqual(res, [1])
+        self.assertEqual(doc, {'a': 1})
+
+    def test_without_in_place(self):
+        doc = {'a': 1}
+        patch = jsonpatch.JsonPatch([{'op': 'remove', 'path': '/a'}])
+        self.assertEqual(patch.apply(doc, atomic=True), {})
+        self.assertEqual(doc, {'a': 1})
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            patch.apply({}, atomic=True)
+
+    def test_patch_can_be_reapplied(self):
+        patch = jsonpatch.JsonPatch([{'op': 'add', 'path': '/a/-', 'value': 1},
+                                     {'op': 'test', 'path': '/b', 'value': 1}])
+        doc = {'a': [], 'b': 2}
+        for _ in range(2):
+            with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+                patch.apply(doc, in_place=True, atomic=True)
+            self.assertEqual(doc, {'a': [], 'b': 2})
+        doc['b'] = 1
+        patch.apply(doc, in_place=True, atomic=True)
+        self.assertEqual(doc, {'a': [1], 'b': 1})
+
+    def test_custom_operations(self):
+        # The changes of custom operations can't be undone; the patch is
+        # checked against a copy first
+
+        class AppendOperation(jsonpatch.PatchOperation):
+            def apply(self, obj):
+                self.pointer.resolve(obj).append(self.operation['value'])
+                return obj
+
+        class LoggingAdd(jsonpatch.AddOperation):
+            def _add(self, obj, value, journal=None):
+                subobj, part = self.pointer.to_last(obj)
+                subobj[part] = value
+                return obj
+
+        class JsonPatch(jsonpatch.JsonPatch):
+            operations = MappingProxyType(dict(
+                jsonpatch.JsonPatch.operations,
+                append=AppendOperation, add=LoggingAdd))
+
+        for op in ({'op': 'append', 'path': '/l', 'value': 1},
+                   {'op': 'add', 'path': '/b', 'value': 1}):
+            with self.subTest(op=op):
+                doc = {'l': [], 'a': 1}
+                patch = JsonPatch([{'op': 'remove', 'path': '/a'}, op,
+                                   {'op': 'test', 'path': '/c', 'value': 1}])
+                with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+                    patch.apply(doc, in_place=True, atomic=True)
+                self.assertEqual(doc, {'l': [], 'a': 1})
+
+                patch = JsonPatch([{'op': 'remove', 'path': '/a'}, op])
+                expected = patch.apply(doc)
+                l = doc['l']
+                res = patch.apply(doc, in_place=True, atomic=True)
+                self.assertIs(res, doc)
+                self.assertIs(res['l'], l)
+                self.assertEqual(res, expected)
+
+    def test_supports_journal(self):
+        patch = jsonpatch.JsonPatch([
+            {'op': op, 'path': '/a', 'from': '/b', 'value': 1}
+            for op in jsonpatch.JsonPatch.operations])
+        self.assertTrue(all(map(jsonpatch._supports_journal, patch._ops)))
+
+        class OwnApply(jsonpatch.ReplaceOperation):
+            def apply(self, obj):
+                return obj
+
+        class OwnInternalApply(jsonpatch.ReplaceOperation):
+            def _apply(self, obj, journal):
+                return obj
+
+        class NotAnOperation(object):
+            def __init__(self, operation, pointer_cls=None):
+                pass
+
+        for cls in (OwnApply, OwnInternalApply, NotAnOperation):
+            with self.subTest(cls=cls):
+                op = cls({'op': 'replace', 'path': '/a', 'value': 1})
+                self.assertFalse(jsonpatch._supports_journal(op))
+
+
 class ScriptRunner:
     """ Runs the command line programs of this checkout """
 
@@ -2649,6 +2861,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomJsonPointerTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomOperationTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ExceptionOperationTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(AtomicApplyTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CommandLineTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(DocumentationTests))
         return suite
