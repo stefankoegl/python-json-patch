@@ -2411,6 +2411,15 @@ class AtomicApplyTests(unittest.TestCase):
                     patch.apply(doc, in_place=True, atomic=True)
                 self.assertUnchanged(doc, saved)
 
+        # sequences that don't support slice assignment
+        originals[:] = [collections.deque([1, {'a': 2}])]
+        doc = originals[0]
+        patch = JsonPatch([{'op': 'add', 'path': '/-', 'value': 0},
+                           {'op': 'fail', 'path': ''}])
+        with self.assertRaises(RuntimeError):
+            patch.apply(doc, in_place=True, atomic=True)
+        self.assertEqual(doc, collections.deque([1, {'a': 2}]))
+
         # immutable containers can't change, but their children can
         class ChangesChild(jsonpatch.PatchOperation):
             def apply(self, obj):

@@ -640,7 +640,9 @@ def _restore(obj, saved):
         obj.clear()
         obj.update(saved)
     elif isinstance(obj, MutableSequence):
-        obj[:] = saved
+        # not obj[:] = saved, as e.g. deque doesn't support slices
+        obj.clear()
+        obj.extend(saved)
     # Immutable containers can't have changed, but their children can
     elif isinstance(obj, Mapping):
         for key in saved:
