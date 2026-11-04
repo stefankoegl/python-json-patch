@@ -673,7 +673,12 @@ class CopyOperation(PatchOperation):
 
 
 def _restore(obj, saved):
-    """Restores the contents of a document from a copy of it."""
+    """Restores the contents of a document from a copy of it.
+
+    Only the items of mappings and sequences are restored, not other state
+    that a custom operation can change, such as attributes or the list of
+    mappings of a ChainMap.
+    """
     if isinstance(obj, collections.ChainMap):
         # restore each mapping, so that none takes over another's members
         for mapping, saved_mapping in zip(obj.maps, saved.maps):
@@ -930,10 +935,12 @@ class JsonPatch(object):
                        that the patch removes or replaces until it is
                        applied. Patches with custom operations, whose
                        changes can't be undone, copy the document instead.
-                       Members that containers such as ``defaultdict`` add
-                       when they are only read are not removed again.
-                       Without ``in_place=True``, `obj` is never changed, so
-                       this has no effect.
+                       Exact restoration is guaranteed for documents of
+                       plain dicts and lists; members that containers such
+                       as ``defaultdict`` add when they are only read are
+                       not removed again (see the tutorial). Without
+                       ``in_place=True``, `obj` is never changed, so this
+                       has no effect.
         :type atomic: bool
 
         :return: Resulting document. Use this return value even with

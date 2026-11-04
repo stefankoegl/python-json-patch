@@ -175,14 +175,24 @@ documents. The original containers are restored, so references into the
 document stay valid. If a patch contains custom operations (see
 :class:`jsonpatch.JsonPatch`'s ``operations``), whose changes can't be undone,
 the document is copied instead, and its contents are restored from the copy
-if an operation fails.
+if an operation fails; nested containers are then replaced by their copies.
 
-Only the changes that the operations make are undone. Containers that change
-when they are merely read, such as a ``collections.defaultdict``, which adds
-a missing key on lookup, are not supported: looking up a location, testing a
-value or reading the ``from`` of a ``move`` or ``copy`` can add members to
-them that remain after a rollback. Documents parsed from JSON consist of
-plain ``dict`` and ``list`` objects and are not affected.
+Restoring the document exactly, with the same values, the same order of
+object members and the same container objects, is guaranteed for documents
+made of plain ``dict`` and ``list`` objects, which includes every document
+parsed from JSON. Other containers are restored through their own item
+operations, which is exact as long as these only change the item they are
+given:
+
+* Containers that change when they are merely read, such as a
+  ``collections.defaultdict``, which adds a missing key on lookup, are not
+  supported: looking up a location, testing a value or reading the ``from``
+  of a ``move`` or ``copy`` can add members to them that remain after a
+  rollback.
+* The copy that patches with custom operations are restored from only
+  restores the items of mappings and sequences, not other state that a
+  custom operation can change, such as the attributes of objects in the
+  document or the ``maps`` of a ``collections.ChainMap``.
 
 
 Ignoring Missing Locations
