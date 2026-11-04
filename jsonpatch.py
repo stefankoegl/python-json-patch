@@ -131,7 +131,8 @@ def multidict(ordered_pairs):
 _jsonloads = functools.partial(json.loads, object_pairs_hook=multidict)
 
 
-def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
+def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer,
+                atomic=False):
     """Apply patch operations to the specified JSON document.
 
     :param doc: JSON document, including arrays and scalar values.
@@ -146,6 +147,12 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
 
     :param pointer_cls: JSON pointer class to use.
     :type pointer_cls: Type[JsonPointer]
+
+    :param atomic: With ``in_place=True``, undo the changes of all preceding
+                   operations if an operation fails, so that ``doc`` is
+                   either fully patched or left unchanged. See
+                   :meth:`JsonPatch.apply`.
+    :type atomic: bool
 
     :return: Resulting document, which may have a different type from ``doc``.
     :rtype: object
@@ -168,7 +175,7 @@ def apply_patch(doc, patch, in_place=False, pointer_cls=JsonPointer):
         patch = JsonPatch.from_string(patch, pointer_cls=pointer_cls)
     else:
         patch = JsonPatch(patch, pointer_cls=pointer_cls)
-    return patch.apply(doc, in_place)
+    return patch.apply(doc, in_place, atomic=atomic)
 
 
 def make_patch(src, dst, pointer_cls=JsonPointer, generate_test_ops=False):
@@ -202,6 +209,149 @@ def make_patch(src, dst, pointer_cls=JsonPointer, generate_test_ops=False):
 
     return JsonPatch.from_diff(src, dst, pointer_cls=pointer_cls,
                                generate_test_ops=generate_test_ops)
+
+
+class _NullJournal(object):
+    """Performs the changes of patch operations without recording them."""
+
+    @staticmethod
+    def setitem(container, key, value):
+        container[key] = value
+
+    @staticmethod
+    def delitem(container, key):
+        del container[key]
+
+    @staticmethod
+    def insert(container, index, value):
+        container.insert(index, value)
+
+    @staticmethod
+    def append(container, value):
+        container.append(value)
+
+
+_NO_JOURNAL = _NullJournal()
+
+
+class _Journal(object):
+    """Performs the changes of patch operations and records how to undo them.
+
+    Each undo step refers to the changed container itself rather than to a
+    path. As :meth:`rollback` undoes the steps in reverse order, every
+    container is in the same state as right after its change when the step is
+    undone, so list indices still refer to the same items. Removed and
+    replaced values are kept as they are; they are detached from the
+    document, so restoring them needs no copy.
+
+    Restoring a removed member adds it at the end of its mapping, so the
+    order of the members of each dict that loses one is recorded once, and
+    restored after all steps have been undone. This is limited to dicts
+    (including subclasses such as OrderedDict or Counter), whose order is the
+    order of insertion; moving a member of other mappings, such as a
+    ChainMap, to the end can add it to a different underlying mapping.
+    """
+
+    def __init__(self):
+        self._undo = []
+        # id of a mapping -> (mapping, its keys before the first removal)
+        self._orders = {}
+
+    def setitem(self, container, key, value):
+        if (isinstance(container, MutableMapping) and key not in container or
+                # a ChainMap adds the members of its other mappings that are
+                # set to its first one
+                isinstance(container, collections.ChainMap) and
+                key not in container.maps[0]):
+            container[key] = value
+            self._undo.append((_undo_delitem, container, key))
+        else:
+            old = container[key]
+            container[key] = value
+            self._undo.append((_undo_setitem, container, key, old))
+
+    def delitem(self, container, key):
+        # reading a missing member can create it, e.g. in a defaultdict
+        if isinstance(container, Mapping) and key not in container:
+            raise KeyError(key)
+        old = container[key]
+        if isinstance(container, MutableSequence):
+            del container[key]
+            self._undo.append((_undo_insert, container, key, old))
+        elif isinstance(container, MutableMapping):
+            if (isinstance(container, dict) and
+                    id(container) not in self._orders):
+                self._orders[id(container)] = (container, list(container))
+            del container[key]
+            self._undo.append((_undo_setitem, container, key, old))
+        else:
+            del container[key]
+            self._undo.append((_undo_setitem, container, key, old))
+
+    def insert(self, container, index, value):
+        container.insert(index, value)
+        self._undo.append((_undo_delitem, container, index))
+
+    def append(self, container, value):
+        if (isinstance(container, collections.deque) and
+                container.maxlen is not None and
+                len(container) == container.maxlen):
+            # A full bounded deque drops its first item to make room
+            if container.maxlen:
+                dropped = container[0]
+                container.append(value)
+                self._undo.append((_undo_dropping_append, container, dropped))
+            else:
+                container.append(value)  # it stays empty
+            return
+        container.append(value)
+        # the list may shrink again before this step is undone, but by then
+        # it has the same length as right after the append
+        self._undo.append((_undo_delitem, container, len(container) - 1))
+
+    def rollback(self):
+        """Undoes all recorded changes, the most recent one first."""
+        while self._undo:
+            step = self._undo.pop()
+            step[0](*step[1:])
+        for mapping, keys in self._orders.values():
+            _reorder(mapping, keys)
+        self._orders.clear()
+
+
+def _undo_setitem(container, key, value):
+    container[key] = value
+
+
+def _undo_delitem(container, key):
+    del container[key]
+
+
+def _undo_insert(container, index, value):
+    container.insert(index, value)
+
+
+def _undo_dropping_append(deque, dropped):
+    del deque[-1]
+    deque.appendleft(dropped)
+
+
+def _reorder(mapping, keys):
+    """Restores the order of the members of a mapping after a rollback.
+
+    ``keys`` are its keys before its first removal. They can include
+    members that the patch added before, and that the rollback has removed
+    again; the original members appear in it in their original order.
+    """
+    keys = [key for key in keys if key in mapping]
+    start = next((index for index, (key, original)
+                  in enumerate(zip(mapping, keys)) if key != original),
+                 len(keys))
+    # Move the members from the first misplaced one on to the end. Unlike
+    # update(), which e.g. a Counter uses to add counts, this only uses the
+    # operations the rollback itself uses
+    for key in keys[start:]:
+        mapping[key] = mapping.pop(key)
 
 
 class PatchOperation(object):
@@ -243,7 +393,15 @@ class PatchOperation(object):
             raise InvalidJsonPatch("Invalid 'from'", op=self)
 
     def apply(self, obj):
-        """Abstract method that applies a patch operation to the specified object."""
+        """Applies the patch operation to the specified object."""
+        return self._apply(obj, _NO_JOURNAL)
+
+    def _apply(self, obj, journal):
+        """Applies the operation, making all changes through ``journal``, so
+        that :meth:`JsonPatch.apply` can undo them with ``atomic=True``.
+
+        Subclasses either implement this method or override :meth:`apply`.
+        """
         raise NotImplementedError('should implement the patch operation.')
 
     def __hash__(self):
@@ -287,7 +445,7 @@ class PatchOperation(object):
 class RemoveOperation(PatchOperation):
     """Removes an object property or an array element."""
 
-    def apply(self, obj):
+    def _apply(self, obj, journal):
         subobj, part = self.pointer.to_last(obj)
 
         if part is None:
@@ -297,7 +455,7 @@ class RemoveOperation(PatchOperation):
             raise JsonPointerException("invalid array index '{0}'".format(part))
 
         try:
-            del subobj[part]
+            journal.delitem(subobj, part)
         except (KeyError, IndexError):
             msg = "can't remove a non-existent object '{0}'".format(part)
             raise JsonPatchPathNotFound(msg, op=self)
@@ -310,7 +468,7 @@ class RemoveOperation(PatchOperation):
 class AddOperation(PatchOperation):
     """Adds an object property or an array element."""
 
-    def apply(self, obj):
+    def _apply(self, obj, journal):
         try:
             value = self.operation["value"]
         except KeyError:
@@ -319,9 +477,13 @@ class AddOperation(PatchOperation):
 
         # Insert a copy so the document does not share mutable values with
         # the patch; otherwise later operations would modify the patch itself.
-        return self._add(obj, copy.deepcopy(value))
+        value = copy.deepcopy(value)
+        if journal is _NO_JOURNAL:
+            # subclasses may override _add without the journal parameter
+            return self._add(obj, value)
+        return self._add(obj, value, journal)
 
-    def _add(self, obj, value):
+    def _add(self, obj, value, journal=_NO_JOURNAL):
         subobj, part = self.pointer.to_last(obj)
 
         if part is None:
@@ -329,16 +491,16 @@ class AddOperation(PatchOperation):
 
         if isinstance(subobj, MutableSequence):
             if part == '-':
-                subobj.append(value)  # pylint: disable=E1103
+                journal.append(subobj, value)
 
             elif part > len(subobj) or part < 0:
                 raise JsonPatchConflict("can't insert outside of list", op=self)
 
             else:
-                subobj.insert(part, value)  # pylint: disable=E1103
+                journal.insert(subobj, part, value)
 
         elif isinstance(subobj, MutableMapping):
-            subobj[part] = value
+            journal.setitem(subobj, part, value)
 
         else:
             raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part), op=self)
@@ -348,7 +510,7 @@ class AddOperation(PatchOperation):
 class ReplaceOperation(PatchOperation):
     """Replaces an object property or an array element by a new value."""
 
-    def apply(self, obj):
+    def _apply(self, obj, journal):
         try:
             value = self.operation["value"]
         except KeyError:
@@ -379,14 +541,14 @@ class ReplaceOperation(PatchOperation):
         else:
             raise JsonPatchConflict("unable to fully resolve json pointer {0}, part {1}".format(self.location, part), op=self)
 
-        subobj[part] = value
+        journal.setitem(subobj, part, value)
         return obj
 
 
 class MoveOperation(PatchOperation):
     """Moves an object property or an array element to a new location."""
 
-    def apply(self, obj):
+    def _apply(self, obj, journal):
         from_ptr = self._from_pointer()
 
         # Checked before anything is resolved, as removing an array element
@@ -414,14 +576,14 @@ class MoveOperation(PatchOperation):
             obj = RemoveOperation({
                 'op': 'remove',
                 'path': self.operation['from']
-            }, pointer_cls=self.pointer_cls).apply(obj)
+            }, pointer_cls=self.pointer_cls)._apply(obj, journal)
 
             # the value has been detached from its old location, so no copy
             # needed
             obj = AddOperation({
                 'op': 'add',
                 'path': self.location,
-            }, pointer_cls=self.pointer_cls)._add(obj, value)
+            }, pointer_cls=self.pointer_cls)._add(obj, value, journal)
         except JsonPatchException as ex:
             # report the failure against this operation rather than the
             # internal, synthetic remove / add operations
@@ -459,7 +621,7 @@ class MoveOperation(PatchOperation):
 class TestOperation(PatchOperation):
     """Test value by specified location."""
 
-    def apply(self, obj):
+    def _apply(self, obj, journal):
         try:
             subobj, part = self.pointer.to_last(obj)
             if part is None:
@@ -486,7 +648,7 @@ class TestOperation(PatchOperation):
 class CopyOperation(PatchOperation):
     """ Copies an object property or an array element to a new location """
 
-    def apply(self, obj):
+    def _apply(self, obj, journal):
         from_ptr = self._from_pointer()
 
         subobj, part = _to_existing_last(from_ptr, obj)
@@ -500,7 +662,7 @@ class CopyOperation(PatchOperation):
             obj = AddOperation({
                 'op': 'add',
                 'path': self.location,
-            }, pointer_cls=self.pointer_cls)._add(obj, value)
+            }, pointer_cls=self.pointer_cls)._add(obj, value, journal)
         except JsonPatchException as ex:
             # report the failure against this operation rather than the
             # internal, synthetic add operation
@@ -508,6 +670,57 @@ class CopyOperation(PatchOperation):
             raise
 
         return obj
+
+
+def _restore(obj, saved):
+    """Restores the contents of a document from a copy of it.
+
+    Only the items of mappings and sequences are restored, not other state
+    that a custom operation can change, such as attributes or the list of
+    mappings of a ChainMap.
+    """
+    if isinstance(obj, collections.ChainMap):
+        # restore each mapping, so that none takes over another's members
+        for mapping, saved_mapping in zip(obj.maps, saved.maps):
+            _restore(mapping, saved_mapping)
+    elif isinstance(obj, MutableMapping):
+        obj.clear()
+        obj.update(saved)
+    elif isinstance(obj, MutableSequence):
+        # not obj[:] = saved, as e.g. deque doesn't support slices
+        obj.clear()
+        obj.extend(saved)
+    # Immutable containers can't have changed, but their children can
+    elif isinstance(obj, Mapping):
+        for key in saved:
+            _restore(obj[key], saved[key])
+    elif isinstance(obj, Sequence) and not isinstance(obj, (str, bytes)):
+        for item, saved_item in zip(obj, saved):
+            _restore(item, saved_item)
+
+
+_JOURNALED_OPERATIONS = (
+    RemoveOperation, AddOperation, ReplaceOperation, MoveOperation,
+    TestOperation, CopyOperation,
+)
+
+
+def _supports_journal(operation):
+    """Whether all changes of ``operation`` go through its journal, which is
+    the case for the built-in operations unless a subclass, or the operation
+    object itself, changes how they are applied."""
+    overridden = getattr(operation, '__dict__', {})
+    if any(name in overridden for name in ('apply', '_apply', '_add')):
+        return False
+    cls = type(operation)
+    if getattr(cls, 'apply', None) is not PatchOperation.apply:
+        return False
+    if not any(getattr(cls, '_apply', None) is base._apply
+               for base in _JOURNALED_OPERATIONS):
+        return False
+    if isinstance(operation, AddOperation) and cls._add is not AddOperation._add:
+        return False
+    return True
 
 
 class JsonPatch(object):
@@ -705,7 +918,7 @@ class JsonPatch(object):
     def _ops(self):
         return tuple(map(self._get_operation, self.patch))
 
-    def apply(self, obj, in_place=False):
+    def apply(self, obj, in_place=False, atomic=False):
         """Applies the patch to a given object.
 
         :param obj: JSON document, including arrays and scalar values.
@@ -715,6 +928,21 @@ class JsonPatch(object):
                          specified `obj` or to its copy.
         :type in_place: bool
 
+        :param atomic: With ``in_place=True``, undo the changes of all
+                       preceding operations if an operation fails, so that
+                       `obj` is either fully patched or left unchanged. This
+                       does not copy the document; it only keeps the values
+                       that the patch removes or replaces until it is
+                       applied. Patches with custom operations, whose
+                       changes can't be undone, copy the document instead.
+                       Exact restoration is guaranteed for documents of
+                       plain dicts and lists; members that containers such
+                       as ``defaultdict`` add when they are only read are
+                       not removed again (see the tutorial). Without
+                       ``in_place=True``, `obj` is never changed, so this
+                       has no effect.
+        :type atomic: bool
+
         :return: Resulting document. Use this return value even with
                  ``in_place=True``, because a root replacement returns a new
                  value rather than modifying the original container.
@@ -722,9 +950,35 @@ class JsonPatch(object):
 
         if not in_place:
             obj = copy.deepcopy(obj)
+            atomic = False
 
-        for operation in self._ops:
-            obj = operation.apply(obj)
+        ops = self._ops
+
+        if not atomic:
+            for operation in ops:
+                obj = operation.apply(obj)
+            return obj
+
+        if not all(map(_supports_journal, ops)):
+            # The changes of custom operations can't be undone, so restore
+            # the document from a copy instead
+            saved = copy.deepcopy(obj)
+            original = obj
+            try:
+                for operation in ops:
+                    obj = operation.apply(obj)
+            except BaseException:
+                _restore(original, saved)
+                raise
+            return obj
+
+        journal = _Journal()
+        try:
+            for operation in ops:
+                obj = operation._apply(obj, journal)
+        except BaseException:
+            journal.rollback()
+            raise
 
         return obj
 

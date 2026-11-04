@@ -214,6 +214,63 @@ def docs_with_patches(draw):
 patches = docs_with_patches().map(lambda case: case[1])
 
 
+def fails(doc, operation):
+    """ Whether applying operation to doc fails """
+    try:
+        jsonpatch.apply_patch(doc, [operation])
+    except (jsonpatch.JsonPatchException, JsonPointerException):
+        return True
+    return False
+
+
+@st.composite
+def changing_operations(draw, doc):
+    """ An operation that changes the container doc, and that refers to
+    existing locations, so that it is likely to succeed """
+    sources = [parts for parts in locations(doc) if parts]
+    op = draw(st.sampled_from(
+        ['add', 'remove', 'replace', 'move', 'copy'] if sources else ['add']))
+    if op in ('remove', 'replace'):
+        operation = {'op': op, 'path': to_pointer(draw(existing_locations(doc)))}
+    else:
+        parts, key = draw(insert_locations(doc))
+        operation = {'op': op, 'path': to_pointer(parts + [key])}
+        if op in ('move', 'copy'):
+            operation['from'] = to_pointer(draw(existing_locations(doc)))
+    if op in ('add', 'replace'):
+        operation['value'] = draw(json_docs)
+    return operation
+
+
+@st.composite
+def docs_with_failing_patches(draw):
+    """ A document and a patch whose operations succeed except for the last
+    one, so that applying it atomically has to undo all their changes.
+
+    Each operation is drawn against the document as the preceding ones left
+    it, so later operations act on what earlier ones added, moved or
+    replaced. """
+    doc = draw(st.one_of(nonempty_containers, json_docs))
+    current = doc
+    patch = []
+    for _ in range(draw(st.integers(min_value=1, max_value=8))):
+        if isinstance(current, (dict, list)):
+            operation = draw(st.one_of(changing_operations(current),
+                                       operations(current)))
+        else:
+            operation = draw(operations(current))
+        try:
+            current = jsonpatch.apply_patch(current, [operation])
+        except (jsonpatch.JsonPatchException, JsonPointerException):
+            continue
+        patch.append(operation)
+    patch.append(draw(st.one_of(
+        st.just({'op': 'remove', 'path': ''}),
+        operations(current).filter(lambda op: fails(current, op)),
+    )))
+    return doc, patch
+
+
 @st.composite
 def existing_locations(draw, doc):
     """ The parts of a location in doc other than the root """
@@ -407,6 +464,49 @@ class ApplyPatchProperties(unittest.TestCase):
             outcome(jsonpatch.apply_patch, doc, copy.deepcopy(patch)),
             outcome(jsonpatch.apply_patch, copy.deepcopy(doc),
                     copy.deepcopy(patch), in_place=True))
+
+    @given(docs_with_patches())
+    # a member added before the first removal from the same object
+    @example(case=({'a': 1, 'b': 2},
+                   [{'op': 'add', 'path': '/c', 'value': 3},
+                    {'op': 'remove', 'path': '/a'},
+                    {'op': 'remove', 'path': '/missing'}]))
+    def test_atomic_in_place_gives_same_result(self, case):
+        doc, patch = case
+        saved = copy.deepcopy(doc)
+        expected = outcome(jsonpatch.apply_patch, doc, copy.deepcopy(patch))
+        res = outcome(jsonpatch.apply_patch, doc, copy.deepcopy(patch),
+                      in_place=True, atomic=True)
+        assert_same_outcome(expected, res)
+        if res[0] == 'error':
+            # unchanged, including the order of object members
+            assert json.dumps(doc) == json.dumps(saved), (doc, saved)
+
+    @given(docs_with_failing_patches())
+    def test_atomic_rollback_restores_document(self, case):
+        doc, patch = case
+        saved = json.dumps(doc)
+        originals = list(containers(doc))
+        expected = jsonpatch.apply_patch(doc, patch[:-1])
+
+        error = outcome(jsonpatch.apply_patch, doc, patch)
+        assert error[0] == 'error', error
+        assert_same_outcome(
+            outcome(jsonpatch.apply_patch, doc, copy.deepcopy(patch),
+                    in_place=True, atomic=True),
+            error)
+        # unchanged, including the order of object members, and made up of
+        # the same containers as before
+        assert json.dumps(doc) == saved, (doc, saved)
+        restored = list(containers(doc))
+        assert len(restored) == len(originals)
+        assert all(a is b for a, b in zip(restored, originals))
+
+        # without the failing operation, the patch applies as on a copy
+        assert_json_equal(
+            jsonpatch.apply_patch(doc, copy.deepcopy(patch[:-1]),
+                                  in_place=True, atomic=True),
+            expected)
 
     @given(docs_with_patches())
     def test_patch_as_string_gives_same_result(self, case):

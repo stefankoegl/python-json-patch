@@ -44,6 +44,7 @@ def apply_patch(
     patch: str | bytes | Iterable[_Operation],
     in_place: bool = False,
     pointer_cls: type[JsonPointer] = ...,
+    atomic: bool = False,
 ) -> Any: ...
 def make_patch(
     src: Any,
@@ -119,7 +120,7 @@ class JsonPatch:
         generate_test_ops: bool = False,
     ) -> Self: ...
     def to_string(self, dumps: Callable[[Any], str] | None = None) -> str: ...
-    def apply(self, obj: Any, in_place: bool = False) -> Any: ...
+    def apply(self, obj: Any, in_place: bool = False, atomic: bool = False) -> Any: ...
 
 # Computes the operations for JsonPatch.from_diff; mostly an implementation
 # detail, so its internal methods are typed loosely.
