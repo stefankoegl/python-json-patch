@@ -609,6 +609,36 @@ class CustomTypesJsonPatch(jsonpatch.JsonPatch):
 
 class MakePatchTestCase(unittest.TestCase):
 
+    def test_generated_values_do_not_alias_target(self):
+        documents = [
+            ({}, {'a': {'nested': [1]}}),
+            ({'a': 0}, {'a': {'nested': [1]}}),
+            ([], [{'nested': [1]}]),
+            ([0], [{'nested': [1]}]),
+            (None, {'a': {'nested': [1]}}),
+        ]
+        for src, dst in documents:
+            for optimization in (True, False):
+                with self.subTest(src=src, optimization=optimization):
+                    target = copy.deepcopy(dst)
+                    patch = jsonpatch.JsonPatch.from_diff(
+                        src, target, optimization=optimization)
+                    serialized = patch.to_string()
+                    value = target[0] if isinstance(target, list) else target['a']
+                    value['nested'].append(2)
+
+                    self.assertEqual(patch.to_string(), serialized)
+                    self.assertEqual(patch.apply(src), dst)
+
+    def test_editing_generated_values_does_not_change_target(self):
+        for src in ({}, {'a': 0}):
+            with self.subTest(src=src):
+                dst = {'a': {'nested': [1]}}
+                patch = jsonpatch.make_patch(src, dst)
+                patch.patch[0]['value']['nested'].append(2)
+                self.assertEqual(dst, {'a': {'nested': [1]}})
+                self.assertEqual(patch.apply(src), {'a': {'nested': [1, 2]}})
+
     def test_apply_patch_to_copy(self):
         src = {'foo': 'bar', 'boo': 'qux'}
         dst = {'baz': 'qux', 'foo': 'boo'}
@@ -874,8 +904,13 @@ class MakePatchTestCase(unittest.TestCase):
         removed and moved"""
         value = []
         value.append(value)
-        self.assertEqual(jsonpatch.make_patch({}, {'a': value}).patch,
-                         [{'op': 'add', 'path': '/a', 'value': value}])
+        patch = jsonpatch.make_patch({}, {'a': value}).patch
+        self.assertEqual(len(patch), 1)
+        self.assertEqual(patch[0]['op'], 'add')
+        self.assertEqual(patch[0]['path'], '/a')
+        copied = patch[0]['value']
+        self.assertIsNot(copied, value)
+        self.assertIs(copied[0], copied)
         self.assertEqual(jsonpatch.make_patch({'a': [value]}, {'a': []}).patch,
                          [{'op': 'remove', 'path': '/a/0'}])
         self.assertEqual(jsonpatch.make_patch({'a': value}, {'b': value}).patch,
