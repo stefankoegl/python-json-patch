@@ -869,6 +869,9 @@ class JsonPatch(object):
         one. The resulting patch transforms `src` into `dst`, so it has to be
         applied to `src` (or to a document equal to it).
 
+        Values in the patch are copied, so changing either input document
+        afterwards does not change the generated patch.
+
         :param src: Source JSON document, including arrays and scalar values.
         :type src: object
 
@@ -906,7 +909,7 @@ class JsonPatch(object):
                               optimization=optimization,
                               generate_test_ops=generate_test_ops)
         builder._compare_values((), None, src, dst)
-        ops = list(builder.execute())
+        ops = copy.deepcopy(list(builder.execute()))
         return cls(ops, pointer_cls=pointer_cls)
 
     def to_string(self, dumps=None):
