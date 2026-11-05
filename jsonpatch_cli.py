@@ -8,6 +8,7 @@ import json
 import jsonpatch
 import tempfile
 import argparse
+from contextlib import ExitStack
 
 
 jsondiff_parser = argparse.ArgumentParser(
@@ -35,8 +36,12 @@ def jsondiff_main():
 def diff_files():
     """ Diffs two JSON files and prints a patch """
     args = jsondiff_parser.parse_args()
-    doc1 = json.load(args.FILE1)
-    doc2 = json.load(args.FILE2)
+    with ExitStack() as inputs:
+        for stream in (args.FILE1, args.FILE2):
+            if stream is not sys.stdin:
+                inputs.enter_context(stream)
+        doc1 = json.load(args.FILE1)
+        doc2 = json.load(args.FILE2)
     patch = jsonpatch.make_patch(doc1, doc2, generate_test_ops=args.test_ops)
     if patch.patch:
         print(json.dumps(patch.patch, indent=args.indent, ensure_ascii=not(args.preserve_unicode)))

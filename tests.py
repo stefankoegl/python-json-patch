@@ -2746,6 +2746,63 @@ class CommandLineTests(ScriptRunner, unittest.TestCase):
         res = self.run_script('jsondiff', src, dst)
         self.assertEqual((res.returncode, res.stdout), (0, ''), res.stderr)
 
+    def test_jsondiff_closes_inputs(self):
+        for target in (1, 2):
+            with self.subTest(target=target):
+                src = self.write('a.json', {'a': 1})
+                dst = self.write('b.json', {'a': target})
+                parser = jsonpatch_cli.jsondiff_parser
+                args = parser.parse_args([src, dst])
+                self.addCleanup(args.FILE1.close)
+                self.addCleanup(args.FILE2.close)
+                output = io.StringIO()
+                with mock.patch.object(parser, 'parse_args', return_value=args), \
+                        contextlib.redirect_stdout(output):
+                    if target == 1:
+                        jsonpatch_cli.diff_files()
+                        self.assertEqual(output.getvalue(), '')
+                    else:
+                        with self.assertRaises(SystemExit) as caught:
+                            jsonpatch_cli.diff_files()
+                        self.assertEqual(caught.exception.code, 1)
+                        self.assertEqual(jsonpatch.apply_patch({'a': 1}, json.loads(output.getvalue())),
+                                         {'a': target})
+                self.assertTrue(args.FILE1.closed)
+                self.assertTrue(args.FILE2.closed)
+
+    def test_jsondiff_closes_both_inputs_after_parse_error(self):
+        for invalid in (0, 1):
+            with self.subTest(invalid=invalid):
+                paths = [self.write('a.json', {}), self.write('b.json', {})]
+                with open(paths[invalid], 'w', encoding='utf-8') as f:
+                    f.write('{')
+                parser = jsonpatch_cli.jsondiff_parser
+                args = parser.parse_args(paths)
+                self.addCleanup(args.FILE1.close)
+                self.addCleanup(args.FILE2.close)
+                with mock.patch.object(parser, 'parse_args', return_value=args):
+                    with self.assertRaises(json.JSONDecodeError):
+                        jsonpatch_cli.diff_files()
+                self.assertTrue(args.FILE1.closed)
+                self.assertTrue(args.FILE2.closed)
+
+    def test_jsondiff_keeps_stdin_open(self):
+        for stdin_first in (False, True):
+            with self.subTest(stdin_first=stdin_first):
+                path = self.write('a.json', {'a': 1})
+                stdin = io.StringIO('{"a": 1}')
+                self.addCleanup(stdin.close)
+                parser = jsonpatch_cli.jsondiff_parser
+                with mock.patch.object(sys, 'stdin', stdin):
+                    args = parser.parse_args(['-', path] if stdin_first else [path, '-'])
+                    owned = args.FILE2 if stdin_first else args.FILE1
+                    self.addCleanup(owned.close)
+                    with mock.patch.object(parser, 'parse_args', return_value=args), \
+                            contextlib.redirect_stdout(io.StringIO()):
+                        jsonpatch_cli.diff_files()
+                self.assertFalse(stdin.closed)
+                self.assertTrue(owned.closed)
+
     def test_jsondiff_indent(self):
         src = self.write('a.json', {'a': 1})
         dst = self.write('b.json', {'b': 1})
