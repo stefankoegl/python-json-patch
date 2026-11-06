@@ -3309,6 +3309,267 @@ class DocumentationTests(ScriptRunner, unittest.TestCase):
                 self.assertEqual(res.stdout, expected)
 
 
+class AppendOperationTests(unittest.TestCase):
+
+    def test_appends_at_existing_string_locations(self):
+        cases = [
+            ({'message': 'Hello'}, '/message', ' World', {'message': 'Hello World'}),
+            ({'a': {'b': ''}}, '/a/b', '\ud55c\uae00', {'a': {'b': '\ud55c\uae00'}}),
+            (['Hello'], '/0', '!', ['Hello!']),
+            ({'a/b~c': 'Hello'}, '/a~1b~0c', '!', {'a/b~c': 'Hello!'}),
+            ({'message': 'Hello'}, '/message', '', {'message': 'Hello'}),
+            ({'-': 'a'}, '/-', 'b', {'-': 'ab'}),
+        ]
+        for doc, path, value, expected in cases:
+            with self.subTest(path=path, value=value):
+                original = copy.deepcopy(doc)
+                operations = [{'op': 'append', 'path': path, 'value': value}]
+                patch = jsonpatch.JsonPatchWithAppend(operations)
+                self.assertEqual(patch.apply(doc), expected)
+                self.assertEqual(doc, original)
+                self.assertEqual(patch.apply(doc, in_place=True), expected)
+                self.assertEqual(operations, [{'op': 'append', 'path': path, 'value': value}])
+
+    def test_rejects_non_string_values_and_targets(self):
+        for value in (None, 1, True, [], {}, b'bytes'):
+            with self.subTest(value=value):
+                patch = jsonpatch.JsonPatchWithAppend([
+                    {'op': 'append', 'path': '/message', 'value': value},
+                ])
+                with self.assertRaises(jsonpatch.JsonPatchConflict) as raised:
+                    patch.apply({'message': 'Hello'})
+                self.assertIsInstance(raised.exception.op, jsonpatch.AppendOperation)
+        for target in (None, 1, True, [], {}, b'bytes'):
+            with self.subTest(target=target):
+                patch = jsonpatch.JsonPatchWithAppend([
+                    {'op': 'append', 'path': '/message', 'value': '!'},
+                ])
+                with self.assertRaises(jsonpatch.JsonPatchConflict):
+                    patch.apply({'message': target})
+
+    def test_reports_missing_value(self):
+        patch = jsonpatch.JsonPatchWithAppend([{'op': 'append', 'path': '/message'}])
+        with self.assertRaises(jsonpatch.InvalidJsonPatch) as raised:
+            patch.apply({'message': 'Hello'})
+        self.assertIsInstance(raised.exception.op, jsonpatch.AppendOperation)
+
+    def test_rejects_root_append(self):
+        patch = jsonpatch.JsonPatchWithAppend([
+            {'op': 'append', 'path': '', 'value': '!'},
+        ])
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            patch.apply('Hello')
+
+    def test_reports_missing_paths(self):
+        for doc, path in (({}, '/missing'), ({}, '/missing/child'),
+                          (['a'], '/1'), (['a'], '/-1'), (['a'], '/-')):
+            with self.subTest(path=path):
+                patch = jsonpatch.JsonPatchWithAppend([
+                    {'op': 'append', 'path': path, 'value': '!'},
+                ])
+                with self.assertRaises(jsonpatch.JsonPatchPathNotFound) as raised:
+                    patch.apply(doc)
+                self.assertIsInstance(raised.exception.op, jsonpatch.AppendOperation)
+
+    def test_rejects_immutable_container(self):
+        # a tuple can be indexed like an array, but not be modified
+        patch = jsonpatch.JsonPatchWithAppend([
+            {'op': 'append', 'path': '/foo/0', 'value': '!'},
+        ])
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            patch.apply({'foo': ('Hello',)})
+
+
+class AppendInterfaceTests(unittest.TestCase):
+
+    def test_preserves_standard_operations(self):
+        operations = [
+            {'op': 'replace', 'path': '/message', 'value': 'Hello', 'v': 'ignored'},
+            {'op': 'append', 'path': '/message', 'value': '!'},
+            {'op': 'test', 'path': '/message', 'value': 'Hello!'},
+        ]
+        self.assertEqual(jsonpatch.JsonPatchWithAppend(operations).apply({'message': ''}),
+                         {'message': 'Hello!'})
+        with self.assertRaises(jsonpatch.InvalidJsonPatch):
+            jsonpatch.JsonPatch([{'op': 'append', 'path': '/message', 'value': '!'}])
+
+    def test_rejects_nonstandard_notation(self):
+        first = {'op': 'append', 'path': '/message', 'value': 'Hello'}
+        for operations in ([{'o': 'append', 'p': '/message', 'v': '!'}],
+                           [first, {'v': '!'}], [first, {'value': '!'}]):
+            with self.subTest(operations=operations):
+                with self.assertRaises(jsonpatch.InvalidJsonPatch):
+                    jsonpatch.JsonPatchWithAppend(operations)
+
+    def test_inherited_serialization_and_generator_reuse(self):
+        operations = [{'op': 'append', 'path': '/message', 'value': '!'}]
+        patch = jsonpatch.JsonPatchWithAppend(op for op in operations)
+        restored = jsonpatch.JsonPatchWithAppend.from_string(patch.to_string())
+        self.assertEqual(list(patch), operations)
+        self.assertEqual(json.loads(patch.to_string()), operations)
+        self.assertEqual(patch, restored)
+        self.assertEqual(hash(patch), hash(restored))
+        for _ in range(2):
+            self.assertEqual(patch.apply({'message': 'Hello'}), {'message': 'Hello!'})
+
+    def test_custom_loader_pointer_and_subclass(self):
+        calls = []
+
+        def loads(text):
+            calls.append(text)
+            return json.loads(text)
+
+        class CustomPatch(jsonpatch.JsonPatchWithAppend):
+            json_loader = staticmethod(loads)
+
+        text = '[{"op":"append","path":"/message","value":"!"}]'
+        for kwargs in ({}, {'loads': loads}):
+            patch = CustomPatch.from_string(text, pointer_cls=CustomJsonPointer, **kwargs)
+            self.assertIsInstance(patch, CustomPatch)
+            self.assertIsInstance(patch._ops[0].pointer, CustomJsonPointer)
+            self.assertEqual(patch.apply({'message': 'Hello'}), {'message': 'Hello!'})
+        self.assertEqual(calls, [text, text])
+
+
+class AppendAtomicTests(unittest.TestCase):
+
+    def test_atomic_failure_restores_mixed_operations(self):
+        for doc, path in (({'message': 'Hello'}, '/message'), (['Hello'], '/0')):
+            for failure in ({'op': 'test', 'path': path, 'value': 'wrong'},
+                            {'op': 'remove', 'path': '/99' if isinstance(doc, list) else '/missing'}):
+                with self.subTest(doc=doc, failure=failure):
+                    original = copy.deepcopy(doc)
+                    patch = jsonpatch.JsonPatchWithAppend([
+                        {'op': 'append', 'path': path, 'value': '!'}, failure,
+                    ])
+                    with self.assertRaises(jsonpatch.JsonPatchException) as raised:
+                        patch.apply(doc, in_place=True, atomic=True)
+                    self.assertEqual(doc, original)
+                    self.assertEqual(raised.exception.op.operation, failure)
+
+    def test_non_atomic_failure_keeps_previous_changes(self):
+        doc = {'message': 'Hello'}
+        patch = jsonpatch.JsonPatchWithAppend([
+            {'op': 'append', 'path': '/message', 'value': '!'},
+            {'op': 'test', 'path': '/message', 'value': 'wrong'},
+        ])
+        with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+            patch.apply(doc, in_place=True)
+        self.assertEqual(doc, {'message': 'Hello!'})
+
+    def test_atomic_success_and_append_failure(self):
+        doc = {'message': 'Hello'}
+        patch = jsonpatch.JsonPatchWithAppend([
+            {'op': 'append', 'path': '/message', 'value': '!'},
+        ])
+        self.assertIs(patch.apply(doc, in_place=True, atomic=True), doc)
+        self.assertEqual(doc, {'message': 'Hello!'})
+        patch = jsonpatch.JsonPatchWithAppend([
+            {'op': 'replace', 'path': '/message', 'value': 1},
+            {'op': 'append', 'path': '/message', 'value': '!'},
+        ])
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            patch.apply(doc, in_place=True, atomic=True)
+        self.assertEqual(doc, {'message': 'Hello!'})
+
+
+class AppendDiffTests(unittest.TestCase):
+
+    def test_generates_only_the_string_suffix(self):
+        for optimization in (True, False):
+            patch = jsonpatch.JsonPatchWithAppend.from_diff(
+                {'message': 'Hello'}, {'message': 'Hello World'}, optimization=optimization)
+            self.assertEqual(patch.patch, [
+                {'op': 'append', 'path': '/message', 'value': ' World'},
+            ])
+            self.assertEqual(patch.apply({'message': 'Hello'}), {'message': 'Hello World'})
+
+    def test_preserves_root_array_and_non_append_changes(self):
+        cases = [
+            ('Hello', 'Hello World', [{'op': 'replace', 'path': '', 'value': 'Hello World'}]),
+            (['Hello'], ['Hello World'], [{'op': 'replace', 'path': '/0', 'value': 'Hello World'}]),
+            ({'m': 'Hello'}, {'m': 'Hello'}, []),
+            ({'m': 'Hello'}, {'m': 'He'}, [{'op': 'replace', 'path': '/m', 'value': 'He'}]),
+            ({'m': 'Hello'}, {'m': 'Hallo'}, [{'op': 'replace', 'path': '/m', 'value': 'Hallo'}]),
+            ({'m': 'Hello'}, {'m': 1}, [{'op': 'replace', 'path': '/m', 'value': 1}]),
+            ({}, {'m': 'Hello'}, [{'op': 'add', 'path': '/m', 'value': 'Hello'}]),
+        ]
+        for src, dst, expected in cases:
+            with self.subTest(src=src, dst=dst):
+                patch = jsonpatch.JsonPatchWithAppend.from_diff(src, dst)
+                self.assertEqual(patch.patch, expected)
+                self.assertEqual(patch.apply(src), dst)
+
+    def test_nested_and_escaped_locations(self):
+        for src, dst, path in (
+                ({'a/b~c': ''}, {'a/b~c': '\ud55c\uae00'}, '/a~1b~0c'),
+                ([{'message': 'Hello'}], [{'message': 'Hello!'}], '/0/message'),
+                ({'a': {'m': 'Hello'}}, {'a': {'m': 'Hello!'}}, '/a/m')):
+            with self.subTest(path=path):
+                patch = jsonpatch.JsonPatchWithAppend.from_diff(src, dst)
+                self.assertEqual(patch.patch[0]['op'], 'append')
+                self.assertEqual(patch.patch[0]['path'], path)
+                self.assertEqual(patch.apply(src), dst)
+
+    def test_generated_tests_guard_the_original_text(self):
+        patch = jsonpatch.JsonPatchWithAppend.from_diff(
+            {'m': 'Hello'}, {'m': 'Hello!'}, generate_test_ops=True)
+        self.assertEqual(patch.patch, [
+            {'op': 'test', 'path': '/m', 'value': 'Hello'},
+            {'op': 'append', 'path': '/m', 'value': '!'},
+        ])
+        self.assertEqual(patch.apply({'m': 'Hello'}), {'m': 'Hello!'})
+        with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+            patch.apply({'m': 'Other'})
+
+    def test_preserves_options_subclasses_and_copied_values(self):
+        calls = []
+
+        def dumps(value):
+            calls.append(value)
+            return json.dumps(value)
+
+        class CustomPatch(jsonpatch.JsonPatchWithAppend):
+            json_dumper = staticmethod(dumps)
+
+        for kwargs in ({}, {'dumps': dumps}):
+            for optimization in (True, False):
+                src = {'m': 'Hello', 'old': 1}
+                dst = {'m': 'Hello!', 'new': 1, 'items': [2]}
+                patch = CustomPatch.from_diff(src, dst, optimization=optimization,
+                                             pointer_cls=CustomJsonPointer, **kwargs)
+                self.assertIsInstance(patch, CustomPatch)
+                self.assertEqual(patch.apply(src), dst)
+                self.assertEqual(any(op['op'] == 'move' for op in patch), optimization)
+                self.assertTrue(all(isinstance(op.pointer, CustomJsonPointer) for op in patch._ops))
+                dst['items'].append(3)
+                self.assertEqual(patch.apply(src)['items'], [2])
+        self.assertTrue(calls)
+
+
+class StandardAppendIsolationTests(unittest.TestCase):
+
+    def test_standard_entrypoints_reject_append(self):
+        operations = [{'op': 'append', 'path': '/message', 'value': ' World'}]
+        for create in (lambda: jsonpatch.JsonPatch(operations),
+                       lambda: jsonpatch.JsonPatch.from_string(json.dumps(operations)),
+                       lambda: jsonpatch.apply_patch({'message': 'Hello'}, operations)):
+            with self.assertRaises(jsonpatch.InvalidJsonPatch):
+                create()
+
+    def test_standard_diff_replaces_strings(self):
+        patch = jsonpatch.make_patch({'message': 'Hello'}, {'message': 'Hello World'})
+        self.assertEqual(patch.patch, [
+            {'op': 'replace', 'path': '/message', 'value': 'Hello World'},
+        ])
+
+    def test_additional_members_are_not_aliases(self):
+        operations = [{'op': 'replace', 'path': '/message',
+                       'value': 'canonical', 'v': 'ignored'}]
+        self.assertEqual(jsonpatch.JsonPatch(operations).apply({'message': 'Hello'}),
+                         {'message': 'canonical'})
+
+
 if __name__ == '__main__':
     modules = ['jsonpatch']
 
@@ -3337,6 +3598,11 @@ if __name__ == '__main__':
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(PathNotFoundTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CommandLineTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(DocumentationTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(StandardAppendIsolationTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(AppendOperationTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(AppendInterfaceTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(AppendAtomicTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(AppendDiffTests))
         return suite
 
 

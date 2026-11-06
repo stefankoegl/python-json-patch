@@ -21,6 +21,16 @@ See source code for examples
 * CI: https://github.com/stefankoegl/python-json-patch/actions
 * Coveralls: https://coveralls.io/github/stefankoegl/python-json-patch
 
+String append extension
+-----------------------
+`JsonPatchWithAppend` is a drop-in replacement for `JsonPatch` with a
+non-RFC string `append` operation. Its `from_diff()` method sends only the
+new suffix when an object member's string grows. `JsonPatch`, `make_patch()`
+and `apply_patch()` retain their standard RFC 6902 behavior.
+
+See the [tutorial](doc/tutorial.rst#string-append-extension) for examples.
+Both sender and receiver must support the extension.
+
 Type hints
 ----------
 jsonpatch ships type stubs (in the `jsonpatch-stubs` directory, as

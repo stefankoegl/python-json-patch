@@ -694,6 +694,26 @@ class PatchOperationMachine(RuleBasedStateMachine):
                           self.doc)
 
 
+class AppendDiffProperties(unittest.TestCase):
+
+    @given(key=json_keys, prefix=st.text(max_size=10),
+           suffix=st.text(min_size=1, max_size=10), generate_tests=st.booleans())
+    def test_string_growth_uses_suffix(self, key, prefix, suffix, generate_tests):
+        src, dst = {key: prefix}, {key: prefix + suffix}
+        patch = jsonpatch.JsonPatchWithAppend.from_diff(
+            src, dst, generate_test_ops=generate_tests)
+        self.assertEqual(patch.patch[-1]['op'], 'append')
+        self.assertEqual(patch.patch[-1]['value'], suffix)
+        self.assertEqual(patch.apply(src), dst)
+
+    @given(pair=doc_pairs)
+    def test_generated_patch_round_trip(self, pair):
+        src, dst = pair
+        patch = jsonpatch.JsonPatchWithAppend.from_diff(src, dst)
+        restored = jsonpatch.JsonPatchWithAppend.from_string(patch.to_string())
+        assert_json_equal(restored.apply(src), dst)
+
+
 PatchOperationTests = PatchOperationMachine.TestCase
 
 
