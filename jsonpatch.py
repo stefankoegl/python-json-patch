@@ -1047,6 +1047,24 @@ class JsonPatchWithAppend(JsonPatch):
 
     operations = MappingProxyType(dict(JsonPatch.operations, append=AppendOperation))
 
+    @classmethod
+    def from_diff(cls, src, dst, optimization=True, dumps=None,
+                  pointer_cls=JsonPointer, generate_test_ops=False):
+        """Creates a patch, using append for string growth in object members.
+
+        Root strings and scalar array elements retain standard diff behavior.
+        Options follow JsonPatch.from_diff; optimization=False disables moves,
+        while append remains enabled. With generate_test_ops=True, an append
+        is preceded by a test of the original string.
+        """
+        json_dumper = dumps or cls.json_dumper
+        builder = _AppendDiffBuilder(src, dst, json_dumper, pointer_cls=pointer_cls,
+                                     optimization=optimization,
+                                     generate_test_ops=generate_test_ops)
+        builder._compare_values((), None, src, dst)
+        ops = copy.deepcopy(list(builder.execute()))
+        return cls(ops, pointer_cls=pointer_cls)
+
 
 class DiffBuilder(object):
 
@@ -1399,6 +1417,20 @@ class DiffBuilder(object):
 
         else:
             self._item_replaced(path, key, dst, src)
+
+
+class _AppendDiffBuilder(DiffBuilder):
+
+    def _item_replaced(self, path, key, item, old_item):
+        if (path or key is not None) and isinstance(old_item, str) and \
+                isinstance(item, str) and len(item) > len(old_item) and \
+                item.startswith(old_item):
+            location = self._location(_path_join(path, key))
+            self._insert_test(location, old_item)
+            self.insert({'op': 'append', 'path': location,
+                         'value': item[len(old_item):]})
+        else:
+            super()._item_replaced(path, key, item, old_item)
 
 
 def _positional_cost(old, new):

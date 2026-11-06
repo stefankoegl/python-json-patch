@@ -3439,6 +3439,80 @@ class AppendAtomicTests(unittest.TestCase):
         self.assertEqual(doc, {'message': 'Hello!'})
 
 
+class AppendDiffTests(unittest.TestCase):
+
+    def test_generates_only_the_string_suffix(self):
+        for optimization in (True, False):
+            patch = jsonpatch.JsonPatchWithAppend.from_diff(
+                {'message': 'Hello'}, {'message': 'Hello World'}, optimization=optimization)
+            self.assertEqual(patch.patch, [
+                {'op': 'append', 'path': '/message', 'value': ' World'},
+            ])
+            self.assertEqual(patch.apply({'message': 'Hello'}), {'message': 'Hello World'})
+
+    def test_preserves_root_array_and_non_append_changes(self):
+        cases = [
+            ('Hello', 'Hello World', [{'op': 'replace', 'path': '', 'value': 'Hello World'}]),
+            (['Hello'], ['Hello World'], [{'op': 'replace', 'path': '/0', 'value': 'Hello World'}]),
+            ({'m': 'Hello'}, {'m': 'Hello'}, []),
+            ({'m': 'Hello'}, {'m': 'He'}, [{'op': 'replace', 'path': '/m', 'value': 'He'}]),
+            ({'m': 'Hello'}, {'m': 'Hallo'}, [{'op': 'replace', 'path': '/m', 'value': 'Hallo'}]),
+            ({'m': 'Hello'}, {'m': 1}, [{'op': 'replace', 'path': '/m', 'value': 1}]),
+            ({}, {'m': 'Hello'}, [{'op': 'add', 'path': '/m', 'value': 'Hello'}]),
+        ]
+        for src, dst, expected in cases:
+            with self.subTest(src=src, dst=dst):
+                patch = jsonpatch.JsonPatchWithAppend.from_diff(src, dst)
+                self.assertEqual(patch.patch, expected)
+                self.assertEqual(patch.apply(src), dst)
+
+    def test_nested_and_escaped_locations(self):
+        for src, dst, path in (
+                ({'a/b~c': ''}, {'a/b~c': '\ud55c\uae00'}, '/a~1b~0c'),
+                ([{'message': 'Hello'}], [{'message': 'Hello!'}], '/0/message'),
+                ({'a': {'m': 'Hello'}}, {'a': {'m': 'Hello!'}}, '/a/m')):
+            with self.subTest(path=path):
+                patch = jsonpatch.JsonPatchWithAppend.from_diff(src, dst)
+                self.assertEqual(patch.patch[0]['op'], 'append')
+                self.assertEqual(patch.patch[0]['path'], path)
+                self.assertEqual(patch.apply(src), dst)
+
+    def test_generated_tests_guard_the_original_text(self):
+        patch = jsonpatch.JsonPatchWithAppend.from_diff(
+            {'m': 'Hello'}, {'m': 'Hello!'}, generate_test_ops=True)
+        self.assertEqual(patch.patch, [
+            {'op': 'test', 'path': '/m', 'value': 'Hello'},
+            {'op': 'append', 'path': '/m', 'value': '!'},
+        ])
+        self.assertEqual(patch.apply({'m': 'Hello'}), {'m': 'Hello!'})
+        with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+            patch.apply({'m': 'Other'})
+
+    def test_preserves_options_subclasses_and_copied_values(self):
+        calls = []
+
+        def dumps(value):
+            calls.append(value)
+            return json.dumps(value)
+
+        class CustomPatch(jsonpatch.JsonPatchWithAppend):
+            json_dumper = staticmethod(dumps)
+
+        for kwargs in ({}, {'dumps': dumps}):
+            for optimization in (True, False):
+                src = {'m': 'Hello', 'old': 1}
+                dst = {'m': 'Hello!', 'new': 1, 'items': [2]}
+                patch = CustomPatch.from_diff(src, dst, optimization=optimization,
+                                             pointer_cls=CustomJsonPointer, **kwargs)
+                self.assertIsInstance(patch, CustomPatch)
+                self.assertEqual(patch.apply(src), dst)
+                self.assertEqual(any(op['op'] == 'move' for op in patch), optimization)
+                self.assertTrue(all(isinstance(op.pointer, CustomJsonPointer) for op in patch._ops))
+                dst['items'].append(3)
+                self.assertEqual(patch.apply(src)['items'], [2])
+        self.assertTrue(calls)
+
+
 class StandardAppendIsolationTests(unittest.TestCase):
 
     def test_standard_entrypoints_reject_append(self):
@@ -3494,6 +3568,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(AppendOperationTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(AppendInterfaceTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(AppendAtomicTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(AppendDiffTests))
         return suite
 
 
