@@ -323,15 +323,20 @@ The unescaped path ``/fields/test`` would mean something different: the key
 ``test`` inside the key ``fields``. Applying it to ``{}`` fails, because there
 is no key ``fields``.
 
-When writing a patch by hand, escape keys in the same way. The ``jsonpointer``
-package, which ``jsonpatch`` depends on, can build a pointer from a list of
-unescaped keys.
+When writing a patch by hand, escape keys in the same way. ``path_join``
+builds a path from a list of unescaped keys and array indices, and
+``path_split`` turns a path back into its unescaped parts, for example to
+inspect the keys a patch refers to. The parts that ``path_split`` returns are
+always strings, also those of array indices.
 
 .. code-block:: python
 
-    >>> from jsonpointer import JsonPointer
-    >>> JsonPointer.from_parts(['/fields/test', 'a~b']).path
-    '/~1fields~1test/a~0b'
+    >>> jsonpatch.path_join(['/fields/test', 'a~b', 0])
+    '/~1fields~1test/a~0b/0'
+    >>> jsonpatch.path_split('/~1fields~1test/a~0b/0')
+    ('/fields/test', 'a~b', '0')
+    >>> [jsonpatch.path_split(op['path']) for op in patch]
+    [('/fields/test',)]
 
 
 Dealing with Custom Types

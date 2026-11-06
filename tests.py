@@ -2028,6 +2028,75 @@ class PrefixJsonPointer(jsonpointer.JsonPointer):
         super(PrefixJsonPointer, self).__init__('/foo/bar' + pointer)
 
 
+class PathUtilityTests(unittest.TestCase):
+    """ path_split and path_join convert between paths and their parts """
+
+    def test_split(self):
+        self.assertEqual(jsonpatch.path_split('/foo/bar'), ('foo', 'bar'))
+
+    def test_split_array_index_is_str(self):
+        self.assertEqual(jsonpatch.path_split('/foo/0/-'), ('foo', '0', '-'))
+
+    def test_split_unescapes(self):
+        self.assertEqual(jsonpatch.path_split('/a~1b/c~0d/~01'),
+                         ('a/b', 'c~d', '~1'))
+
+    def test_split_root(self):
+        self.assertEqual(jsonpatch.path_split(''), ())
+
+    def test_split_empty_key(self):
+        self.assertEqual(jsonpatch.path_split('/'), ('',))
+        self.assertEqual(jsonpatch.path_split('//a'), ('', 'a'))
+
+    def test_split_invalid(self):
+        self.assertRaises(jsonpatch.JsonPointerException,
+                          jsonpatch.path_split, 'foo')
+        self.assertRaises(jsonpatch.JsonPointerException,
+                          jsonpatch.path_split, '/a~2')
+
+    def test_join(self):
+        self.assertEqual(jsonpatch.path_join(['foo', 'bar']), '/foo/bar')
+
+    def test_join_int(self):
+        self.assertEqual(jsonpatch.path_join(['foo', 0, '-']), '/foo/0/-')
+
+    def test_join_escapes(self):
+        self.assertEqual(jsonpatch.path_join(['a/b', 'c~d', '~1']),
+                         '/a~1b/c~0d/~01')
+
+    def test_join_root(self):
+        self.assertEqual(jsonpatch.path_join([]), '')
+
+    def test_join_iterable(self):
+        self.assertEqual(jsonpatch.path_join(iter(('a', 'b'))), '/a/b')
+
+    def test_round_trip(self):
+        for path in ('', '/', '/a', '/a/0', '/~0~1/', '/a~1b/~01/-'):
+            parts = jsonpatch.path_split(path)
+            self.assertEqual(jsonpatch.path_join(parts), path)
+
+    def test_paths_of_generated_patch(self):
+        src = {'a/b': {'c~d': [1, 2]}}
+        dst = {'a/b': {'c~d': [1, 2, 3]}}
+        patch = jsonpatch.make_patch(src, dst)
+        self.assertEqual([jsonpatch.path_split(op['path']) for op in patch],
+                         [('a/b', 'c~d', '2')])
+
+    def test_join_paths_apply(self):
+        doc = {'a/b': {'c~d': [1, 2]}}
+        path = jsonpatch.path_join(['a/b', 'c~d', 0])
+        res = jsonpatch.apply_patch(doc, [{'op': 'remove', 'path': path}])
+        self.assertEqual(res, {'a/b': {'c~d': [2]}})
+
+    def test_custom_pointer_cls(self):
+        self.assertEqual(
+            jsonpatch.path_split('/baz', pointer_cls=PrefixJsonPointer),
+            ('foo', 'bar', 'baz'))
+        self.assertEqual(
+            jsonpatch.path_join(['baz'], pointer_cls=PrefixJsonPointer),
+            '/foo/bar/baz')
+
+
 class CustomJsonPointerTests(unittest.TestCase):
 
     def test_json_patch_from_string(self):
@@ -3330,6 +3399,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(JsonPatchCreationTest))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(UtilityMethodTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(OperationLocationTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(PathUtilityTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomJsonPointerTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomOperationTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ExceptionOperationTests))

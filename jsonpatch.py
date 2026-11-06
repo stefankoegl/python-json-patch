@@ -211,6 +211,67 @@ def make_patch(src, dst, pointer_cls=JsonPointer, generate_test_ops=False):
                                generate_test_ops=generate_test_ops)
 
 
+def path_split(path, pointer_cls=JsonPointer):
+    """Splits the ``path`` (or ``from``) of an operation into its parts.
+
+    The parts are the unescaped reference tokens of the JSON Pointer: ``~1``
+    becomes ``/`` and ``~0`` becomes ``~``. They are always strings, also
+    those that refer to array elements, as only the document a path is
+    applied to tells whether a part is an object key or an array index.
+
+    This is the reverse of :func:`path_join`.
+
+    :param path: The path, a JSON Pointer such as ``'/foo/0'``.
+    :type path: str
+
+    :param pointer_cls: JSON pointer class to parse the path with.
+    :type pointer_cls: Type[JsonPointer]
+
+    :return: The unescaped parts of the path; empty for the whole document
+             (the path ``''``).
+    :rtype: tuple[str, ...]
+
+    :raises JsonPointerException: if ``path`` is not a valid JSON Pointer.
+
+    >>> path_split('/foo/0')
+    ('foo', '0')
+    >>> path_split('/~1fields~1test/a~0b')
+    ('/fields/test', 'a~b')
+    >>> path_split('')
+    ()
+    """
+    return tuple(pointer_cls(path).parts)
+
+
+def path_join(parts, pointer_cls=JsonPointer):
+    """Joins unescaped parts into a path, as used in the ``path`` (or
+    ``from``) of an operation.
+
+    Each part is converted to a string and escaped: ``~`` becomes ``~0`` and
+    ``/`` becomes ``~1``. Integers can be used for array indices.
+
+    This is the reverse of :func:`path_split`.
+
+    :param parts: The object keys and array indices that lead to the
+                  location; empty for the whole document.
+    :type parts: Iterable[str | int]
+
+    :param pointer_cls: JSON pointer class to build the path with.
+    :type pointer_cls: Type[JsonPointer]
+
+    :return: The path, a JSON Pointer.
+    :rtype: str
+
+    >>> path_join(['foo', 0])
+    '/foo/0'
+    >>> path_join(['/fields/test', 'a~b'])
+    '/~1fields~1test/a~0b'
+    >>> path_join([])
+    ''
+    """
+    return pointer_cls.from_parts(parts).path
+
+
 class _NullJournal(object):
     """Performs the changes of patch operations without recording them."""
 
