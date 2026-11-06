@@ -365,6 +365,7 @@ support for Python's ``Decimal`` type, can be used to create a custom
     >>> patch.apply(doc)
     {'foo': 1, 'bar': Decimal('1.10')}
 
+
 Instead of subclassing it is also possible to pass a dump function to
 ``from_diff``:
 
@@ -391,3 +392,44 @@ and load  function to ``from_string``:
     >>> doc = {'foo': 1}
     >>> patch.apply(doc)
     {'foo': 1, 'bar': Decimal('1.10')}
+
+
+String append extension
+-----------------------
+
+``JsonPatchWithAppend`` accepts the standard operations and an additional
+``append`` operation for existing strings. This extension is not part of
+RFC 6902, so both the producer and consumer of the patch must support it.
+The standard ``JsonPatch`` class and module-level helpers remain unchanged.
+
+.. code-block:: python
+
+    >>> src = {'message': 'Hello'}
+    >>> dst = {'message': 'Hello World'}
+    >>> patch = jsonpatch.JsonPatchWithAppend.from_diff(src, dst)
+    >>> patch.patch
+    [{'op': 'append', 'path': '/message', 'value': ' World'}]
+    >>> patch.apply(src)
+    {'message': 'Hello World'}
+    >>> jsonpatch.JsonPatchWithAppend.from_string(patch.to_string()).apply(src) == dst
+    True
+
+Every append operation requires ``op``, ``path`` and a string ``value``.
+Its target must be an existing string in an object member or array element;
+appending to the root document is not supported. Operations can also be
+constructed directly:
+
+.. code-block:: python
+
+    >>> patch = jsonpatch.JsonPatchWithAppend([
+    ...     {'op': 'append', 'path': '/message', 'value': '!'},
+    ... ])
+    >>> patch.apply({'message': 'Hello'})
+    {'message': 'Hello!'}
+
+Automatic suffix detection applies to object members, including objects
+nested in arrays. Root strings and scalar array elements retain the standard
+diff behavior. ``optimization=False`` disables moves but retains suffix
+detection. ``generate_test_ops=True`` also tests the original string before
+appending. As with custom operations, ``in_place=True, atomic=True`` uses
+the existing copy-based rollback fallback.

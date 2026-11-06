@@ -61,6 +61,24 @@ class MyPatch(JsonPatch):
 assert_type(MyPatch.from_string('[]'), MyPatch)
 assert_type(MyPatch.from_diff(doc, {}), MyPatch)
 
+# Inherited APIs and factory return types for the append extension
+append_patch = jsonpatch.JsonPatchWithAppend([
+    {'op': 'append', 'path': '/foo', 'value': '!'},
+])
+assert_type(append_patch.apply(doc, in_place=True, atomic=True), Any)
+assert_type(append_patch.to_string(), str)
+assert_type(jsonpatch.JsonPatchWithAppend.from_diff(doc, {}), jsonpatch.JsonPatchWithAppend)
+assert_type(jsonpatch.JsonPatchWithAppend.from_string('[]'), jsonpatch.JsonPatchWithAppend)
+assert_type(jsonpatch.AppendOperation({'op': 'append', 'path': '/foo', 'value': '!'}).apply(doc), Any)
+
+
+class MyAppendPatch(jsonpatch.JsonPatchWithAppend):
+    pass
+
+
+assert_type(MyAppendPatch.from_diff(doc, {}), MyAppendPatch)
+assert_type(MyAppendPatch.from_string('[]'), MyAppendPatch)
+
 # operations
 operation = jsonpatch.AddOperation({'op': 'add', 'path': '/a/0', 'value': 1})
 assert_type(operation.apply({'a': []}), Any)
