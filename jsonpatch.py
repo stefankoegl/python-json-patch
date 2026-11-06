@@ -190,7 +190,9 @@ def make_patch(src, dst, pointer_cls=JsonPointer, generate_test_ops=False):
     :param dst: Target JSON document, including arrays and scalar values.
     :type dst: object
 
-    :param pointer_cls: JSON pointer class to use.
+    :param pointer_cls: JSON pointer class to use. The paths of the
+                        created operations are written with
+                        :func:`path_join`, so they use its syntax.
     :type pointer_cls: Type[JsonPointer]
 
     :param generate_test_ops: Precede each ``remove`` and ``replace``
@@ -250,7 +252,15 @@ def path_join(parts, pointer_cls=JsonPointer):
     Each part is converted to a string and escaped: ``~`` becomes ``~0`` and
     ``/`` becomes ``~1``. Integers can be used for array indices.
 
-    This is the reverse of :func:`path_split`.
+    This is the reverse of :func:`path_split`. :meth:`JsonPatch.from_diff`
+    and :func:`make_patch` use it to write the paths of the operations they
+    create, so these use the syntax of their ``pointer_cls``.
+
+    The path is the :attr:`~jsonpointer.JsonPointer.path` of a
+    ``pointer_cls`` instance whose ``parts`` are set to the given parts,
+    without calling ``__init__``. A pointer class with a different path
+    syntax therefore has to override ``__init__`` (which parses a path into
+    ``parts``) and ``path`` (which turns ``parts`` back into a path).
 
     :param parts: The object keys and array indices that lead to the
                   location; empty for the whole document.
@@ -269,7 +279,14 @@ def path_join(parts, pointer_cls=JsonPointer):
     >>> path_join([])
     ''
     """
-    return pointer_cls.from_parts(parts).path
+    if pointer_cls is JsonPointer:
+        return _to_pointer(parts)
+
+    # Not pointer_cls.from_parts(parts), as that always builds an RFC 6901
+    # string and parses it, which fails for other path syntaxes
+    pointer = pointer_cls.__new__(pointer_cls)
+    pointer.parts = [str(part) for part in parts]
+    return pointer.path
 
 
 class _NullJournal(object):
@@ -952,7 +969,9 @@ class JsonPatch(object):
                       JSON string.
         :type dumps: Callable
 
-        :param pointer_cls: JSON pointer class to use.
+        :param pointer_cls: JSON pointer class to use. The paths of the
+                            created operations are written with
+                            :func:`path_join`, so they use its syntax.
         :type pointer_cls: Type[JsonPointer]
 
         :param generate_test_ops: Precede each ``remove`` and ``replace``
@@ -1143,7 +1162,8 @@ class DiffBuilder(object):
                         op_second['op'] == 'add':
                     yield {
                         'op': 'replace',
-                        'path': _to_pointer(op_second['path']),
+                        'path': path_join(op_second['path'],
+                                          self.pointer_cls),
                         'value': op_second['value'],
                     }
                     i += 2
@@ -1152,7 +1172,8 @@ class DiffBuilder(object):
             operation = operations[i]
             for member in ('from', 'path'):
                 if member in operation:
-                    operation[member] = _to_pointer(operation[member])
+                    operation[member] = path_join(operation[member],
+                                                  self.pointer_cls)
             yield operation
             i += 1
 
@@ -1587,6 +1608,7 @@ def _path_join(path, key):
 
 
 def _to_pointer(path):
+    """ Fast path of path_join for JsonPointer """
     return ''.join('/' + str(part).replace('~', '~0').replace('/', '~1')
                    for part in path)
 
