@@ -339,6 +339,120 @@ always strings, also those of array indices.
     [('/fields/test',)]
 
 
+Custom Path Syntax
+------------------
+
+How paths are read and written is defined by a pointer class, which is
+``jsonpointer.JsonPointer`` by default. Another class can be passed as
+``pointer_cls`` to ``JsonPatch``, ``JsonPatch.from_string``,
+``JsonPatch.from_diff``, ``apply_patch``, ``make_patch``, ``path_split`` and
+``path_join``, for example to use a different path syntax.
+
+A pointer stores a path as the list of its unescaped parts, in its ``parts``
+attribute. Resolving it against a document only uses these parts, so a class
+for a different syntax only has to override two members of ``JsonPointer``:
+
+``__init__(self, pointer)``
+    Parses the path string ``pointer`` and sets ``self.parts`` to a list of
+    strings, one per object key or array index. The empty list refers to the
+    whole document. Raise ``jsonpointer.JsonPointerException`` for an invalid
+    path.
+
+``path``
+    A property that turns ``self.parts`` back into a path string. Parts that
+    are array indices are strings like ``'0'``. Raise
+    ``jsonpointer.JsonPointerException`` if the parts can't be written in the
+    syntax.
+
+``path`` is what ``path_join`` uses, and thereby also ``make_patch`` and
+``JsonPatch.from_diff`` for the paths of the operations they create. It
+should only depend on ``self.parts``: ``path_join`` sets the parts of a new
+instance directly and doesn't call ``__init__``.
+
+The following class uses paths like ``a.0.b``, in which the parts are
+separated by ``.``. For simplicity, it doesn't support escaping, so it
+rejects keys that are empty or contain ``.``, as they could not be told apart
+from other paths.
+
+.. code-block:: python
+
+    >>> from jsonpointer import JsonPointer, JsonPointerException
+
+    >>> class DotPointer(JsonPointer):
+    ...     """ Paths like 'a.0.b'; '' refers to the whole document """
+    ...
+    ...     def __init__(self, pointer):
+    ...         self.parts = pointer.split('.') if pointer else []
+    ...         if '' in self.parts:
+    ...             raise JsonPointerException('Empty part in %r' % pointer)
+    ...
+    ...     @property
+    ...     def path(self):
+    ...         for part in self.parts:
+    ...             if not part or '.' in part:
+    ...                 raise JsonPointerException(
+    ...                     'Key %r can not be written as a part' % part)
+    ...         return '.'.join(self.parts)
+
+Patches then use this syntax, whether they are written by hand or created by
+diffing two documents:
+
+.. code-block:: python
+
+    >>> doc = {'users': [{'name': 'Alice'}]}
+    >>> jsonpatch.apply_patch(doc, [
+    ...     {'op': 'replace', 'path': 'users.0.name', 'value': 'Bob'},
+    ... ], pointer_cls=DotPointer)
+    {'users': [{'name': 'Bob'}]}
+
+    >>> patch = jsonpatch.make_patch(
+    ...     doc, {'users': [{'name': 'Alice', 'admin': True}]},
+    ...     pointer_cls=DotPointer)
+    >>> patch.patch
+    [{'op': 'add', 'path': 'users.0.admin', 'value': True}]
+    >>> patch.apply(doc)
+    {'users': [{'name': 'Alice', 'admin': True}]}
+
+    >>> jsonpatch.path_split('users.0.name', pointer_cls=DotPointer)
+    ('users', '0', 'name')
+    >>> jsonpatch.path_join(['users', 0, 'name'], pointer_cls=DotPointer)
+    'users.0.name'
+
+If the class rejects a path or a key, creating or applying the patch fails:
+
+.. code-block:: python
+
+    >>> jsonpatch.make_patch({}, {'a.b': 1}, pointer_cls=DotPointer)
+    Traceback (most recent call last):
+    ...
+    jsonpointer.JsonPointerException: Key 'a.b' can not be written as a part
+
+Such patches are not JSON Patches as defined by RFC 6902, which requires
+JSON Pointers. ``path_split`` and ``path_join`` convert them to standard
+patches, for example to pass them on to other software:
+
+.. code-block:: python
+
+    >>> def convert_paths(operations, from_cls, to_cls):
+    ...     converted = []
+    ...     for operation in operations:
+    ...         operation = dict(operation)
+    ...         for member in ('path', 'from'):
+    ...             if member in operation:
+    ...                 parts = jsonpatch.path_split(operation[member], from_cls)
+    ...                 operation[member] = jsonpatch.path_join(parts, to_cls)
+    ...         converted.append(operation)
+    ...     return converted
+
+    >>> convert_paths(patch, DotPointer, JsonPointer)
+    [{'op': 'add', 'path': '/users/0/admin', 'value': True}]
+
+Override both members together: a pointer class that only overrides
+``__init__`` reads its own syntax, but writes JSON Pointers. The paths of
+patches that ``make_patch`` creates with it are then read differently than
+they were written.
+
+
 Dealing with Custom Types
 -------------------------
 
