@@ -29,6 +29,10 @@ import jsonpatch
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
 extensions = ['sphinx.ext.autodoc']
 
+# JsonPointer comes from the jsonpointer package and is not documented here,
+# so references to it can not be resolved (relevant for sphinx-build -n).
+nitpick_ignore = [('py:class', 'JsonPointer')]
+
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
 

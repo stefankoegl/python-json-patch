@@ -1,16 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import io
 import re
-try:
-    from setuptools import setup
-    has_setuptools = True
-except ImportError:
-    from distutils.core import setup
-    has_setuptools = False
+from setuptools import setup
 
-src = io.open('jsonpatch.py', encoding='utf-8').read()
+src = open('jsonpatch.py', encoding='utf-8').read()
 metadata = dict(re.findall("__([a-z]+)__ = '([^']+)'", src))
 docstrings = re.findall('"""([^"]*)"""', src, re.MULTILINE | re.DOTALL)
 
@@ -18,16 +12,10 @@ PACKAGE = 'jsonpatch'
 
 MODULES = (
         'jsonpatch',
+        'jsonpatch_cli',
 )
 
 REQUIREMENTS = list(open('requirements.txt'))
-
-if has_setuptools:
-    OPTIONS = {
-        'install_requires': REQUIREMENTS
-    }
-else:
-    OPTIONS = {}
 
 AUTHOR_EMAIL = metadata['author']
 VERSION = metadata['version']
@@ -38,57 +26,56 @@ DESCRIPTION = docstrings[0]
 # Extract name and e-mail ("Firstname Lastname <mail@example.org>")
 AUTHOR, EMAIL = re.match(r'(.*) <(.*)>', AUTHOR_EMAIL).groups()
 
-try:
-    from pypandoc import convert
-    read_md = lambda f: convert(f, 'rst')
-except ImportError:
-    print('warning: pypandoc module not found, could not convert '
-          'Markdown to RST')
-    read_md = lambda f: open(f, 'r').read()
-
 CLASSIFIERS = [
     'Development Status :: 5 - Production/Stable',
     'Environment :: Console',
     'Intended Audience :: Developers',
-    'License :: OSI Approved :: BSD License',
     'Operating System :: OS Independent',
     'Programming Language :: Python',
-    'Programming Language :: Python :: 2',
-    'Programming Language :: Python :: 2.7',
     'Programming Language :: Python :: 3',
-    'Programming Language :: Python :: 3.7',
-    'Programming Language :: Python :: 3.8',
-    'Programming Language :: Python :: 3.9',
+    'Programming Language :: Python :: 3 :: Only',
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
+    'Programming Language :: Python :: 3.13',
+    'Programming Language :: Python :: 3.14',
     'Programming Language :: Python :: Implementation :: CPython',
     'Programming Language :: Python :: Implementation :: PyPy',
     'Topic :: Software Development :: Libraries',
     'Topic :: Utilities',
+    'Typing :: Typed',
 ]
 
 
 setup(name=PACKAGE,
       version=VERSION,
       description=DESCRIPTION,
-      long_description=read_md('README.md'),
+      long_description=open('README.md', encoding='utf-8').read(),
+      long_description_content_type='text/markdown',
       author=AUTHOR,
       author_email=EMAIL,
-      license=LICENSE,
+      license_expression=LICENSE,
       url=WEBSITE,
       py_modules=MODULES,
-      package_data={'': ['requirements.txt']},
-      scripts=['bin/jsondiff', 'bin/jsonpatch'],
+      # jsonpatch is a single-file module, which can't be marked as typed
+      # with py.typed (PEP 561), so its type stubs are a stub-only package
+      packages=['jsonpatch-stubs'],
+      package_data={'': ['requirements.txt'], 'jsonpatch-stubs': ['*.pyi']},
+      entry_points={
+          'console_scripts': [
+              'jsondiff = jsonpatch_cli:jsondiff_main',
+              'jsonpatch = jsonpatch_cli:jsonpatch_main',
+          ]
+      },
       classifiers=CLASSIFIERS,
-      python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*, !=3.6.*',
+      python_requires='>=3.10',
       project_urls={
           'Website': 'https://github.com/stefankoegl/python-json-patch',
           'Repository': 'https://github.com/stefankoegl/python-json-patch.git',
           'Documentation': "https://python-json-patch.readthedocs.org/",
           'PyPI': 'https://pypi.org/pypi/jsonpatch',
-          'Tests': 'https://travis-ci.org/stefankoegl/python-json-patch',
-          'Test Coverage': 'https://coveralls.io/r/stefankoegl/python-json-patch',
+          'Tests': 'https://github.com/stefankoegl/python-json-patch/actions',
+          'Test Coverage': 'https://coveralls.io/github/stefankoegl/python-json-patch',
       },
-      **OPTIONS
+      install_requires=REQUIREMENTS,
 )

@@ -1,7 +1,11 @@
 include requirements.txt
-include COPYING
+include LICENSE
 include README.md
 include tests.py
+include doc/*.rst
+include property_tests.py
+include pytest.ini
 include ext_tests.py
+include typetests/usage.py
 include AUTHORS
 include tests.js
