@@ -53,6 +53,10 @@ _ST_REMOVE = 1
 _EXACT_MATCH_LIMIT = 500 ** 2
 
 
+# The from_parts of pointer classes that don't override it, see path_join
+_JSONPOINTER_FROM_PARTS = JsonPointer.from_parts.__func__
+
+
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
 __version__ = '1.44'
@@ -256,11 +260,12 @@ def path_join(parts, pointer_cls=JsonPointer):
     and :func:`make_patch` use it to write the paths of the operations they
     create, so these use the syntax of their ``pointer_cls``.
 
-    The path is the ``path`` property of a
-    ``pointer_cls`` instance whose ``parts`` are set to the given parts,
-    without calling ``__init__``. A pointer class with a different path
-    syntax therefore has to override ``__init__`` (which parses a path into
-    ``parts``) and ``path`` (which turns ``parts`` back into a path).
+    If ``pointer_cls`` overrides ``JsonPointer.from_parts``,
+    the path is ``pointer_cls.from_parts(parts).path``, so a pointer class
+    with a different path syntax overrides ``from_parts`` to build pointers
+    from parts. Otherwise the path is a JSON Pointer as defined by RFC 6901,
+    and ``pointer_cls`` is not used, as ``from_parts`` of ``JsonPointer``
+    always builds such a pointer.
 
     :param parts: The object keys and array indices that lead to the
                   location; empty for the whole document.
@@ -279,14 +284,14 @@ def path_join(parts, pointer_cls=JsonPointer):
     >>> path_join([])
     ''
     """
-    if pointer_cls is JsonPointer:
+    from_parts = getattr(pointer_cls, 'from_parts', None)
+    if from_parts is None or \
+            getattr(from_parts, '__func__', None) is _JSONPOINTER_FROM_PARTS:
+        # Also for subclasses that only change how paths are parsed, which
+        # JsonPointer.from_parts would parse an RFC 6901 pointer with
         return _to_pointer(parts)
 
-    # Not pointer_cls.from_parts(parts), as that always builds an RFC 6901
-    # string and parses it, which fails for other path syntaxes
-    pointer = pointer_cls.__new__(pointer_cls)
-    pointer.parts = [str(part) for part in parts]
-    return pointer.path
+    return from_parts(parts).path
 
 
 class _NullJournal(object):

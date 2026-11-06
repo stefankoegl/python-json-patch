@@ -350,7 +350,7 @@ How paths are read and written is defined by a pointer class, which is
 
 A pointer stores a path as the list of its unescaped parts, in its ``parts``
 attribute. Resolving it against a document only uses these parts, so a class
-for a different syntax only has to override two members of ``JsonPointer``:
+for a different syntax only has to override three members of ``JsonPointer``:
 
 ``__init__(self, pointer)``
     Parses the path string ``pointer`` and sets ``self.parts`` to a list of
@@ -358,16 +358,20 @@ for a different syntax only has to override two members of ``JsonPointer``:
     whole document. Raise ``jsonpointer.JsonPointerException`` for an invalid
     path.
 
+``from_parts(cls, parts)``
+    A class method that returns a pointer to the given parts, which can also
+    contain ints for array indices.
+
 ``path``
     A property that turns ``self.parts`` back into a path string. Parts that
     are array indices are strings like ``'0'``. Raise
     ``jsonpointer.JsonPointerException`` if the parts can't be written in the
     syntax.
 
-``path`` is what ``path_join`` uses, and thereby also ``make_patch`` and
-``JsonPatch.from_diff`` for the paths of the operations they create. It
-should only depend on ``self.parts``: ``path_join`` sets the parts of a new
-instance directly and doesn't call ``__init__``.
+``path_join`` returns the ``path`` of the pointer that ``from_parts``
+returns. ``make_patch`` and ``JsonPatch.from_diff`` write the paths of the
+operations they create with it, and the ``path`` and ``from_path`` properties
+of operations use it as well.
 
 The following class uses paths like ``a.0.b``, in which the parts are
 separated by ``.``. For simplicity, it doesn't support escaping, so it
@@ -385,6 +389,12 @@ from other paths.
     ...         self.parts = pointer.split('.') if pointer else []
     ...         if '' in self.parts:
     ...             raise JsonPointerException('Empty part in %r' % pointer)
+    ...
+    ...     @classmethod
+    ...     def from_parts(cls, parts):
+    ...         pointer = cls('')
+    ...         pointer.parts = [str(part) for part in parts]
+    ...         return pointer
     ...
     ...     @property
     ...     def path(self):
@@ -447,10 +457,12 @@ patches, for example to pass them on to other software:
     >>> convert_paths(patch, DotPointer, JsonPointer)
     [{'op': 'add', 'path': '/users/0/admin', 'value': True}]
 
-Override both members together: a pointer class that only overrides
-``__init__`` reads its own syntax, but writes JSON Pointers. The paths of
-patches that ``make_patch`` creates with it are then read differently than
-they were written.
+Override the three members together. If a pointer class doesn't override
+``from_parts``, ``path_join`` and thereby ``make_patch`` write JSON Pointers,
+as ``from_parts`` of ``JsonPointer`` builds those, whatever syntax the class
+reads. This keeps pointer classes working that only change how paths are
+resolved, but a class that only overrides ``__init__`` and ``path`` reads the
+paths of the patches it creates differently than they were written.
 
 
 Dealing with Custom Types

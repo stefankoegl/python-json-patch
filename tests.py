@@ -2120,8 +2120,8 @@ class PathUtilityTests(unittest.TestCase):
             jsonpatch.path_join([], pointer_cls=DotJsonPointer), '')
 
     def test_custom_pointer_cls_path_only(self):
-        # path_join renders the parts with the path property, so a subclass
-        # that only changes how paths are parsed keeps the RFC 6901 syntax
+        # a subclass that only changes how paths are parsed, but doesn't
+        # override from_parts, keeps the RFC 6901 syntax
         self.assertEqual(
             jsonpatch.path_join(['baz'], pointer_cls=PrefixJsonPointer),
             '/baz')
@@ -2137,9 +2137,84 @@ class DotJsonPointer(jsonpointer.JsonPointer):
     def __init__(self, pointer):
         self.parts = pointer.split('.') if pointer else []
 
+    @classmethod
+    def from_parts(cls, parts):
+        return cls('.'.join(str(part) for part in parts))
+
     @property
     def path(self):
         return '.'.join(self.parts)
+
+
+class StatefulJsonPointer(jsonpointer.JsonPointer):
+    """ A pointer whose path property depends on state set in __init__ """
+
+    def __init__(self, pointer):
+        super(StatefulJsonPointer, self).__init__(pointer)
+        self.suffix = ''
+
+    @property
+    def path(self):
+        return super(StatefulJsonPointer, self).path + self.suffix
+
+
+class ArgsJsonPointer(jsonpointer.JsonPointer):
+    """ A pointer whose __new__ requires the path """
+
+    def __new__(cls, pointer):
+        instance = super(ArgsJsonPointer, cls).__new__(cls)
+        instance.created_from = pointer
+        return instance
+
+
+class DuckJsonPointer(object):
+    """ A pointer class that does not derive from JsonPointer and has no
+    from_parts """
+
+    def __init__(self, pointer):
+        self._pointer = jsonpointer.JsonPointer(pointer)
+        self.parts = self._pointer.parts
+
+    @property
+    def path(self):
+        return self._pointer.path
+
+    def to_last(self, doc):
+        return self._pointer.to_last(doc)
+
+
+class PointerClassCompatibilityTests(unittest.TestCase):
+    """ Pointer classes that don't override from_parts keep getting RFC 6901
+    paths from path_join, make_patch and PatchOperation.path, without being
+    instantiated by path_join """
+
+    src = {'a': {'b': [1, 2], 'c': 1}}
+    dst = {'a': {'b': [1], 'c': 2, 'd': 3}}
+
+    def test_path_join(self):
+        for cls in (StatefulJsonPointer, ArgsJsonPointer, DuckJsonPointer,
+                    PrefixJsonPointer, CustomJsonPointer):
+            with self.subTest(pointer_cls=cls):
+                self.assertEqual(
+                    jsonpatch.path_join(['a~', 0], pointer_cls=cls),
+                    '/a~0/0')
+
+    def test_make_patch(self):
+        expected = jsonpatch.make_patch(self.src, self.dst).patch
+        for cls in (StatefulJsonPointer, ArgsJsonPointer, DuckJsonPointer):
+            with self.subTest(pointer_cls=cls):
+                patch = jsonpatch.make_patch(self.src, self.dst,
+                                             pointer_cls=cls)
+                self.assertEqual(patch.patch, expected)
+                self.assertEqual(patch.apply(self.src), self.dst)
+
+    def test_operation_path(self):
+        for cls in (StatefulJsonPointer, ArgsJsonPointer):
+            with self.subTest(pointer_cls=cls):
+                op = jsonpatch.MoveOperation(
+                    {'op': 'move', 'from': '/a/0/b', 'path': '/c/d'},
+                    pointer_cls=cls)
+                self.assertEqual((op.path, op.from_path), ('/c', '/a/0'))
 
 
 class CustomPathSyntaxTests(unittest.TestCase):
@@ -3526,6 +3601,7 @@ if __name__ == '__main__':
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(OperationLocationTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(PathUtilityTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomPathSyntaxTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(PointerClassCompatibilityTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomJsonPointerTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomOperationTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ExceptionOperationTests))
