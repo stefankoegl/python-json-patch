@@ -1935,18 +1935,39 @@ class OperationLocationTests(unittest.TestCase):
 
     def test_path_and_key(self):
         op = jsonpatch.RemoveOperation({'op': 'remove', 'path': '/a/0/b'})
-        # unlike the 'path' member, path is only the parts before the key,
-        # without a leading '/'
-        self.assertEqual(op.path, 'a/0')
+        # unlike the 'path' member, path is only the parts before the key
+        self.assertEqual(op.path, '/a/0')
         self.assertEqual(op.key, 'b')
         # array indices are ints, other parts stay strings
         self.assertEqual([op.get_part(i) for i in range(3)], ['a', 0, 'b'])
         self.assertEqual(op.get_part(-2), 0)
 
         op = jsonpatch.AddOperation({'op': 'add', 'path': '/foo/-', 'value': 1})
-        self.assertEqual((op.path, op.key), ('foo', '-'))
+        self.assertEqual((op.path, op.key), ('/foo', '-'))
         op = jsonpatch.AddOperation({'op': 'add', 'path': '/foo', 'value': 1})
         self.assertEqual((op.path, op.key), ('', 'foo'))
+
+    def test_path_is_escaped(self):
+        op = jsonpatch.RemoveOperation({'op': 'remove', 'path': '/a~1b/~0/c'})
+        self.assertEqual((op.path, op.key), ('/a~1b/~0', 'c'))
+        op = jsonpatch.MoveOperation(
+            {'op': 'move', 'from': '/a~1b/~0/c', 'path': '/d'})
+        self.assertEqual((op.from_path, op.from_key), ('/a~1b/~0', 'c'))
+
+    def test_path_of_root(self):
+        op = jsonpatch.ReplaceOperation({'op': 'replace', 'path': '',
+                                         'value': 1})
+        self.assertEqual(op.path, '')
+
+    def test_path_with_custom_syntax(self):
+        op = jsonpatch.RemoveOperation({'op': 'remove', 'path': 'a.0.b'},
+                                       pointer_cls=DotJsonPointer)
+        self.assertEqual((op.path, op.key), ('a.0', 'b'))
+        op = jsonpatch.MoveOperation(
+            {'op': 'move', 'from': 'a.1.b', 'path': 'c'},
+            pointer_cls=DotJsonPointer)
+        self.assertEqual((op.from_path, op.from_key), ('a.1', 'b'))
+        self.assertEqual((op.path, op.key), ('', 'c'))
 
     def test_set_key(self):
         operation = {'op': 'add', 'path': '/foo/1', 'value': 9}
@@ -1973,7 +1994,7 @@ class OperationLocationTests(unittest.TestCase):
 
     def test_from_path_and_key(self):
         op = jsonpatch.MoveOperation({'op': 'move', 'from': '/a/1/b', 'path': '/c'})
-        self.assertEqual(op.from_path, 'a/1')
+        self.assertEqual(op.from_path, '/a/1')
         self.assertEqual(op.from_key, 'b')
         self.assertEqual([op.get_from_part(i) for i in range(3)], ['a', 1, 'b'])
         self.assertEqual((op.path, op.key), ('', 'c'))
@@ -1996,7 +2017,7 @@ class OperationLocationTests(unittest.TestCase):
                 op = jsonpatch.MoveOperation(
                     {'op': 'move', 'from': pointer_cls('/a/1/b'), 'path': '/c'},
                     pointer_cls=pointer_cls)
-                self.assertEqual(op.from_path, 'a/1')
+                self.assertEqual(op.from_path, '/a/1')
 
     def test_from_parts_with_pointer_object(self):
         for pointer_cls in (jsonpointer.JsonPointer, CustomJsonPointer):

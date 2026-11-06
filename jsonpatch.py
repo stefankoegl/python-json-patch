@@ -256,7 +256,7 @@ def path_join(parts, pointer_cls=JsonPointer):
     and :func:`make_patch` use it to write the paths of the operations they
     create, so these use the syntax of their ``pointer_cls``.
 
-    The path is the :attr:`~jsonpointer.JsonPointer.path` of a
+    The path is the ``path`` property of a
     ``pointer_cls`` instance whose ``parts`` are set to the given parts,
     without calling ``__init__``. A pointer class with a different path
     syntax therefore has to override ``__init__`` (which parses a path into
@@ -499,10 +499,20 @@ class PatchOperation(object):
 
     @property
     def path(self):
-        return '/'.join(self.pointer.parts[:-1])
+        """The location of the object or array that contains the target of
+        the operation, i.e. its ``path`` without the last part, written in
+        the syntax of ``pointer_cls`` (see :func:`path_join`).
+
+        For example ``'/a/0'`` for the ``path`` ``'/a/0/b'``, and ``''`` for
+        a target at the top level of the document. The last part is
+        :attr:`key`.
+        """
+        return path_join(self.pointer.parts[:-1], self.pointer_cls)
 
     @property
     def key(self):
+        """The last part of ``path``: an int for an array index, otherwise
+        a str. Setting it changes the ``path`` member of the operation."""
         return self.get_part(-1)
 
     @key.setter
@@ -673,11 +683,14 @@ class MoveOperation(PatchOperation):
 
     @property
     def from_path(self):
+        """Like :attr:`PatchOperation.path`, but of the ``from`` member: the location of
+        the object or array that contains the moved value."""
         from_ptr = self._from_pointer()
-        return '/'.join(from_ptr.parts[:-1])
+        return path_join(from_ptr.parts[:-1], self.pointer_cls)
 
     @property
     def from_key(self):
+        """Like :attr:`PatchOperation.key`, but the last part of ``from``."""
         return self.get_from_part(-1)
 
     @from_key.setter
