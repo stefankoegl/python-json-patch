@@ -672,6 +672,39 @@ class CopyOperation(PatchOperation):
         return obj
 
 
+class AppendOperation(PatchOperation):
+    """Appends a string suffix to an existing string (not part of RFC 6902)."""
+
+    def _apply(self, obj, journal):
+        try:
+            value = self.operation['value']
+        except KeyError:
+            raise InvalidJsonPatch("The operation does not contain a 'value' member", op=self)
+        if not isinstance(value, str):
+            raise JsonPatchConflict("Cannot append a non-string value", op=self)
+
+        try:
+            subobj, part = self.pointer.to_last(obj)
+        except JsonPointerException as ex:
+            raise JsonPatchPathNotFound(str(ex), op=self)
+
+        if part is None:
+            raise JsonPatchConflict("Cannot append to root document", op=self)
+        if isinstance(subobj, MutableSequence):
+            if not isinstance(part, int) or part < 0 or part >= len(subobj):
+                raise JsonPatchPathNotFound("Cannot append outside of list", op=self)
+        elif isinstance(subobj, MutableMapping):
+            if part not in subobj:
+                raise JsonPatchPathNotFound("Cannot append to a non-existent member", op=self)
+        else:
+            raise JsonPatchConflict("Cannot append to a non-string value", op=self)
+
+        if not isinstance(subobj[part], str):
+            raise JsonPatchConflict("Cannot append to a non-string value", op=self)
+        journal.setitem(subobj, part, subobj[part] + value)
+        return obj
+
+
 def _restore(obj, saved):
     """Restores the contents of a document from a copy of it.
 
@@ -1002,6 +1035,17 @@ class JsonPatch(object):
 
         cls = self.operations[op]
         return cls(operation, pointer_cls=self.pointer_cls)
+
+
+class JsonPatchWithAppend(JsonPatch):
+    """A JsonPatch with an optional, non-RFC string append operation.
+
+    Each append operation requires full ``op``, ``path`` and ``value`` members.
+    It appends a string suffix to an existing object member or array element.
+    The standard JsonPatch class and module-level helpers remain RFC 6902 only.
+    """
+
+    operations = MappingProxyType(dict(JsonPatch.operations, append=AppendOperation))
 
 
 class DiffBuilder(object):
