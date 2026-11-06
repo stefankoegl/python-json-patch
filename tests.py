@@ -3345,6 +3345,14 @@ class AppendOperationTests(unittest.TestCase):
                     patch.apply(doc)
                 self.assertIsInstance(raised.exception.op, jsonpatch.AppendOperation)
 
+    def test_rejects_immutable_container(self):
+        # a tuple can be indexed like an array, but not be modified
+        patch = jsonpatch.JsonPatchWithAppend([
+            {'op': 'append', 'path': '/foo/0', 'value': '!'},
+        ])
+        with self.assertRaises(jsonpatch.JsonPatchConflict):
+            patch.apply({'foo': ('Hello',)})
+
 
 class AppendInterfaceTests(unittest.TestCase):
 
