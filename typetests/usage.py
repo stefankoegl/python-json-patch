@@ -9,6 +9,7 @@ unused ignores), so they test that wrong usage is rejected.
 
 import json
 from collections.abc import Mapping
+from types import MappingProxyType
 from typing import Any
 
 import jsonpointer
@@ -45,12 +46,19 @@ assert_type(patch.apply(doc, in_place=True, atomic=True), Any)
 assert_type(patch.to_string(), str)
 assert_type(patch.to_string(dumps=json.dumps), str)
 assert_type(bool(patch), bool)
-assert_type(list(patch), list[Mapping[str, Any]])
+assert_type(patch.patch, list[dict[str, Any]])
+assert_type(list(patch), list[dict[str, Any]])
+assert_type(next(iter(patch)), dict[str, Any])
+assert_type(jsonpatch.make_patch(doc, {}).patch, list[dict[str, Any]])
+abstract_op: Mapping[str, str] = MappingProxyType({'op': 'remove', 'path': '/foo'})
+JsonPatch(iter((abstract_op,)))
+assert_type(PatchOperation(abstract_op).operation, dict[str, Any])
 assert_type(JsonPatch.from_string('[]'), JsonPatch)
 assert_type(JsonPatch.from_string(b'[]', loads=json.loads), JsonPatch)
 assert_type(JsonPatch.from_string(bytearray(b'[]')), JsonPatch)
 assert_type(JsonPatch.from_diff(doc, {}, optimization=False), JsonPatch)
 assert_type(JsonPatch.operations['add'], type[PatchOperation])
+assert_type(JsonPatch.operations, MappingProxyType[str, type[PatchOperation]])
 
 
 class MyPatch(JsonPatch):
@@ -69,6 +77,7 @@ assert_type(operation.path, str)
 assert_type(operation.key, int | str)
 operation.key = 1
 assert_type(operation.pointer, JsonPointer)
+assert_type(operation.operation, dict[str, Any])
 move = jsonpatch.MoveOperation({'op': 'move', 'from': '/a', 'path': '/b'})
 assert_type(move.from_key, int | str)
 
