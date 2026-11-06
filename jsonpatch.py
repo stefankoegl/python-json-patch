@@ -373,7 +373,8 @@ class PatchOperation(object):
             except TypeError:
                 raise InvalidJsonPatch("Invalid 'path'", op=operation)
 
-        self.operation = operation
+        # Setters update operation members, even when the input is read-only.
+        self.operation = operation if isinstance(operation, dict) else dict(operation)
 
     def _from_pointer(self):
         """Builds the pointer of the 'from' member like __init__ builds the
@@ -791,7 +792,7 @@ class JsonPatch(object):
         if isinstance(patch, (str, bytes, Mapping)):
             raise InvalidJsonPatch("Document is expected to be sequence of operations")
         try:
-            self.patch = patch if isinstance(patch, Sequence) else list(patch)
+            self.patch = list(patch)
         except TypeError:
             raise InvalidJsonPatch("Document is expected to be sequence of operations")
 
@@ -799,7 +800,7 @@ class JsonPatch(object):
         # is correct by retrieving each patch element.
         # Much of the validation is done in the initializer
         # though some is delayed until the patch is applied.
-        for op in self.patch:
+        for index, op in enumerate(self.patch):
             # We're only checking for strings in the following check
             # for two reasons:
             #
@@ -815,6 +816,10 @@ class JsonPatch(object):
                                        op=op)
 
             self._get_operation(op)
+            # Keep validation errors tied to the original input, but expose
+            # concrete, JSON-serializable operation dictionaries on success.
+            if not isinstance(op, dict):
+                self.patch[index] = dict(op)
 
     def __str__(self):
         """str(self) -> self.to_string()"""

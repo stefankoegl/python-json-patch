@@ -1818,8 +1818,34 @@ class JsonPatchCreationTest(unittest.TestCase):
                            ({'op': 'add', 'path': '/a', 'value': 1},)):
             with self.subTest(operations=operations):
                 patch = jsonpatch.JsonPatch(operations)
-                self.assertIs(patch.patch, operations)
+                self.assertIsInstance(patch.patch, list)
+                self.assertEqual(patch.patch, list(operations))
                 self.assertEqual(patch.apply({}), {'a': 1} if operations else {})
+
+    def test_creation_normalizes_abstract_operations(self):
+        operation = MappingProxyType({'op': 'add', 'path': '/a', 'value': 1})
+        for operations in ([operation], (operation,), iter([operation])):
+            with self.subTest(operations=type(operations).__name__):
+                patch = jsonpatch.JsonPatch(operations)
+                self.assertIsInstance(patch.patch, list)
+                self.assertIsInstance(patch.patch[0], dict)
+                self.assertIsInstance(next(iter(patch)), dict)
+                self.assertEqual(json.loads(patch.to_string()), [dict(operation)])
+                patch.patch[0]['path'] = '/b'
+                self.assertEqual(patch.apply({}), {'b': 1})
+                self.assertEqual(operation['path'], '/a')
+
+    def test_operation_normalizes_read_only_mapping(self):
+        operation = MappingProxyType({
+            'op': 'move', 'from': '/a/0', 'path': '/b/0'})
+        move = jsonpatch.MoveOperation(operation)
+        self.assertIsInstance(move.operation, dict)
+        move.key = 1
+        move.from_key = 2
+        self.assertEqual(move.operation['path'], '/b/1')
+        self.assertEqual(move.operation['from'], '/a/2')
+        self.assertEqual(operation['path'], '/b/0')
+        self.assertEqual(operation['from'], '/a/0')
 
     def test_creation_fails_with_invalid_patch(self):
         invalid_patches = [
