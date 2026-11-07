@@ -53,6 +53,10 @@ _ST_REMOVE = 1
 _EXACT_MATCH_LIMIT = 500 ** 2
 
 
+# The from_parts of pointer classes that don't override it, see path_join
+_JSONPOINTER_FROM_PARTS = JsonPointer.from_parts.__func__
+
+
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
 __version__ = '1.44'
@@ -190,7 +194,9 @@ def make_patch(src, dst, pointer_cls=JsonPointer, generate_test_ops=False):
     :param dst: Target JSON document, including arrays and scalar values.
     :type dst: object
 
-    :param pointer_cls: JSON pointer class to use.
+    :param pointer_cls: JSON pointer class to use. The paths of the
+                        created operations are written with
+                        :func:`path_join`, so they use its syntax.
     :type pointer_cls: Type[JsonPointer]
 
     :param generate_test_ops: Precede each ``remove`` and ``replace``
@@ -209,6 +215,83 @@ def make_patch(src, dst, pointer_cls=JsonPointer, generate_test_ops=False):
 
     return JsonPatch.from_diff(src, dst, pointer_cls=pointer_cls,
                                generate_test_ops=generate_test_ops)
+
+
+def path_split(path, pointer_cls=JsonPointer):
+    """Splits the ``path`` (or ``from``) of an operation into its parts.
+
+    The parts are the unescaped reference tokens of the JSON Pointer: ``~1``
+    becomes ``/`` and ``~0`` becomes ``~``. They are always strings, also
+    those that refer to array elements, as only the document a path is
+    applied to tells whether a part is an object key or an array index.
+
+    This is the reverse of :func:`path_join`.
+
+    :param path: The path, a JSON Pointer such as ``'/foo/0'``.
+    :type path: str
+
+    :param pointer_cls: JSON pointer class to parse the path with.
+    :type pointer_cls: Type[JsonPointer]
+
+    :return: The unescaped parts of the path; empty for the whole document
+             (the path ``''``).
+    :rtype: tuple[str, ...]
+
+    :raises JsonPointerException: if ``path`` is not a valid JSON Pointer.
+
+    >>> path_split('/foo/0')
+    ('foo', '0')
+    >>> path_split('/~1fields~1test/a~0b')
+    ('/fields/test', 'a~b')
+    >>> path_split('')
+    ()
+    """
+    return tuple(pointer_cls(path).parts)
+
+
+def path_join(parts, pointer_cls=JsonPointer):
+    """Joins unescaped parts into a path, as used in the ``path`` (or
+    ``from``) of an operation.
+
+    Each part is converted to a string and escaped: ``~`` becomes ``~0`` and
+    ``/`` becomes ``~1``. Integers can be used for array indices.
+
+    This is the reverse of :func:`path_split`. :meth:`JsonPatch.from_diff`
+    and :func:`make_patch` use it to write the paths of the operations they
+    create, so these use the syntax of their ``pointer_cls``.
+
+    If ``pointer_cls`` overrides ``JsonPointer.from_parts``,
+    the path is ``pointer_cls.from_parts(parts).path``, so a pointer class
+    with a different path syntax overrides ``from_parts`` to build pointers
+    from parts. Otherwise the path is a JSON Pointer as defined by RFC 6901,
+    and ``pointer_cls`` is not used, as ``from_parts`` of ``JsonPointer``
+    always builds such a pointer.
+
+    :param parts: The object keys and array indices that lead to the
+                  location; empty for the whole document.
+    :type parts: Iterable[str | int]
+
+    :param pointer_cls: JSON pointer class to build the path with.
+    :type pointer_cls: Type[JsonPointer]
+
+    :return: The path, a JSON Pointer.
+    :rtype: str
+
+    >>> path_join(['foo', 0])
+    '/foo/0'
+    >>> path_join(['/fields/test', 'a~b'])
+    '/~1fields~1test/a~0b'
+    >>> path_join([])
+    ''
+    """
+    from_parts = getattr(pointer_cls, 'from_parts', None)
+    if from_parts is None or \
+            getattr(from_parts, '__func__', None) is _JSONPOINTER_FROM_PARTS:
+        # Also for subclasses that only change how paths are parsed, which
+        # JsonPointer.from_parts would parse an RFC 6901 pointer with
+        return _to_pointer(parts)
+
+    return from_parts(parts).path
 
 
 class _NullJournal(object):
@@ -421,10 +504,20 @@ class PatchOperation(object):
 
     @property
     def path(self):
-        return '/'.join(self.pointer.parts[:-1])
+        """The location of the object or array that contains the target of
+        the operation, i.e. its ``path`` without the last part, written in
+        the syntax of ``pointer_cls`` (see :func:`path_join`).
+
+        For example ``'/a/0'`` for the ``path`` ``'/a/0/b'``, and ``''`` for
+        a target at the top level of the document. The last part is
+        :attr:`key`.
+        """
+        return path_join(self.pointer.parts[:-1], self.pointer_cls)
 
     @property
     def key(self):
+        """The last part of ``path``, as returned by :meth:`get_part`.
+        Setting it changes the ``path`` member of the operation."""
         return self.get_part(-1)
 
     @key.setter
@@ -432,6 +525,20 @@ class PatchOperation(object):
         self.set_part(-1, value)
 
     def get_part(self, index):
+        """Returns the part of ``path`` at ``index``, unescaped.
+
+        The part is converted to an int if ``int()`` accepts it, and is a
+        str otherwise. Whether it is an array index or an object key is not
+        checked, as only the document tells, so numeric object keys are
+        converted as well: ``'01'`` and ``'1_0'`` become ``1`` and ``10``.
+        To get the exact keys, use :func:`path_split` or ``pointer.parts``.
+
+        >>> op = RemoveOperation({'op': 'remove', 'path': '/a/0/01/b'})
+        >>> [op.get_part(i) for i in range(4)]
+        ['a', 0, 1, 'b']
+        >>> path_split(op.location)
+        ('a', '0', '01', 'b')
+        """
         try:
             return int(self.pointer.parts[index])
         except ValueError:
@@ -595,11 +702,16 @@ class MoveOperation(PatchOperation):
 
     @property
     def from_path(self):
+        """Like :attr:`PatchOperation.path`, but of the ``from`` member: the location of
+        the object or array that contains the moved value."""
         from_ptr = self._from_pointer()
-        return '/'.join(from_ptr.parts[:-1])
+        return path_join(from_ptr.parts[:-1], self.pointer_cls)
 
     @property
     def from_key(self):
+        """The last part of ``from``, as returned by
+        :meth:`get_from_part`. Setting it changes the ``from`` member of the
+        operation."""
         return self.get_from_part(-1)
 
     @from_key.setter
@@ -607,6 +719,8 @@ class MoveOperation(PatchOperation):
         self.set_from_part(-1, value)
 
     def get_from_part(self, index):
+        """Like :meth:`PatchOperation.get_part`, but returns the part of
+        ``from`` at ``index``: also numeric object keys become ints."""
         from_ptr = self._from_pointer()
         try:
             return int(from_ptr.parts[index])
@@ -924,7 +1038,9 @@ class JsonPatch(object):
                       JSON string.
         :type dumps: Callable
 
-        :param pointer_cls: JSON pointer class to use.
+        :param pointer_cls: JSON pointer class to use. The paths of the
+                            created operations are written with
+                            :func:`path_join`, so they use its syntax.
         :type pointer_cls: Type[JsonPointer]
 
         :param generate_test_ops: Precede each ``remove`` and ``replace``
@@ -1144,7 +1260,8 @@ class DiffBuilder(object):
                         op_second['op'] == 'add':
                     yield {
                         'op': 'replace',
-                        'path': _to_pointer(op_second['path']),
+                        'path': path_join(op_second['path'],
+                                          self.pointer_cls),
                         'value': op_second['value'],
                     }
                     i += 2
@@ -1153,7 +1270,8 @@ class DiffBuilder(object):
             operation = operations[i]
             for member in ('from', 'path'):
                 if member in operation:
-                    operation[member] = _to_pointer(operation[member])
+                    operation[member] = path_join(operation[member],
+                                                  self.pointer_cls)
             yield operation
             i += 1
 
@@ -1602,6 +1720,7 @@ def _path_join(path, key):
 
 
 def _to_pointer(path):
+    """ Fast path of path_join for JsonPointer """
     return ''.join('/' + str(part).replace('~', '~0').replace('/', '~1')
                    for part in path)
 

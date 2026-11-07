@@ -33,6 +33,11 @@ assert_type(jsonpatch.apply_patch(doc, json.dumps(ops)), Any)
 assert_type(jsonpatch.apply_patch(doc, json.dumps(ops).encode()), Any)
 assert_type(jsonpatch.make_patch(doc, {}), JsonPatch)
 assert_type(jsonpatch.make_patch(doc, {}, generate_test_ops=True), JsonPatch)
+assert_type(jsonpatch.path_split('/foo/0'), tuple[str, ...])
+assert_type(jsonpatch.path_split('/foo', pointer_cls=JsonPointer), tuple[str, ...])
+assert_type(jsonpatch.path_join(['foo', 0]), str)
+assert_type(jsonpatch.path_join(jsonpatch.path_split('/foo')), str)
+jsonpatch.path_join([1.5])  # type: ignore[list-item]
 
 # values of dicts with narrow types are accepted (Mapping is covariant)
 str_ops: list[dict[str, str]] = [{'op': 'remove', 'path': '/foo'}]
