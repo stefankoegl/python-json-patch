@@ -1947,6 +1947,17 @@ class OperationLocationTests(unittest.TestCase):
         op = jsonpatch.AddOperation({'op': 'add', 'path': '/foo', 'value': 1})
         self.assertEqual((op.path, op.key), ('', 'foo'))
 
+    def test_numeric_object_keys_become_ints(self):
+        # get_part can't tell array indices from object keys, so it converts
+        # every part that int() accepts; path_split keeps the exact keys
+        op = jsonpatch.RemoveOperation({'op': 'remove', 'path': '/a/01/1_0'})
+        self.assertEqual((op.get_part(1), op.key), (1, 10))
+        self.assertEqual(jsonpatch.path_split(op.location),
+                         ('a', '01', '1_0'))
+        op = jsonpatch.MoveOperation(
+            {'op': 'move', 'from': '/a/01/1_0', 'path': '/b'})
+        self.assertEqual((op.get_from_part(1), op.from_key), (1, 10))
+
     def test_path_is_escaped(self):
         op = jsonpatch.RemoveOperation({'op': 'remove', 'path': '/a~1b/~0/c'})
         self.assertEqual((op.path, op.key), ('/a~1b/~0', 'c'))

@@ -516,8 +516,8 @@ class PatchOperation(object):
 
     @property
     def key(self):
-        """The last part of ``path``: an int for an array index, otherwise
-        a str. Setting it changes the ``path`` member of the operation."""
+        """The last part of ``path``, as returned by :meth:`get_part`.
+        Setting it changes the ``path`` member of the operation."""
         return self.get_part(-1)
 
     @key.setter
@@ -525,6 +525,20 @@ class PatchOperation(object):
         self.set_part(-1, value)
 
     def get_part(self, index):
+        """Returns the part of ``path`` at ``index``, unescaped.
+
+        The part is converted to an int if ``int()`` accepts it, and is a
+        str otherwise. Whether it is an array index or an object key is not
+        checked, as only the document tells, so numeric object keys are
+        converted as well: ``'01'`` and ``'1_0'`` become ``1`` and ``10``.
+        To get the exact keys, use :func:`path_split` or ``pointer.parts``.
+
+        >>> op = RemoveOperation({'op': 'remove', 'path': '/a/0/01/b'})
+        >>> [op.get_part(i) for i in range(4)]
+        ['a', 0, 1, 'b']
+        >>> path_split(op.location)
+        ('a', '0', '01', 'b')
+        """
         try:
             return int(self.pointer.parts[index])
         except ValueError:
@@ -695,7 +709,9 @@ class MoveOperation(PatchOperation):
 
     @property
     def from_key(self):
-        """Like :attr:`PatchOperation.key`, but the last part of ``from``."""
+        """The last part of ``from``, as returned by
+        :meth:`get_from_part`. Setting it changes the ``from`` member of the
+        operation."""
         return self.get_from_part(-1)
 
     @from_key.setter
@@ -703,6 +719,8 @@ class MoveOperation(PatchOperation):
         self.set_from_part(-1, value)
 
     def get_from_part(self, index):
+        """Like :meth:`PatchOperation.get_part`, but returns the part of
+        ``from`` at ``index``: also numeric object keys become ints."""
         from_ptr = self._from_pointer()
         try:
             return int(from_ptr.parts[index])
