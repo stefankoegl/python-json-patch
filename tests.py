@@ -1935,18 +1935,50 @@ class OperationLocationTests(unittest.TestCase):
 
     def test_path_and_key(self):
         op = jsonpatch.RemoveOperation({'op': 'remove', 'path': '/a/0/b'})
-        # unlike the 'path' member, path is only the parts before the key,
-        # without a leading '/'
-        self.assertEqual(op.path, 'a/0')
+        # unlike the 'path' member, path is only the parts before the key
+        self.assertEqual(op.path, '/a/0')
         self.assertEqual(op.key, 'b')
         # array indices are ints, other parts stay strings
         self.assertEqual([op.get_part(i) for i in range(3)], ['a', 0, 'b'])
         self.assertEqual(op.get_part(-2), 0)
 
         op = jsonpatch.AddOperation({'op': 'add', 'path': '/foo/-', 'value': 1})
-        self.assertEqual((op.path, op.key), ('foo', '-'))
+        self.assertEqual((op.path, op.key), ('/foo', '-'))
         op = jsonpatch.AddOperation({'op': 'add', 'path': '/foo', 'value': 1})
         self.assertEqual((op.path, op.key), ('', 'foo'))
+
+    def test_numeric_object_keys_become_ints(self):
+        # get_part can't tell array indices from object keys, so it converts
+        # every part that int() accepts; path_split keeps the exact keys
+        op = jsonpatch.RemoveOperation({'op': 'remove', 'path': '/a/01/1_0'})
+        self.assertEqual((op.get_part(1), op.key), (1, 10))
+        self.assertEqual(jsonpatch.path_split(op.location),
+                         ('a', '01', '1_0'))
+        op = jsonpatch.MoveOperation(
+            {'op': 'move', 'from': '/a/01/1_0', 'path': '/b'})
+        self.assertEqual((op.get_from_part(1), op.from_key), (1, 10))
+
+    def test_path_is_escaped(self):
+        op = jsonpatch.RemoveOperation({'op': 'remove', 'path': '/a~1b/~0/c'})
+        self.assertEqual((op.path, op.key), ('/a~1b/~0', 'c'))
+        op = jsonpatch.MoveOperation(
+            {'op': 'move', 'from': '/a~1b/~0/c', 'path': '/d'})
+        self.assertEqual((op.from_path, op.from_key), ('/a~1b/~0', 'c'))
+
+    def test_path_of_root(self):
+        op = jsonpatch.ReplaceOperation({'op': 'replace', 'path': '',
+                                         'value': 1})
+        self.assertEqual(op.path, '')
+
+    def test_path_with_custom_syntax(self):
+        op = jsonpatch.RemoveOperation({'op': 'remove', 'path': 'a.0.b'},
+                                       pointer_cls=DotJsonPointer)
+        self.assertEqual((op.path, op.key), ('a.0', 'b'))
+        op = jsonpatch.MoveOperation(
+            {'op': 'move', 'from': 'a.1.b', 'path': 'c'},
+            pointer_cls=DotJsonPointer)
+        self.assertEqual((op.from_path, op.from_key), ('a.1', 'b'))
+        self.assertEqual((op.path, op.key), ('', 'c'))
 
     def test_set_key(self):
         operation = {'op': 'add', 'path': '/foo/1', 'value': 9}
@@ -1973,7 +2005,7 @@ class OperationLocationTests(unittest.TestCase):
 
     def test_from_path_and_key(self):
         op = jsonpatch.MoveOperation({'op': 'move', 'from': '/a/1/b', 'path': '/c'})
-        self.assertEqual(op.from_path, 'a/1')
+        self.assertEqual(op.from_path, '/a/1')
         self.assertEqual(op.from_key, 'b')
         self.assertEqual([op.get_from_part(i) for i in range(3)], ['a', 1, 'b'])
         self.assertEqual((op.path, op.key), ('', 'c'))
@@ -1996,7 +2028,7 @@ class OperationLocationTests(unittest.TestCase):
                 op = jsonpatch.MoveOperation(
                     {'op': 'move', 'from': pointer_cls('/a/1/b'), 'path': '/c'},
                     pointer_cls=pointer_cls)
-                self.assertEqual(op.from_path, 'a/1')
+                self.assertEqual(op.from_path, '/a/1')
 
     def test_from_parts_with_pointer_object(self):
         for pointer_cls in (jsonpointer.JsonPointer, CustomJsonPointer):
@@ -2026,6 +2058,254 @@ class CustomJsonPointer(jsonpointer.JsonPointer):
 class PrefixJsonPointer(jsonpointer.JsonPointer):
     def __init__(self, pointer):
         super(PrefixJsonPointer, self).__init__('/foo/bar' + pointer)
+
+
+class PathUtilityTests(unittest.TestCase):
+    """ path_split and path_join convert between paths and their parts """
+
+    def test_split(self):
+        self.assertEqual(jsonpatch.path_split('/foo/bar'), ('foo', 'bar'))
+
+    def test_split_array_index_is_str(self):
+        self.assertEqual(jsonpatch.path_split('/foo/0/-'), ('foo', '0', '-'))
+
+    def test_split_unescapes(self):
+        self.assertEqual(jsonpatch.path_split('/a~1b/c~0d/~01'),
+                         ('a/b', 'c~d', '~1'))
+
+    def test_split_root(self):
+        self.assertEqual(jsonpatch.path_split(''), ())
+
+    def test_split_empty_key(self):
+        self.assertEqual(jsonpatch.path_split('/'), ('',))
+        self.assertEqual(jsonpatch.path_split('//a'), ('', 'a'))
+
+    def test_split_invalid(self):
+        self.assertRaises(jsonpatch.JsonPointerException,
+                          jsonpatch.path_split, 'foo')
+        self.assertRaises(jsonpatch.JsonPointerException,
+                          jsonpatch.path_split, '/a~2')
+
+    def test_join(self):
+        self.assertEqual(jsonpatch.path_join(['foo', 'bar']), '/foo/bar')
+
+    def test_join_int(self):
+        self.assertEqual(jsonpatch.path_join(['foo', 0, '-']), '/foo/0/-')
+
+    def test_join_escapes(self):
+        self.assertEqual(jsonpatch.path_join(['a/b', 'c~d', '~1']),
+                         '/a~1b/c~0d/~01')
+
+    def test_join_root(self):
+        self.assertEqual(jsonpatch.path_join([]), '')
+
+    def test_join_iterable(self):
+        self.assertEqual(jsonpatch.path_join(iter(('a', 'b'))), '/a/b')
+
+    def test_round_trip(self):
+        for path in ('', '/', '/a', '/a/0', '/~0~1/', '/a~1b/~01/-'):
+            parts = jsonpatch.path_split(path)
+            self.assertEqual(jsonpatch.path_join(parts), path)
+
+    def test_paths_of_generated_patch(self):
+        src = {'a/b': {'c~d': [1, 2]}}
+        dst = {'a/b': {'c~d': [1, 2, 3]}}
+        patch = jsonpatch.make_patch(src, dst)
+        self.assertEqual([jsonpatch.path_split(op['path']) for op in patch],
+                         [('a/b', 'c~d', '2')])
+
+    def test_join_paths_apply(self):
+        doc = {'a/b': {'c~d': [1, 2]}}
+        path = jsonpatch.path_join(['a/b', 'c~d', 0])
+        res = jsonpatch.apply_patch(doc, [{'op': 'remove', 'path': path}])
+        self.assertEqual(res, {'a/b': {'c~d': [2]}})
+
+    def test_custom_pointer_cls(self):
+        self.assertEqual(
+            jsonpatch.path_split('a.0.b', pointer_cls=DotJsonPointer),
+            ('a', '0', 'b'))
+        self.assertEqual(
+            jsonpatch.path_join(['a', 0, 'b'], pointer_cls=DotJsonPointer),
+            'a.0.b')
+        self.assertEqual(
+            jsonpatch.path_join([], pointer_cls=DotJsonPointer), '')
+
+    def test_custom_pointer_cls_path_only(self):
+        # a subclass that only changes how paths are parsed, but doesn't
+        # override from_parts, keeps the RFC 6901 syntax
+        self.assertEqual(
+            jsonpatch.path_join(['baz'], pointer_cls=PrefixJsonPointer),
+            '/baz')
+        self.assertEqual(
+            jsonpatch.path_split('/baz', pointer_cls=PrefixJsonPointer),
+            ('foo', 'bar', 'baz'))
+
+
+class DotJsonPointer(jsonpointer.JsonPointer):
+    """ A minimal pointer with a different syntax: 'a.0.b' instead of
+    '/a/0/b' (without escaping, so keys must not contain '.') """
+
+    def __init__(self, pointer):
+        self.parts = pointer.split('.') if pointer else []
+
+    @classmethod
+    def from_parts(cls, parts):
+        return cls('.'.join(str(part) for part in parts))
+
+    @property
+    def path(self):
+        return '.'.join(self.parts)
+
+
+class StatefulJsonPointer(jsonpointer.JsonPointer):
+    """ A pointer whose path property depends on state set in __init__ """
+
+    def __init__(self, pointer):
+        super(StatefulJsonPointer, self).__init__(pointer)
+        self.suffix = ''
+
+    @property
+    def path(self):
+        return super(StatefulJsonPointer, self).path + self.suffix
+
+
+class ArgsJsonPointer(jsonpointer.JsonPointer):
+    """ A pointer whose __new__ requires the path """
+
+    def __new__(cls, pointer):
+        instance = super(ArgsJsonPointer, cls).__new__(cls)
+        instance.created_from = pointer
+        return instance
+
+
+class DuckJsonPointer(object):
+    """ A pointer class that does not derive from JsonPointer and has no
+    from_parts """
+
+    def __init__(self, pointer):
+        self._pointer = jsonpointer.JsonPointer(pointer)
+        self.parts = self._pointer.parts
+
+    @property
+    def path(self):
+        return self._pointer.path
+
+    def to_last(self, doc):
+        return self._pointer.to_last(doc)
+
+
+class PointerClassCompatibilityTests(unittest.TestCase):
+    """ Pointer classes that don't override from_parts keep getting RFC 6901
+    paths from path_join, make_patch and PatchOperation.path, without being
+    instantiated by path_join """
+
+    src = {'a': {'b': [1, 2], 'c': 1}}
+    dst = {'a': {'b': [1], 'c': 2, 'd': 3}}
+
+    def test_path_join(self):
+        for cls in (StatefulJsonPointer, ArgsJsonPointer, DuckJsonPointer,
+                    PrefixJsonPointer, CustomJsonPointer):
+            with self.subTest(pointer_cls=cls):
+                self.assertEqual(
+                    jsonpatch.path_join(['a~', 0], pointer_cls=cls),
+                    '/a~0/0')
+
+    def test_make_patch(self):
+        expected = jsonpatch.make_patch(self.src, self.dst).patch
+        for cls in (StatefulJsonPointer, ArgsJsonPointer, DuckJsonPointer):
+            with self.subTest(pointer_cls=cls):
+                patch = jsonpatch.make_patch(self.src, self.dst,
+                                             pointer_cls=cls)
+                self.assertEqual(patch.patch, expected)
+                self.assertEqual(patch.apply(self.src), self.dst)
+
+    def test_operation_path(self):
+        for cls in (StatefulJsonPointer, ArgsJsonPointer):
+            with self.subTest(pointer_cls=cls):
+                op = jsonpatch.MoveOperation(
+                    {'op': 'move', 'from': '/a/0/b', 'path': '/c/d'},
+                    pointer_cls=cls)
+                self.assertEqual((op.path, op.from_path), ('/c', '/a/0'))
+
+
+class CustomPathSyntaxTests(unittest.TestCase):
+    """ Patches created by diffing use the syntax of their pointer_cls """
+
+    src = {'a': {'b': 1, 'gone': 0, 'l': [1, 2, 3]},
+           'old': {'x': [1, 2, 3, 4]}}
+    dst = {'a': {'b': 2, 'new': 3, 'l': [1, 3, 9]},
+           'moved': {'x': [1, 2, 3, 4]}}
+
+    expected = [
+        {'op': 'move', 'from': 'old', 'path': 'moved'},
+        {'op': 'remove', 'path': 'a.gone'},
+        {'op': 'add', 'path': 'a.new', 'value': 3},
+        {'op': 'replace', 'path': 'a.b', 'value': 2},
+        {'op': 'remove', 'path': 'a.l.1'},
+        {'op': 'add', 'path': 'a.l.2', 'value': 9},
+    ]
+
+    def assert_patch(self, patch, expected):
+        self.assertEqual(patch.patch, expected)
+        self.assertIs(patch.pointer_cls, DotJsonPointer)
+        self.assertEqual(patch.apply(self.src), self.dst)
+
+    def test_make_patch(self):
+        patch = jsonpatch.make_patch(self.src, self.dst,
+                                     pointer_cls=DotJsonPointer)
+        self.assert_patch(patch, self.expected)
+
+    def test_from_diff(self):
+        patch = jsonpatch.JsonPatch.from_diff(self.src, self.dst,
+                                              pointer_cls=DotJsonPointer)
+        self.assert_patch(patch, self.expected)
+
+    def test_from_diff_without_optimization(self):
+        patch = jsonpatch.JsonPatch.from_diff(self.src, self.dst,
+                                              optimization=False,
+                                              pointer_cls=DotJsonPointer)
+        self.assertEqual(patch.apply(self.src), self.dst)
+        for op in patch:
+            self.assertNotIn('/', op['path'])
+
+    def test_generate_test_ops(self):
+        patch = jsonpatch.make_patch(self.src, self.dst,
+                                     pointer_cls=DotJsonPointer,
+                                     generate_test_ops=True)
+        self.assert_patch(patch, [
+            {'op': 'move', 'from': 'old', 'path': 'moved'},
+            {'op': 'test', 'path': 'a.gone', 'value': 0},
+            {'op': 'remove', 'path': 'a.gone'},
+            {'op': 'add', 'path': 'a.new', 'value': 3},
+            {'op': 'test', 'path': 'a.b', 'value': 1},
+            {'op': 'replace', 'path': 'a.b', 'value': 2},
+            {'op': 'test', 'path': 'a.l.1', 'value': 2},
+            {'op': 'remove', 'path': 'a.l.1'},
+            {'op': 'add', 'path': 'a.l.2', 'value': 9},
+        ])
+
+    def test_replace_merged_from_remove_and_add(self):
+        src = {'a': [{'k': 1}]}
+        dst = {'a': [2]}
+        patch = jsonpatch.make_patch(src, dst, pointer_cls=DotJsonPointer)
+        self.assertEqual(patch.patch,
+                         [{'op': 'replace', 'path': 'a.0', 'value': 2}])
+        self.assertEqual(patch.apply(src), dst)
+
+    def test_root(self):
+        patch = jsonpatch.make_patch([1], {'a': 1},
+                                     pointer_cls=DotJsonPointer)
+        self.assertEqual(patch.patch,
+                         [{'op': 'replace', 'path': '', 'value': {'a': 1}}])
+
+    def test_paths_split(self):
+        patch = jsonpatch.make_patch(self.src, self.dst,
+                                     pointer_cls=DotJsonPointer)
+        self.assertEqual(
+            [jsonpatch.path_split(op['path'], pointer_cls=DotJsonPointer)
+             for op in patch],
+            [('moved',), ('a', 'gone'), ('a', 'new'), ('a', 'b'),
+             ('a', 'l', '1'), ('a', 'l', '2')])
 
 
 class CustomJsonPointerTests(unittest.TestCase):
@@ -3591,6 +3871,9 @@ if __name__ == '__main__':
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(JsonPatchCreationTest))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(UtilityMethodTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(OperationLocationTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(PathUtilityTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomPathSyntaxTests))
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(PointerClassCompatibilityTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomJsonPointerTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomOperationTests))
         suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ExceptionOperationTests))
