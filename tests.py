@@ -446,6 +446,63 @@ class ApplyPatchTestCase(unittest.TestCase):
                 jsonpatch.apply_patch(
                     doc, [{'op': 'test', 'path': '/a', 'value': value}])
 
+    def test_test_read_only_mapping_preserves_boolean_types(self):
+        for mapping_type in (dict, MappingProxyType):
+            for nested in (False, True):
+                for actual, expected in ((True, 1), (False, 0),
+                                         (1, True), (0, False)):
+                    with self.subTest(mapping_type=mapping_type, nested=nested,
+                                      actual=actual, expected=expected):
+                        mapping = mapping_type({'a': actual})
+                        doc = {'nested': mapping} if nested else mapping
+                        path = '/nested' if nested else ''
+                        original = json.dumps(doc, default=dict)
+                        patch = [{'op': 'test', 'path': path,
+                                  'value': {'a': expected}}]
+
+                        with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+                            jsonpatch.apply_patch(doc, patch, in_place=True)
+
+                        self.assertEqual(json.dumps(doc, default=dict), original)
+                        if nested:
+                            self.assertIs(doc['nested'], mapping)
+
+    def test_test_nested_read_only_mapping_preserves_boolean_types(self):
+        documents = [
+            ({'nested': MappingProxyType({'a': True})},
+             {'nested': {'a': 1}}),
+            ([MappingProxyType({'a': False})], [{'a': 0}]),
+            (MappingProxyType({'nested': [True]}), {'nested': [1]}),
+        ]
+        for doc, value in documents:
+            with self.subTest(doc=doc, value=value):
+                original = json.dumps(doc, default=dict)
+                with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+                    jsonpatch.apply_patch(
+                        doc, [{'op': 'test', 'path': '', 'value': value}],
+                        in_place=True)
+                self.assertEqual(json.dumps(doc, default=dict), original)
+
+    def test_test_read_only_mapping_success_preserves_input(self):
+        for mapping_type in (dict, MappingProxyType):
+            for nested in (False, True):
+                for actual, expected in ((1, 1.0), (1.0, 1), (True, True),
+                                         (False, False), (None, None)):
+                    with self.subTest(mapping_type=mapping_type, nested=nested,
+                                      actual=actual, expected=expected):
+                        mapping = mapping_type({'a': actual})
+                        doc = {'nested': mapping} if nested else mapping
+                        path = '/nested' if nested else ''
+                        original = json.dumps(doc, default=dict)
+                        result = jsonpatch.apply_patch(
+                            doc, [{'op': 'test', 'path': path,
+                                   'value': {'a': expected}}], in_place=True)
+
+                        self.assertIs(result, doc)
+                        self.assertEqual(json.dumps(doc, default=dict), original)
+                        if nested:
+                            self.assertIs(result['nested'], mapping)
+
 
     def test_test_not_existing(self):
         obj =  {'bar': 'qux'}
