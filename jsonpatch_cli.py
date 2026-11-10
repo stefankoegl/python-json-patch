@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """ The jsondiff and jsonpatch command line programs """
 
 import sys
@@ -26,6 +24,16 @@ jsondiff_parser.add_argument('-v', '--version', action='version',
                              version='%(prog)s ' + jsonpatch.__version__)
 
 
+def _input_files(*streams):
+    """ Closes the input files when the returned context is left; stdin is
+    left open, as it is not ours """
+    inputs = ExitStack()
+    for stream in streams:
+        if stream is not sys.stdin:
+            inputs.enter_context(stream)
+    return inputs
+
+
 def jsondiff_main():
     try:
         diff_files()
@@ -36,10 +44,7 @@ def jsondiff_main():
 def diff_files():
     """ Diffs two JSON files and prints a patch """
     args = jsondiff_parser.parse_args()
-    with ExitStack() as inputs:
-        for stream in (args.FILE1, args.FILE2):
-            if stream is not sys.stdin:
-                inputs.enter_context(stream)
+    with _input_files(args.FILE1, args.FILE2):
         doc1 = json.load(args.FILE1)
         doc2 = json.load(args.FILE2)
     patch = jsonpatch.make_patch(doc1, doc2, generate_test_ops=args.test_ops)
@@ -67,6 +72,7 @@ jsonpatch_parser.add_argument('-v', '--version', action='version',
 jsonpatch_parser.add_argument('-u', '--preserve-unicode', action='store_true',
                               help='Output Unicode character as-is without using Code Point')
 
+
 def jsonpatch_main():
     try:
         patch_files()
@@ -77,12 +83,13 @@ def jsonpatch_main():
 def patch_files():
     """ Applies a JSON patch on a JSON file """
     args = jsonpatch_parser.parse_args()
-    doc = json.load(args.ORIGINAL)
-    result = jsonpatch.apply_patch(doc, args.PATCH.read())
+    # The inputs are closed before anything is written, as Windows cannot
+    # replace ORIGINAL while it is open.
+    with _input_files(args.ORIGINAL, args.PATCH):
+        doc = json.load(args.ORIGINAL)
+        result = jsonpatch.apply_patch(doc, args.PATCH.read())
 
     if args.in_place:
-        # 2026-10-11: Release the input handle before replacing it on Windows.
-        args.ORIGINAL.close()
         dirname = os.path.abspath(os.path.dirname(args.ORIGINAL.name))
 
         fd = None
@@ -91,7 +98,7 @@ def patch_files():
             # creating a temporary file in the same directory as the
             # original file so we can atomically move the new file over
             # the original later.  (This is done in the same directory
-	    # because atomic renames do not work across mount points.)
+            # because atomic renames do not work across mount points.)
 
             fd, pathname = tempfile.mkstemp(dir=dirname)
             fp = os.fdopen(fd, 'w', encoding='utf-8')
@@ -124,9 +131,9 @@ def patch_files():
 
         fp = sys.stdout
 
-    # By this point we have some sort of file object we can write the 
+    # By this point we have some sort of file object we can write the
     # modified JSON to.
-    
+
     try:
         json.dump(result, fp, indent=args.indent, ensure_ascii=not(args.preserve_unicode))
         fp.write('\n')
