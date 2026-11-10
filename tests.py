@@ -19,7 +19,7 @@ import os
 import stat
 import subprocess
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from types import MappingProxyType
 from unittest import mock
 
@@ -503,6 +503,130 @@ class ApplyPatchTestCase(unittest.TestCase):
                         if nested:
                             self.assertIs(result['nested'], mapping)
 
+
+    def test_test_read_only_sequences_preserve_boolean_types(self):
+        for actual_type in (list, tuple):
+            for expected_type in (list, tuple):
+                for nested in (False, True):
+                    for actual, expected in ((True, 1), (False, 0),
+                                             (1, True), (0, False)):
+                        with self.subTest(actual_type=actual_type,
+                                          expected_type=expected_type,
+                                          nested=nested, actual=actual,
+                                          expected=expected):
+                            sequence = actual_type([actual])
+                            doc = {'nested': sequence} if nested else sequence
+                            path = '/nested' if nested else ''
+                            original = json.dumps(doc)
+                            patch = [{'op': 'test', 'path': path,
+                                      'value': expected_type([expected])}]
+
+                            with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+                                jsonpatch.apply_patch(doc, patch, in_place=True)
+
+                            self.assertEqual(json.dumps(doc), original)
+                            if nested:
+                                self.assertIs(doc['nested'], sequence)
+
+    def test_test_read_only_sequence_success_preserves_input(self):
+        for actual_type in (list, tuple):
+            for expected_type in (list, tuple):
+                for nested in (False, True):
+                    for actual, expected in ((1, 1.0), (1.0, 1), (True, True),
+                                             (False, False), (None, None)):
+                        with self.subTest(actual_type=actual_type,
+                                          expected_type=expected_type,
+                                          nested=nested, actual=actual,
+                                          expected=expected):
+                            sequence = actual_type([actual])
+                            doc = {'nested': sequence} if nested else sequence
+                            path = '/nested' if nested else ''
+                            original = json.dumps(doc)
+                            patch = [{'op': 'test', 'path': path,
+                                      'value': expected_type([expected])}]
+
+                            result = jsonpatch.apply_patch(doc, patch, in_place=True)
+
+                            self.assertIs(result, doc)
+                            self.assertEqual(json.dumps(doc), original)
+                            if nested:
+                                self.assertIs(doc['nested'], sequence)
+
+    def test_test_custom_read_only_sequences(self):
+        class FrozenSequence(Sequence):
+            def __init__(self, values):
+                self.values = tuple(values)
+
+            def __getitem__(self, index):
+                return self.values[index]
+
+            def __len__(self):
+                return len(self.values)
+
+        def snapshot(value):
+            return json.dumps(value, default=lambda value:
+                              dict(value) if isinstance(value, Mapping)
+                              else list(value))
+
+        cases = [
+            (FrozenSequence([True]), [1], False),
+            ([True], FrozenSequence([1]), False),
+            (FrozenSequence([1]), [1.0], True),
+            ([True], FrozenSequence([True]), True),
+            (FrozenSequence([]), (), True),
+            (FrozenSequence([{'a': (True,)}]), [{'a': [True]}], True),
+            (FrozenSequence([MappingProxyType({'a': (True,)})]),
+             [{'a': [1]}], False),
+            ([{'a': FrozenSequence([False])}], ({'a': (0,)},), False),
+        ]
+        for doc, value, succeeds in cases:
+            with self.subTest(doc=doc, value=value):
+                original, original_value = snapshot(doc), snapshot(value)
+                patch = [{'op': 'test', 'path': '', 'value': value}]
+                if succeeds:
+                    self.assertIs(jsonpatch.apply_patch(
+                        doc, patch, in_place=True), doc)
+                else:
+                    with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+                        jsonpatch.apply_patch(doc, patch, in_place=True)
+                self.assertEqual(snapshot(doc), original)
+                self.assertEqual(snapshot(value), original_value)
+
+    def test_test_read_only_sequence_contents_and_lengths(self):
+        for doc, value in [
+            ((True,), (1,)),
+            (({'a': (False,)},), [{'a': [0]}]),
+            ((), [1]),
+            ((1,), [1, 2]),
+            ((1, 2), [2, 1]),
+        ]:
+            with self.subTest(doc=doc, value=value):
+                with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+                    jsonpatch.apply_patch(
+                        doc, [{'op': 'test', 'path': '', 'value': value}],
+                        in_place=True)
+
+    def test_test_strings_and_bytes_remain_scalar(self):
+        for doc, value, succeeds in [
+            ('', '', True),
+            ('text', 'text', True),
+            (b'', b'', True),
+            (b'bytes', b'bytes', True),
+            ('text', 'next', False),
+            (b'bytes', b'other', False),
+            ('text', ('t', 'e', 'x', 't'), False),
+            (('t', 'e', 'x', 't'), 'text', False),
+            (b'12', (49, 50), False),
+            ((49, 50), b'12', False),
+        ]:
+            with self.subTest(doc=doc, value=value):
+                patch = [{'op': 'test', 'path': '', 'value': value}]
+                if succeeds:
+                    self.assertIs(jsonpatch.apply_patch(
+                        doc, patch, in_place=True), doc)
+                else:
+                    with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+                        jsonpatch.apply_patch(doc, patch, in_place=True)
 
     def test_test_not_existing(self):
         obj =  {'bar': 'qux'}
