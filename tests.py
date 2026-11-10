@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 
 import collections
 import contextlib
@@ -91,7 +90,8 @@ class ApplyPatchTestCase(unittest.TestCase):
 
 
     def test_js_file(self):
-        with open('./tests.js', 'r') as f:
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, 'tests.js'), encoding='utf-8') as f:
             tests = json.load(f)
         for test in tests:
             with self.subTest(comment=test.get('comment'), patch=test['patch']):
@@ -4054,54 +4054,11 @@ class StandardAppendIsolationTests(unittest.TestCase):
                          {'message': 'canonical'})
 
 
+def load_tests(loader, tests, pattern):
+    """ Adds the doctests of jsonpatch to the tests of this module """
+    tests.addTests(doctest.DocTestSuite(jsonpatch))
+    return tests
+
+
 if __name__ == '__main__':
-    modules = ['jsonpatch']
-
-
-    def get_suite():
-        suite = unittest.TestSuite()
-        suite.addTest(doctest.DocTestSuite(jsonpatch))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ApplyPatchTestCase))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(EqualityTestCase))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(MakePatchTestCase))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ListTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(InvalidInputTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ConflictTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(StringIndexingTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(OptimizationTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(GenerateTestOpsTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ArrayItemsTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(JsonPointerTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(JsonPatchCreationTest))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(UtilityMethodTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(OperationLocationTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(PathUtilityTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomPathSyntaxTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(PointerClassCompatibilityTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomJsonPointerTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CustomOperationTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(ExceptionOperationTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(AtomicApplyTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(PathNotFoundTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(CommandLineTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(DocumentationTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(StandardAppendIsolationTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(AppendOperationTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(AppendInterfaceTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(AppendAtomicTests))
-        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(AppendDiffTests))
-        return suite
-
-
-    suite = get_suite()
-
-    for module in modules:
-        m = __import__(module, fromlist=[module])
-        suite.addTest(doctest.DocTestSuite(m))
-
-    runner = unittest.TextTestRunner(verbosity=1)
-
-    result = runner.run(suite)
-
-    if not result.wasSuccessful():
-        sys.exit(1)
+    unittest.main()
