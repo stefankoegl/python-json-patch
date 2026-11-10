@@ -1577,13 +1577,13 @@ def _json_equal(first, second):
     if isinstance(first, bool) or isinstance(second, bool):
         return isinstance(first, bool) and isinstance(second, bool) and \
             first == second
-    if isinstance(first, MutableMapping) and \
-            isinstance(second, MutableMapping):
+    if isinstance(first, Mapping) and isinstance(second, Mapping):
         return len(first) == len(second) and all(
             key in second and _json_equal(first[key], second[key])
             for key in first)
-    if isinstance(first, MutableSequence) and \
-            isinstance(second, MutableSequence):
+    if isinstance(first, Sequence) and isinstance(second, Sequence) and \
+            not isinstance(first, (str, bytes)) and \
+            not isinstance(second, (str, bytes)):
         return len(first) == len(second) and all(
             _json_equal(*items) for items in zip(first, second))
     return first == second
