@@ -3148,6 +3148,29 @@ class CommandLineTests(ScriptRunner, unittest.TestCase):
         self.assertEqual(jsonpatch.apply_patch(self.read(src), patch),
                          self.read(dst))
 
+    def test_jsondiff_utf8_bom_files(self):
+        for path, value in (('a.json', {'a': 1}), ('b.json', {'a': 2})):
+            with open(os.path.join(self.dir, path), 'w', encoding='utf-8-sig') as f:
+                json.dump(value, f)
+        src = os.path.join(self.dir, 'a.json')
+        dst = os.path.join(self.dir, 'b.json')
+        res = self.run_script('jsondiff', src, dst)
+        # like diff, it exits with 1 if the files differ
+        self.assertEqual(res.returncode, 1, res.stderr)
+        patch = json.loads(res.stdout)
+        self.assertEqual(jsonpatch.apply_patch({'a': 1}, patch), {'a': 2})
+
+    def test_jsonpatch_utf8_bom_files(self):
+        doc = os.path.join(self.dir, 'doc.json')
+        patch = os.path.join(self.dir, 'patch.json')
+        with open(doc, 'w', encoding='utf-8-sig') as f:
+            json.dump({'a': 1}, f)
+        with open(patch, 'w', encoding='utf-8-sig') as f:
+            json.dump([{'op': 'replace', 'path': '/a', 'value': 2}], f)
+        res = self.run_script('jsonpatch', doc, patch)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(json.loads(res.stdout), {'a': 2})
+
     def test_jsonpatch(self):
         doc = self.write('doc.json', {'a': [1, 2], 'b': 0})
         patch = self.write('patch.json', [{'op': 'add', 'path': '/a/-', 'value': 3},
