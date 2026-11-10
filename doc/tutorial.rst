@@ -7,7 +7,7 @@ patch syntax.
 Creating a Patch
 ----------------
 
-Patches can be created in two ways. One way is to  explicitly create a
+Patches can be created in two ways. One way is to explicitly create a
 ``JsonPatch`` object from an iterable of operation dictionaries, such as a
 list, tuple, iterator, or generator. Non-sequence iterables are materialized
 before validation so that the patch can be applied repeatedly.
@@ -198,7 +198,7 @@ given:
 Ignoring Missing Locations
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-`RFC 6902 <https://tools.ietf.org/html/rfc6902#section-4.2>`_ requires a
+`RFC 6902 <https://datatracker.ietf.org/doc/html/rfc6902#section-4.2>`_ requires a
 ``remove`` to fail if the location it removes doesn't exist, and this library
 follows it: such an operation raises ``JsonPatchPathNotFound``. A ``replace``
 of a missing location, and a ``move`` or ``copy`` from one, raise it as well.
@@ -469,7 +469,7 @@ Dealing with Custom Types
 -------------------------
 
 Custom JSON dump and load functions can be used to support custom types such as
-`decimal.Decimal`. The following examples shows how the
+``decimal.Decimal``. The following example shows how the
 `simplejson <https://simplejson.readthedocs.io/>`_ package, which has native
 support for Python's ``Decimal`` type, can be used to create a custom
 ``JsonPatch`` subclass with ``Decimal`` support:
@@ -512,7 +512,7 @@ a dumps function to ``to_string``:
     >>> serialized_patch
     '[{"op": "add", "path": "/bar", "value": 1.10}]'
 
-and load  function to ``from_string``:
+and a load function to ``from_string``:
 
 .. code-block:: python
 

@@ -1,8 +1,13 @@
 include requirements.txt
+include requirements-dev.txt
 include LICENSE
 include README.md
 include tests.py
 include doc/*.rst
+include doc/conf.py
+include doc/Makefile
+include doc/requirements.txt
+include makefile
 include property_tests.py
 include pytest.ini
 include ext_tests.py

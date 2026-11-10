@@ -34,7 +34,7 @@ extensions = ['sphinx.ext.autodoc']
 nitpick_ignore = [('py:class', 'JsonPointer')]
 
 # Add any paths that contain templates here, relative to this directory.
-templates_path = ['_templates']
+templates_path = []
 
 # The suffix of source filenames.
 source_suffix = '.rst'
@@ -46,7 +46,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 # General information about the project.
-project = u'python-json-patch'
+project = 'python-json-patch'
 copyright = jsonpatch.__author__
 
 # The version info for the project you're documenting, acts as replacement for
@@ -127,7 +127,7 @@ html_theme = 'default'
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
+html_static_path = []
 
 # If not '', a 'Last updated on:' timestamp is inserted at every page bottom,
 # using the given strftime format.
@@ -190,8 +190,8 @@ latex_elements = {
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, documentclass [howto/manual]).
 latex_documents = [
-  ('index', 'python-json-patch.tex', u'python-json-patch Documentation',
-   u'Stefan Kögl', 'manual'),
+  ('index', 'python-json-patch.tex', 'python-json-patch Documentation',
+   'Stefan Kögl', 'manual'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
@@ -220,8 +220,8 @@ latex_documents = [
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
 man_pages = [
-    ('index', 'python-json-patch', u'python-json-patch Documentation',
-     [u'Stefan Kögl'], 1)
+    ('index', 'python-json-patch', 'python-json-patch Documentation',
+     ['Stefan Kögl'], 1)
 ]
 
 # If true, show URL addresses after external links.
@@ -234,8 +234,8 @@ man_pages = [
 # (source start file, target name, title, author,
 #  dir menu entry, description, category)
 texinfo_documents = [
-  ('index', 'python-json-patch', u'python-json-patch Documentation',
-   u'Stefan Kögl', 'python-json-patch', 'One line description of project.',
+  ('index', 'python-json-patch', 'python-json-patch Documentation',
+   'Stefan Kögl', 'python-json-patch', 'Apply JSON Patches (RFC 6902)',
    'Miscellaneous'),
 ]
 
