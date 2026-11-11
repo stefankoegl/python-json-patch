@@ -34,7 +34,6 @@ CLASSIFIERS = [
     'Programming Language :: Python',
     'Programming Language :: Python :: 3',
     'Programming Language :: Python :: 3 :: Only',
-    'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
     'Programming Language :: Python :: 3.13',
@@ -68,7 +67,7 @@ setup(name=PACKAGE,
           ]
       },
       classifiers=CLASSIFIERS,
-      python_requires='>=3.10',
+      python_requires='>=3.11',
       project_urls={
           'Website': 'https://github.com/stefankoegl/python-json-patch',
           'Repository': 'https://github.com/stefankoegl/python-json-patch.git',
