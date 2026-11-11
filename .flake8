@@ -1,0 +1,4 @@
+[flake8]
+# The GitHub editor is 127 chars wide
+max-line-length = 127
+exclude = .git,__pycache__,build,dist,doc/_build

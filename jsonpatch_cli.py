@@ -49,7 +49,7 @@ def diff_files():
         doc2 = json.load(args.FILE2)
     patch = jsonpatch.make_patch(doc1, doc2, generate_test_ops=args.test_ops)
     if patch.patch:
-        print(json.dumps(patch.patch, indent=args.indent, ensure_ascii=not(args.preserve_unicode)))
+        print(json.dumps(patch.patch, indent=args.indent, ensure_ascii=not args.preserve_unicode))
         sys.exit(1)
 
 
@@ -135,7 +135,7 @@ def patch_files():
     # modified JSON to.
 
     try:
-        json.dump(result, fp, indent=args.indent, ensure_ascii=not(args.preserve_unicode))
+        json.dump(result, fp, indent=args.indent, ensure_ascii=not args.preserve_unicode)
         fp.write('\n')
         if args.in_place:
             fp.close()
