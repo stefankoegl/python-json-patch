@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-#
 # python-json-patch - An implementation of the JSON Patch format
 # https://github.com/stefankoegl/python-json-patch
 #
@@ -80,7 +78,7 @@ class JsonPatchException(Exception):
         :type op: PatchOperation or dict or None
         """
         self.op = kwargs.pop('op', None)
-        super(JsonPatchException, self).__init__(*args, **kwargs)
+        super().__init__(*args, **kwargs)
 
 
 class InvalidJsonPatch(JsonPatchException):
@@ -296,7 +294,7 @@ def path_join(parts, pointer_cls=JsonPointer):
     return from_parts(parts).path
 
 
-class _NullJournal(object):
+class _NullJournal:
     """Performs the changes of patch operations without recording them."""
 
     @staticmethod
@@ -319,7 +317,7 @@ class _NullJournal(object):
 _NO_JOURNAL = _NullJournal()
 
 
-class _Journal(object):
+class _Journal:
     """Performs the changes of patch operations and records how to undo them.
 
     Each undo step refers to the changed container itself rather than to a
@@ -439,7 +437,7 @@ def _reorder(mapping, keys):
         mapping[key] = mapping.pop(key)
 
 
-class PatchOperation(object):
+class PatchOperation:
     """A single operation inside a JSON Patch."""
 
     def __init__(self, operation, pointer_cls=JsonPointer):
@@ -500,9 +498,6 @@ class PatchOperation(object):
             return False
         # e.g. tests for 1 and for true behave differently
         return _json_equal(self.operation, other.operation)
-
-    def __ne__(self, other):
-        return not(self == other)
 
     @property
     def path(self):
@@ -627,7 +622,7 @@ class ReplaceOperation(PatchOperation):
             raise InvalidJsonPatch(
                 "The operation does not contain a 'value' member", op=self)
 
-        # copied for the same reason as in AddOperation.apply
+        # copied for the same reason as in AddOperation._apply
         value = copy.deepcopy(value)
 
         subobj, part = self.pointer.to_last(obj)
@@ -873,7 +868,7 @@ def _supports_journal(operation):
     return True
 
 
-class JsonPatch(object):
+class JsonPatch:
     """A JSON Patch is an iterable of Patch Operations.
 
     Accepts sequences, iterators, generators, and other iterables of operation
@@ -977,8 +972,6 @@ class JsonPatch(object):
     def __bool__(self):
         return bool(self.patch)
 
-    __nonzero__ = __bool__
-
     def __iter__(self):
         return iter(self.patch)
 
@@ -989,9 +982,6 @@ class JsonPatch(object):
         if not isinstance(other, JsonPatch):
             return False
         return self._ops == other._ops
-
-    def __ne__(self, other):
-        return not(self == other)
 
     @classmethod
     def from_string(cls, patch_str, loads=None, pointer_cls=JsonPointer):
@@ -1189,7 +1179,7 @@ class JsonPatchWithAppend(JsonPatch):
         return cls(ops, pointer_cls=pointer_cls)
 
 
-class DiffBuilder(object):
+class DiffBuilder:
 
     def __init__(self, src_doc, dst_doc, dumps=json.dumps, pointer_cls=JsonPointer,
                  optimization=True, generate_test_ops=False):
@@ -1397,9 +1387,9 @@ class DiffBuilder(object):
         """ Inserts a test operation that checks the value at location, if
         test operations are generated """
         if self.generate_test_ops:
-            # a copy, so that changing src afterwards does not change the test
+            # like all values, it is copied when the patch is created
             return self.insert({'op': 'test', 'path': location,
-                                'value': copy.deepcopy(value)})
+                                'value': value})
 
     def _item_replaced(self, path, key, item, old_item):
         location = self._location(_path_join(path, key))
@@ -1611,7 +1601,7 @@ def _sorted_members(value):
 # change, but their locations do not.
 
 
-class _ArrayItem(object):
+class _ArrayItem:
     """ An item that an array has at some point of the diff """
 
     __slots__ = ('array', 'label', 'initial')
@@ -1628,7 +1618,7 @@ class _ArrayItem(object):
         return bisect.bisect_left(self.array.present_labels, self.label)
 
 
-class _ArrayItems(object):
+class _ArrayItems:
     """ All items that an array has at some point of the diff, and the items
     that it has at the moment, both ordered by their labels.
 

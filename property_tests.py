@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 
 """ Property-based tests for jsonpatch, using Hypothesis
 
@@ -7,11 +6,8 @@ These complement the example-based tests in tests.py by checking general
 properties (e.g. "applying make_patch(src, dst) to src yields dst") against
 many generated documents and patches.
 
-Properties that do not hold yet are marked as expected failures.  Each of them
-carries the minimal counterexample Hypothesis found as an explicit @example,
-so it fails deterministically, and turns into an "unexpected success" (which
-fails the run) once the property holds and the marker can be removed.  Tests
-that must pass meanwhile avoid those inputs and say so.
+Inputs on which a property did not hold in the past are kept as explicit
+@example, with the issue they were fixed in, so they are checked on each run.
 
 Run more examples with HYPOTHESIS_PROFILE=thorough.
 """
@@ -161,18 +157,6 @@ small_json_docs = json_values(
 )
 
 
-def safe_json_values(scalars, keys):
-    """ Documents that avoid the inputs on which make_patch is currently known
-    to fail (see test_roundtrip): object keys that are '-' """
-    return json_values(scalars, keys.filter(lambda key: key != '-'))
-
-
-safe_json_docs = safe_json_values(json_scalars, json_keys)
-small_safe_json_docs = safe_json_values(
-    st.sampled_from([None, True, False, 0, 1, 'a']),
-    st.sampled_from(['a', 'b', '0', '1']))
-
-
 def pairs_of(*doc_strategies):
     """ Two documents, both drawn from the same one of doc_strategies """
     return st.sampled_from(doc_strategies).flatmap(
@@ -180,7 +164,6 @@ def pairs_of(*doc_strategies):
 
 
 doc_pairs = pairs_of(json_docs, small_json_docs)
-safe_doc_pairs = pairs_of(safe_json_docs, small_safe_json_docs)
 
 
 @st.composite
@@ -344,6 +327,9 @@ class MakePatchProperties(unittest.TestCase):
     @given(doc_pairs)
     # replace of the object member '-' was rejected, #212
     @example(docs=({'-': 0}, {'-': 1}))
+    # the diff considered e.g. 1 and true equal, #180
+    @example(docs=([0], [False]))
+    @example(docs=({'a': [1]}, {'b': [True]}))
     def test_roundtrip(self, docs):
         self.check_roundtrip(*docs)
 
@@ -375,13 +361,6 @@ class MakePatchProperties(unittest.TestCase):
         self.assertEqual([(op['op'], op['path']) for op in patch], expected)
         assert_json_equal(patch.apply(src), dst)
 
-    @given(safe_doc_pairs)
-    # the diff considered e.g. 1 and true equal, #180
-    @example(docs=([0], [False]))
-    @example(docs=({'a': [1]}, {'b': [True]}))
-    def test_roundtrip_of_safe_documents(self, docs):
-        self.check_roundtrip(*docs)
-
     @given(doc_pairs)
     def test_does_not_modify_inputs(self, docs):
         saved = copy.deepcopy(docs)
@@ -389,7 +368,7 @@ class MakePatchProperties(unittest.TestCase):
         outcome(jsonpatch.make_patch, *docs)
         assert_json_equal(list(docs), list(saved))
 
-    @given(safe_doc_pairs)
+    @given(doc_pairs)
     @example(docs=({}, {'a': []}))
     def test_result_shares_nothing_with_dst(self, docs):
         src, dst = docs
@@ -595,12 +574,11 @@ class PatchOperationMachine(RuleBasedStateMachine):
     each result with a direct implementation of RFC 6902.
 
     Inputs covered by separate tests in OperationProperties are left
-    out: the whole document as target or source of an operation, moving a
-    location into its own children, replacing an object member '-', and
-    testing values which are equal in Python but not in JSON. """
+    out: the whole document as target or source of an operation, and moving
+    a location into its own children. """
 
     def __init__(self):
-        super(PatchOperationMachine, self).__init__()
+        super().__init__()
         self.initial = {}
         self.doc = {}
         self.patch = []
@@ -637,11 +615,7 @@ class PatchOperationMachine(RuleBasedStateMachine):
     @precondition(lambda self: self.doc)
     @rule(data=st.data(), value=json_docs)
     def replace(self, data, value):
-        candidates = [parts for parts in locations(self.doc) if parts and not (
-            isinstance(resolve(self.doc, parts[:-1]), dict) and parts[-1] == '-')]
-        if not candidates:
-            return
-        parts = list(data.draw(st.sampled_from(candidates)))
+        parts = data.draw(existing_locations(self.doc))
         expected = copy.deepcopy(self.doc)
         resolve(expected, parts[:-1])[parts[-1]] = copy.deepcopy(value)
         self.apply({'op': 'replace', 'path': to_pointer(parts),
@@ -682,7 +656,7 @@ class PatchOperationMachine(RuleBasedStateMachine):
     @rule(data=st.data(), value=json_docs)
     def test_different(self, data, value):
         parts = data.draw(st.sampled_from(list(locations(self.doc))))
-        if value == resolve(self.doc, parts):
+        if json_equal(value, resolve(self.doc, parts)):
             return
         operation = {'op': 'test', 'path': to_pointer(parts), 'value': value}
         result = outcome(jsonpatch.apply_patch, self.doc, [operation])

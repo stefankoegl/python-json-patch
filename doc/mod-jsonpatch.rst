@@ -1,4 +1,4 @@
-.. mod-jsonpatch:
+.. _mod-jsonpatch:
 
 The ``jsonpatch`` module
 ========================

@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
 #
 # python-json-patch - An implementation of the JSON Patch format
 # https://github.com/stefankoegl/python-json-patch
@@ -36,7 +35,7 @@
 """ Script to run external tests, eg from
 https://github.com/json-patch/json-patch-tests """
 
-import doctest
+import json
 import unittest
 import jsonpatch
 import sys
@@ -46,7 +45,7 @@ class TestCaseTemplate(unittest.TestCase):
     """ A generic test case for running external tests """
 
     def _test(self, test):
-        if not 'doc' in test or not 'patch' in test:
+        if 'doc' not in test or 'patch' not in test:
             # incomplete
             return
 
@@ -87,56 +86,18 @@ def add_test_method(cls, name, test):
     setattr(cls, name, lambda self: self._test(test))
 
 
-
-modules = ['jsonpatch']
-coverage_modules = []
-
-
 def get_suite(filenames):
     suite = unittest.TestSuite()
 
     for testfile in filenames:
-        with open(testfile) as f:
-            # we use the (potentially) patched version of json.load here
-            tests = jsonpatch.json.load(f)
-            cls = make_test_case(tests)
-            suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(cls))
+        with open(testfile, encoding='utf-8') as f:
+            tests = json.load(f)
+        cls = make_test_case(tests)
+        suite.addTest(unittest.defaultTestLoader.loadTestsFromTestCase(cls))
 
     return suite
 
 
-suite = get_suite(sys.argv[1:])
-
-for module in modules:
-    m = __import__(module, fromlist=[module])
-    coverage_modules.append(m)
-    suite.addTest(doctest.DocTestSuite(m))
-
-runner = unittest.TextTestRunner(verbosity=1)
-
-try:
-    import coverage
-    cov = coverage.Coverage()
-except ImportError:
-    cov = None
-
-if cov is not None:
-    cov.erase()
-    cov.start()
-
-result = runner.run(suite)
-
-if not result.wasSuccessful():
-    sys.exit(1)
-
-if cov is not None:
-    cov.stop()
-    cov.report(coverage_modules)
-    cov.erase()
-
-if cov is None:
-    sys.stderr.write("""
-No coverage reporting done (Python module "coverage" is missing)
-Please install the python-coverage package to get coverage reporting.
-""")
-    sys.stderr.flush()
+if __name__ == '__main__':
+    result = unittest.TextTestRunner(verbosity=1).run(get_suite(sys.argv[1:]))
+    sys.exit(not result.wasSuccessful())
