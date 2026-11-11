@@ -205,6 +205,9 @@ def make_patch(src, dst, pointer_cls=JsonPointer, generate_test_ops=False):
                               fails on documents that differ from `src` there.
     :type generate_test_ops: bool
 
+    :raises TypeError: if the documents differ in an object member whose
+                       name is not a string, see :meth:`JsonPatch.from_diff`.
+
     >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
     >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
     >>> patch = make_patch(src, dst)
@@ -1043,6 +1046,13 @@ class JsonPatch:
 
         :return: :class:`JsonPatch` instance.
 
+        :raises TypeError: if the documents differ in, or inside of, an
+                           object member whose name is not a string, such
+                           as the ``1`` of ``{1: 'a'}``. The path of an
+                           operation can't refer to such a member, which
+                           does not exist in JSON. Other differences of
+                           documents with such members are no problem.
+
         >>> src = {'foo': 'bar', 'numbers': [1, 3, 4, 8]}
         >>> dst = {'baz': 'qux', 'numbers': [1, 4, 7]}
         >>> patch = JsonPatch.from_diff(src, dst)
@@ -1252,8 +1262,7 @@ class DiffBuilder:
                         op_second['op'] == 'add':
                     yield {
                         'op': 'replace',
-                        'path': path_join(op_second['path'],
-                                          self.pointer_cls),
+                        'path': self._path(op_second['path']),
                         'value': op_second['value'],
                     }
                     i += 2
@@ -1262,10 +1271,19 @@ class DiffBuilder:
             operation = operations[i]
             for member in ('from', 'path'):
                 if member in operation:
-                    operation[member] = path_join(operation[member],
-                                                  self.pointer_cls)
+                    operation[member] = self._path(operation[member])
             yield operation
             i += 1
+
+    def _path(self, parts):
+        """ The path of an operation, in the syntax of pointer_cls """
+        for part in parts:
+            if isinstance(part, _NonStringKey):
+                raise TypeError(
+                    "can't create an operation for the object member "
+                    "{0!r}: its name is not a string, which the path of an "
+                    "operation can't refer to".format(part.key))
+        return path_join(parts, self.pointer_cls)
 
     def _replay(self):
         """ Applies the operations to the arrays of the source document, and
@@ -1406,13 +1424,13 @@ class DiffBuilder:
         intersection = [key for key in src if key in dst]
 
         for key in removed_keys:
-            self._item_removed(path, str(key), src[key])
+            self._item_removed(path, _member_name(key), src[key])
 
         for key in added_keys:
-            self._item_added(path, str(key), dst[key])
+            self._item_added(path, _member_name(key), dst[key])
 
         for key in intersection:
-            self._compare_values(path, str(key), src[key], dst[key])
+            self._compare_values(path, _member_name(key), src[key], dst[key])
 
     def _differing_runs(self, src, dst):
         """ Returns (i1, i2, j1, j2) for each run of items src[i1:i2] that is
@@ -1546,6 +1564,37 @@ class _AppendDiffBuilder(DiffBuilder):
                          'value': item[len(old_item):]})
         else:
             super()._item_replaced(path, key, item, old_item)
+
+
+class _NonStringKey(str):
+    """ Takes the place of an object key that is not a string in the parts
+    of an operation.
+
+    A path can only refer to members whose names are strings: '/1' is the
+    member '1', not the member 1. Members with other names are compared like
+    all others, as nothing is wrong unless they differ; an operation for
+    such a member, or for something in it, can't be written, though (see
+    DiffBuilder._path). """
+
+    def __new__(cls, key):
+        self = super().__new__(cls, key)
+        self.key = key
+        return self
+
+    # The member 1 is not the member '1', which this is equal to as a str
+    def __eq__(self, other):
+        return isinstance(other, _NonStringKey) and self.key == other.key
+
+    def __ne__(self, other):
+        return not self == other
+
+    def __hash__(self):
+        return hash(self.key)
+
+
+def _member_name(key):
+    """ The part of an operation for the object key """
+    return key if isinstance(key, str) else _NonStringKey(key)
 
 
 def _positional_cost(old, new):
