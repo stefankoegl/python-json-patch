@@ -80,4 +80,4 @@ setup(name=PACKAGE,
           'Test Coverage': 'https://coveralls.io/github/stefankoegl/python-json-patch',
       },
       install_requires=REQUIREMENTS,
-)
+      )
