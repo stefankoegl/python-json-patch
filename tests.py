@@ -3230,6 +3230,100 @@ class CommandLineTests(ScriptRunner, unittest.TestCase):
         res = self.run_script('jsondiff', src, dst)
         self.assertEqual((res.returncode, res.stdout), (0, ''), res.stderr)
 
+    def assert_error(self, res, program, *parts):
+        """ The program failed with a one-line message containing parts """
+        self.assertEqual(res.returncode, 2, res.stderr)
+        self.assertEqual(res.stdout, '')
+        self.assertEqual(res.stderr.count('\n'), 1, res.stderr)
+        self.assertTrue(res.stderr.startswith(program + ': error: '), res.stderr)
+        for part in parts:
+            self.assertIn(part, res.stderr)
+
+    def test_jsondiff_reports_invalid_json(self):
+        src = self.write('a.json', {'a': 1})
+        dst = os.path.join(self.dir, 'b.json')
+        with open(dst, 'w', encoding='utf-8') as f:
+            f.write('{"a": ')
+        for files in ((src, dst), (dst, src)):
+            with self.subTest(files=files):
+                res = self.run_script('jsondiff', *files)
+                self.assert_error(res, 'jsondiff', 'b.json', 'line 1 column 7')
+
+    def test_jsondiff_reports_invalid_utf8(self):
+        src = self.write('a.json', {'a': 1})
+        dst = os.path.join(self.dir, 'b.json')
+        with open(dst, 'wb') as f:
+            f.write(b'"\xff"')
+        res = self.run_script('jsondiff', src, dst)
+        self.assert_error(res, 'jsondiff', 'b.json', 'utf-8')
+
+    def test_jsonpatch_reports_failing_patch(self):
+        doc = self.write('doc.json', {'a': 1})
+        cases = [
+            ([{'op': 'remove', 'path': '/b'}], "can't remove a non-existent object 'b'"),
+            ([{'op': 'test', 'path': '/a', 'value': 2}], 'is not equal to tested value'),
+            ([{'op': 'remove', 'path': '/b/c'}], "member 'b' not found"),
+            ([{'op': 'frobnicate', 'path': '/a'}], "Unknown operation 'frobnicate'"),
+            ({'op': 'remove', 'path': '/a'}, 'sequence of operations'),
+        ]
+        for patch, message in cases:
+            with self.subTest(patch=patch):
+                res = self.run_script('jsonpatch', doc, self.write('patch.json', patch))
+                self.assert_error(res, 'jsonpatch', message)
+
+    def test_jsonpatch_reports_invalid_json(self):
+        doc = self.write('doc.json', {'a': 1})
+        patch = self.write('patch.json', [])
+        broken = os.path.join(self.dir, 'broken.json')
+        with open(broken, 'w', encoding='utf-8') as f:
+            f.write('[')
+        res = self.run_script('jsonpatch', broken, patch)
+        self.assert_error(res, 'jsonpatch', 'broken.json', 'line 1 column 2')
+        res = self.run_script('jsonpatch', doc, broken)
+        self.assert_error(res, 'jsonpatch', 'broken.json', 'line 1 column 2')
+        res = self.run_script('jsonpatch', doc, stdin='[')
+        self.assert_error(res, 'jsonpatch', '<stdin>', 'line 1 column 2')
+
+    def test_jsonpatch_reports_invalid_json_of_unnamed_stream(self):
+        doc = self.write('doc.json', {'a': 1})
+        parser = jsonpatch_cli.jsonpatch_parser
+        args = parser.parse_args([doc])
+        self.addCleanup(args.ORIGINAL.close)
+        # a stream without a name, as sys.stdin can be replaced by
+        args.PATCH = io.StringIO('[')
+        with mock.patch.object(parser, 'parse_args', return_value=args), \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            with self.assertRaises(SystemExit) as caught:
+                jsonpatch_cli.jsonpatch_main()
+        self.assertEqual(caught.exception.code, 2)
+        self.assertTrue(stderr.getvalue().startswith('jsonpatch: error: <input>: '),
+                        stderr.getvalue())
+
+    def test_jsonpatch_reports_output_error(self):
+        doc = self.write('doc.json', {'a': 1})
+        patch = self.write('patch.json', [])
+        failure = PermissionError(13, 'Permission denied', 'doc.json')
+        with mock.patch('sys.argv', ['jsonpatch', '-i', doc, patch]), \
+                mock.patch('os.replace', side_effect=failure), \
+                contextlib.redirect_stderr(io.StringIO()) as stderr:
+            with self.assertRaises(SystemExit) as caught:
+                jsonpatch_cli.jsonpatch_main()
+        self.assertEqual(caught.exception.code, 2)
+        self.assertEqual(stderr.getvalue(),
+                         "jsonpatch: error: [Errno 13] Permission denied: 'doc.json'\n")
+        self.assertEqual(self.read(doc), {'a': 1})
+
+    def test_interrupt_is_not_reported(self):
+        for main, name in ((jsonpatch_cli.jsondiff_main, 'diff_files'),
+                           (jsonpatch_cli.jsonpatch_main, 'patch_files')):
+            with self.subTest(program=name):
+                with mock.patch.object(jsonpatch_cli, name, side_effect=KeyboardInterrupt), \
+                        contextlib.redirect_stderr(io.StringIO()) as stderr:
+                    with self.assertRaises(SystemExit) as caught:
+                        main()
+                self.assertEqual(caught.exception.code, 1)
+                self.assertEqual(stderr.getvalue(), '')
+
     def test_jsondiff_closes_inputs(self):
         for target in (1, 2):
             with self.subTest(target=target):
@@ -3265,8 +3359,10 @@ class CommandLineTests(ScriptRunner, unittest.TestCase):
                 self.addCleanup(args.FILE1.close)
                 self.addCleanup(args.FILE2.close)
                 with mock.patch.object(parser, 'parse_args', return_value=args):
-                    with self.assertRaises(json.JSONDecodeError):
+                    with self.assertRaises(ValueError) as caught:
                         jsonpatch_cli.diff_files()
+                self.assertIsInstance(caught.exception.__cause__, json.JSONDecodeError)
+                self.assertIn(os.path.basename(paths[invalid]), str(caught.exception))
                 self.assertTrue(args.FILE1.closed)
                 self.assertTrue(args.FILE2.closed)
 
@@ -3381,8 +3477,7 @@ class CommandLineTests(ScriptRunner, unittest.TestCase):
                         with open(path, 'w', encoding='utf-8') as f:
                             f.write(patch)
                         res = self.run_script('jsonpatch', '-i', doc, path)
-                    self.assertNotEqual(res.returncode, 0)
-                    self.assertIn('InvalidJsonPatch', res.stderr)
+                    self.assert_error(res, 'jsonpatch')
                     with open(doc, 'rb') as f:
                         self.assertEqual(f.read(), original)
 
@@ -3611,8 +3706,7 @@ class CommandLineTests(ScriptRunner, unittest.TestCase):
         doc = self.write('doc.json', {'a': 1})
         patch = self.write('patch.json', [{'op': 'remove', 'path': '/b'}])
         res = self.run_script('jsonpatch', '-i', '-b', doc, patch)
-        self.assertNotEqual(res.returncode, 0)
-        self.assertIn('JsonPatchPathNotFound', res.stderr)
+        self.assert_error(res, 'jsonpatch', "can't remove a non-existent object 'b'")
         self.assertEqual(self.read(doc), {'a': 1})
         self.assertEqual(sorted(os.listdir(self.dir)), ['doc.json', 'patch.json'])
 
