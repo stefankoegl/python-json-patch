@@ -59,7 +59,7 @@ _JSONPOINTER_FROM_PARTS = JsonPointer.from_parts.__func__
 
 # Will be parsed by setup.py to determine package metadata
 __author__ = 'Stefan Kögl <stefan@skoegl.net>'
-__version__ = '1.46'
+__version__ = '1.47'
 __website__ = 'https://github.com/stefankoegl/python-json-patch'
 __license__ = 'BSD-3-Clause'
 
