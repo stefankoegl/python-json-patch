@@ -1967,6 +1967,95 @@ class JsonPointerTests(unittest.TestCase):
         ])
         self.assertEqual(patch.apply({'foo': 1}), {'foo': 1, 'bar': 1})
 
+    def pointer_and_string_operations(self, pointer_cls=jsonpointer.JsonPointer,
+                                      paths=('/foo', '/bar/0', '')):
+        foo, bar, root = paths
+        with_strings = [
+            {'op': 'add', 'path': foo, 'value': [1]},
+            {'op': 'move', 'from': foo, 'path': bar},
+            {'op': 'copy', 'from': root, 'path': foo},
+            {'op': 'copy', 'from': foo, 'path': bar},
+        ]
+        with_pointers = [
+            {'op': 'add', 'path': pointer_cls(foo), 'value': [1]},
+            {'op': 'move', 'from': pointer_cls(foo), 'path': pointer_cls(bar)},
+            {'op': 'copy', 'from': pointer_cls(root), 'path': foo},
+            {'op': 'copy', 'from': foo, 'path': pointer_cls(bar)},
+        ]
+        return with_pointers, with_strings
+
+    def test_patch_with_pointers_is_serializable(self):
+        with_pointers, with_strings = self.pointer_and_string_operations()
+        patch = jsonpatch.JsonPatch(with_pointers)
+        self.assertEqual(patch.patch, with_strings)
+        self.assertEqual(list(patch), with_strings)
+        self.assertEqual(json.loads(patch.to_string()), with_strings)
+        self.assertEqual(json.loads(str(patch)), with_strings)
+        self.assertEqual(jsonpatch.JsonPatch.from_string(patch.to_string()), patch)
+
+    def test_patch_with_pointers_equals_patch_with_strings(self):
+        with_pointers, with_strings = self.pointer_and_string_operations()
+        patch = jsonpatch.JsonPatch(with_pointers)
+        other = jsonpatch.JsonPatch(with_strings)
+        self.assertEqual(patch, other)
+        self.assertEqual(hash(patch), hash(other))
+        self.assertEqual(len({patch, other}), 1)
+        doc = {'bar': []}
+        self.assertEqual(patch.apply(doc), other.apply(doc))
+
+    def test_patch_with_pointers_does_not_change_the_operations(self):
+        with_pointers, _ = self.pointer_and_string_operations()
+        pointers = [(op, member, op[member]) for op in with_pointers
+                    for member in ('path', 'from')
+                    if isinstance(op.get(member), jsonpointer.JsonPointer)]
+        jsonpatch.JsonPatch(with_pointers).apply({'bar': []})
+        self.assertEqual(len(pointers), 5)
+        for op, member, pointer in pointers:
+            self.assertIs(op[member], pointer)
+
+    def test_patch_with_pointers_as_read_only_mappings(self):
+        with_pointers, with_strings = self.pointer_and_string_operations()
+        patch = jsonpatch.JsonPatch(map(MappingProxyType, with_pointers))
+        self.assertEqual(patch.patch, with_strings)
+        self.assertTrue(all(type(op) is dict for op in patch))
+
+    def test_patch_with_pointers_of_custom_class(self):
+        with_pointers, with_strings = self.pointer_and_string_operations(
+            DotJsonPointer, ('foo', 'bar.0', ''))
+        patch = jsonpatch.JsonPatch(with_pointers, pointer_cls=DotJsonPointer)
+        other = jsonpatch.JsonPatch(with_strings, pointer_cls=DotJsonPointer)
+        self.assertEqual(patch.patch, with_strings)
+        self.assertEqual(patch, other)
+        self.assertEqual(patch.apply({'bar': []}), other.apply({'bar': []}))
+
+    def test_operation_with_pointers_equals_operation_with_strings(self):
+        with_pointers, with_strings = self.pointer_and_string_operations()
+        for pointers, strings in zip(with_pointers, with_strings):
+            with self.subTest(operation=strings):
+                cls = jsonpatch.JsonPatch.operations[strings['op']]
+                operation, other = cls(pointers), cls(strings)
+                self.assertEqual(operation, other)
+                self.assertEqual(other, operation)
+                self.assertEqual(hash(operation), hash(other))
+                self.assertEqual(operation.location, other.location)
+                # setters change the operation it was created from, so it
+                # is not replaced by a copy without pointers
+                self.assertIs(operation.operation, pointers)
+        self.assertNotEqual(
+            jsonpatch.RemoveOperation({'op': 'remove', 'path': jsonpointer.JsonPointer('/a')}),
+            jsonpatch.RemoveOperation({'op': 'remove', 'path': '/b'}))
+
+    def test_operation_setters_with_pointers(self):
+        pointers = {'op': 'move', 'from': jsonpointer.JsonPointer('/a/b'),
+                    'path': jsonpointer.JsonPointer('/c/d')}
+        operation = jsonpatch.MoveOperation(pointers)
+        operation.key = 'e'
+        operation.from_key = 'f'
+        self.assertEqual(pointers,
+                         {'op': 'move', 'from': '/a/f', 'path': '/c/e'})
+        self.assertEqual(operation.apply({'a': {'f': 1}, 'c': {}}),
+                         {'a': {}, 'c': {'e': 1}})
+
 
 class JsonPatchCreationTest(unittest.TestCase):
 
