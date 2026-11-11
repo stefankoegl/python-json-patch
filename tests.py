@@ -3595,12 +3595,73 @@ class CommandLineTests(ScriptRunner, unittest.TestCase):
         self.assertEqual(sorted(os.listdir(self.dir)), ['doc.json', 'patch.json'])
 
     def test_jsonpatch_in_place_existing_backup(self):
+        # an older backup is replaced, also when the backup is repeated
         doc = self.write('doc.json', {'a': 1})
         patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 2}])
         backup = self.write('doc.json.orig', {'previous': True})
         res = self.run_script('jsonpatch', '-i', '-b', doc, patch)
 
-        self.assertNotEqual(res.returncode, 0)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(self.read(doc), {'a': 2})
+        self.assertEqual(self.read(backup), {'a': 1})
+
+        patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 3}])
+        res = self.run_script('jsonpatch', '-i', '-b', doc, patch)
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(self.read(doc), {'a': 3})
+        self.assertEqual(self.read(backup), {'a': 2})
+        self.assertEqual(sorted(os.listdir(self.dir)),
+                         ['doc.json', 'doc.json.orig', 'patch.json'])
+
+    def test_jsonpatch_in_place_existing_backup_without_temporary_file(self):
+        # the fallback that writes ORIGINAL directly replaces it as well
+        doc = self.write('doc.json', {'a': 1})
+        patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 2}])
+        backup = self.write('doc.json.orig', {'previous': True})
+        parser = jsonpatch_cli.jsonpatch_parser
+        args = parser.parse_args(['-i', '-b', doc, patch])
+        self.addCleanup(args.ORIGINAL.close)
+        self.addCleanup(args.PATCH.close)
+
+        with mock.patch.object(parser, 'parse_args', return_value=args), \
+                mock.patch('tempfile.mkstemp', side_effect=OSError('read-only')):
+            jsonpatch_cli.patch_files()
+
+        self.assertEqual(self.read(doc), {'a': 2})
+        self.assertEqual(self.read(backup), {'a': 1})
+        self.assertEqual(sorted(os.listdir(self.dir)),
+                         ['doc.json', 'doc.json.orig', 'patch.json'])
+
+    @unittest.skipUnless(hasattr(os, 'link'), 'needs hard links')
+    def test_jsonpatch_in_place_backup_that_links_to_original(self):
+        # left behind if an earlier run failed after linking the backup;
+        # replacing a link to a file by another one does nothing
+        doc = self.write('doc.json', {'a': 1})
+        patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 2}])
+        os.link(doc, doc + '.orig')
+        res = self.run_script('jsonpatch', '-i', '-b', doc, patch)
+
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertEqual(self.read(doc), {'a': 2})
+        self.assertEqual(self.read(doc + '.orig'), {'a': 1})
+        self.assertEqual(sorted(os.listdir(self.dir)),
+                         ['doc.json', 'doc.json.orig', 'patch.json'])
+
+    def test_jsonpatch_in_place_keeps_backup_on_backup_error(self):
+        # neither the original nor an older backup is lost
+        doc = self.write('doc.json', {'a': 1})
+        patch = self.write('patch.json', [{'op': 'replace', 'path': '/a', 'value': 2}])
+        backup = self.write('doc.json.orig', {'previous': True})
+        parser = jsonpatch_cli.jsonpatch_parser
+        args = parser.parse_args(['-i', '-b', doc, patch])
+        self.addCleanup(args.ORIGINAL.close)
+        self.addCleanup(args.PATCH.close)
+
+        with mock.patch.object(parser, 'parse_args', return_value=args), \
+                mock.patch('os.replace', side_effect=PermissionError('cannot replace')):
+            with self.assertRaises(PermissionError):
+                jsonpatch_cli.patch_files()
+
         self.assertEqual(self.read(doc), {'a': 1})
         self.assertEqual(self.read(backup), {'previous': True})
         self.assertEqual(sorted(os.listdir(self.dir)),

@@ -73,6 +73,23 @@ jsonpatch_parser.add_argument('-u', '--preserve-unicode', action='store_true',
                               help='Output Unicode character as-is without using Code Point')
 
 
+def _link_backup(original, temporary):
+    """ Links original to its backup name, replacing an older backup """
+    # link() does not overwrite an existing file, so the link is created
+    # under a temporary name, and then moved over an older backup
+    link = temporary + '.orig'
+    os.link(original, link)
+    try:
+        os.replace(link, original + '.orig')
+    finally:
+        # It is still there if replacing failed, and if the older backup is
+        # a link to original already, as replace() does nothing then
+        try:
+            os.unlink(link)
+        except OSError:
+            pass
+
+
 def jsonpatch_main():
     try:
         patch_files()
@@ -121,7 +138,8 @@ def patch_files():
             # the original (if desired) and writing a new file.
 
             if args.backup:
-                os.rename(args.ORIGINAL.name, args.ORIGINAL.name + '.orig')
+                # like in atomic mode, an older backup is replaced
+                os.replace(args.ORIGINAL.name, args.ORIGINAL.name + '.orig')
             fp = open(args.ORIGINAL.name, 'w', encoding='utf-8')
             atomic = False
 
@@ -157,11 +175,12 @@ def patch_files():
         if atomic:
             try:
                 # Complete the atomic replace by linking the original
-                # to a backup (if desired), fixing up the permissions
+                # to a backup (if desired), which replaces an older
+                # backup, fixing up the permissions
                 # on the temporary file, and moving it into place.
 
                 if args.backup:
-                    os.link(args.ORIGINAL.name, args.ORIGINAL.name + '.orig')
+                    _link_backup(args.ORIGINAL.name, pathname)
                 os.chmod(pathname, os.stat(args.ORIGINAL.name).st_mode)
                 os.replace(pathname, args.ORIGINAL.name)
 
