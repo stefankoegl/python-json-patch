@@ -1040,6 +1040,75 @@ class MakePatchTestCase(unittest.TestCase):
                 res = patch.apply(src)
                 self.assertEqual(json.dumps(res), json.dumps(dst))
 
+    def test_changed_member_with_non_string_name_is_rejected(self):
+        """A path can't refer to such a member: '/1' is the member '1', so
+        the patch did not apply to src, or added a member '1' to it"""
+        cases = [
+            ({1: 'a'}, {1: 'b'}),
+            ({1: 'a'}, {}),
+            ({}, {1: 'a'}),
+            ({1: 'a'}, {1: 'a', 2: 'b'}),
+            ({1: 'a'}, {'1': 'a'}),
+            ({None: 1}, {None: 2}),
+            ({True: 1}, {True: 2}),
+            ({1.5: 1}, {1.5: 2}),
+            ({(1, 2): 1}, {(1, 2): 2}),
+            # inside of such a member
+            ({1: {'a': 1}}, {1: {'a': 2}}),
+            ({1: [1, 2]}, {1: [1, 2, 3]}),
+            ({'a': [{1: 'a'}]}, {'a': [{1: 'b'}]}),
+            # moved from or to such a member
+            ({'a': {1: [1, 2]}}, {'a': {}, 'b': [1, 2]}),
+            ({'a': {}, 'b': [1, 2]}, {'a': {1: [1, 2]}}),
+        ]
+        for src, dst in cases:
+            for kwargs in ({}, {'optimization': False},
+                           {'generate_test_ops': True}):
+                with self.subTest(src=src, dst=dst, **kwargs):
+                    with self.assertRaises(TypeError) as caught:
+                        jsonpatch.JsonPatch.from_diff(src, dst, **kwargs)
+                    self.assertIn('not a string', str(caught.exception))
+        with self.assertRaises(TypeError) as caught:
+            jsonpatch.make_patch({1: 'a'}, {1: 'b'})
+        self.assertIn('object member 1:', str(caught.exception))
+        with self.assertRaises(TypeError):
+            jsonpatch.JsonPatchWithAppend.from_diff({1: 'a'}, {1: 'ab'})
+
+    def test_non_string_member_names_differ_from_strings(self):
+        name = jsonpatch._member_name(1)
+        self.assertTrue(name != '1')
+        self.assertFalse(name == '1')
+        self.assertFalse(name != jsonpatch._member_name(1))
+        self.assertEqual(hash(name), hash(jsonpatch._member_name(1)))
+        self.assertEqual(jsonpatch._member_name('a'), 'a')
+
+    def test_unchanged_member_with_non_string_name_is_accepted(self):
+        cases = [
+            ({1: 'a'}, {1: 'a'}),
+            ({1: 'a', 'b': 0}, {1: 'a', 'b': 1}),
+            ({1: {2: [3]}, 'b': 0}, {1: {2: [3]}, 'c': 0}),
+            ([{None: 1}, 2], [2, {None: 1}]),
+            # members of values that are added, removed or moved as a whole
+            ({}, {'a': {1: 'a'}}),
+            ({'a': {1: 'a'}}, {}),
+            ({'a': {1: 'a'}}, {'b': {1: 'a'}}),
+            ([1, 2], [1, {3: 4}, 2]),
+            ({'a': 1}, {'a': {1: 'a'}}),
+            # the member '1' is not the member 1
+            ({1: 'a', '1': 'b'}, {1: 'a', '1': 'c'}),
+            ({1: 'a', '1': 'b'}, {1: 'a'}),
+        ]
+        for src, dst in cases:
+            for optimization in (True, False):
+                with self.subTest(src=src, dst=dst, optimization=optimization):
+                    original = copy.deepcopy(src)
+                    patch = jsonpatch.JsonPatch.from_diff(
+                        src, dst, optimization=optimization)
+                    self.assertEqual(patch.apply(src), dst)
+                    self.assertEqual(src, original)
+                    for operation in patch:
+                        self.assertIs(type(operation['path']), str)
+
     def test_move_only_values_equal_in_given_dumps(self):
         """The given dumps decides which values are the same"""
         src = {'a': decimal.Decimal('1.0')}
