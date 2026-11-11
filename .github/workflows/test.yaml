@@ -88,7 +88,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest]
-        python-version: ["3.11", "3.12", "3.13", "3.14", "pypy3.11"]
+        python-version: ["3.11", "3.12", "3.13", "3.14", "3.15", "pypy3.11"]
         include:
           - os: windows-latest
             python-version: "3.13"
@@ -101,6 +101,8 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
+          # use a release candidate while a version has no final release
+          allow-prereleases: true
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
