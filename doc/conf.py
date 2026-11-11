@@ -47,7 +47,7 @@ master_doc = 'index'
 
 # General information about the project.
 project = 'python-json-patch'
-copyright = jsonpatch.__author__
+copyright = '2011, Stefan Kögl'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
