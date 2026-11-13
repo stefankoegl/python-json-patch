@@ -1055,7 +1055,7 @@ class JsonPatch:
                               optimization=optimization,
                               generate_test_ops=generate_test_ops)
         builder._compare_values((), None, src, dst)
-        ops = copy.deepcopy(list(builder.execute()))
+        ops = _json_copy(list(builder.execute()))
         return cls(ops, pointer_cls=pointer_cls)
 
     def to_string(self, dumps=None):
@@ -1175,7 +1175,7 @@ class JsonPatchWithAppend(JsonPatch):
                                      optimization=optimization,
                                      generate_test_ops=generate_test_ops)
         builder._compare_values((), None, src, dst)
-        ops = copy.deepcopy(list(builder.execute()))
+        ops = _json_copy(list(builder.execute()))
         return cls(ops, pointer_cls=pointer_cls)
 
 
@@ -1184,6 +1184,10 @@ class DiffBuilder:
     def __init__(self, src_doc, dst_doc, dumps=json.dumps, pointer_cls=JsonPointer,
                  optimization=True, generate_test_ops=False):
         self.dumps = dumps
+        # json.dumps builds a JSONEncoder for every call; the default dumps
+        # is called once per added and removed value, so cache its encoder
+        self._canonical_dumps = (json.JSONEncoder(sort_keys=True).encode
+                                 if dumps is json.dumps else None)
         self.pointer_cls = pointer_cls
         self.optimization = optimization
         self.generate_test_ops = generate_test_ops
@@ -1201,6 +1205,14 @@ class DiffBuilder:
     def _move_key(self, value):
         """ A key of value, which is equal for values that are equal in JSON,
         so that e.g. [1] is not moved where [true] is added """
+        if self._canonical_dumps is not None:
+            try:
+                # sort_keys gives the same string as _sorted_members for JSON
+                # documents, without building a sorted copy of every added or
+                # removed subtree
+                return self._canonical_dumps(value)
+            except (TypeError, ValueError, RecursionError):
+                return id(value)
         try:
             # Serialized like in _differing_runs
             return self.dumps(_sorted_members(value))
@@ -1579,6 +1591,35 @@ def _json_equal(first, second):
         return len(first) == len(second) and all(
             _json_equal(*items) for items in zip(first, second))
     return first == second
+
+
+def _json_copy(value, memo=None):
+    """ Copies a JSON value like copy.deepcopy, but without the generic
+    dispatch for dicts, lists and scalars, which dominate patch creation.
+
+    Values that are not plain JSON containers keep the copy.deepcopy
+    behaviour, and shared references are preserved through memo. """
+    if value is None or type(value) in (str, int, float, bool):
+        return value
+    if memo is None:
+        memo = {}
+    value_id = id(value)
+    copied = memo.get(value_id)
+    if copied is not None:
+        return copied
+    value_type = type(value)
+    if value_type is dict:
+        # memo must hold the new dict before the children are copied, so
+        # that self-referential documents terminate like copy.deepcopy
+        copied = memo[value_id] = {}
+        for key, item in value.items():
+            copied[key] = _json_copy(item, memo)
+        return copied
+    if value_type is list:
+        copied = memo[value_id] = []
+        copied.extend(_json_copy(item, memo) for item in value)
+        return copied
+    return copy.deepcopy(value, memo)
 
 
 def _sorted_members(value):
