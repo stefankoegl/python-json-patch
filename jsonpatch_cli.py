@@ -140,6 +140,11 @@ def patch_files():
             if args.backup:
                 # like in atomic mode, an older backup is replaced
                 os.replace(args.ORIGINAL.name, args.ORIGINAL.name + '.orig')
+                # A same-inode replace may leave the original name in place.
+                try:
+                    os.unlink(args.ORIGINAL.name)
+                except FileNotFoundError:
+                    pass
             fp = open(args.ORIGINAL.name, 'w', encoding='utf-8')
             atomic = False
 
