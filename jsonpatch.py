@@ -1212,7 +1212,10 @@ class DiffBuilder:
                 # removed subtree
                 return self._canonical_dumps(value)
             except (TypeError, ValueError, RecursionError):
-                return id(value)
+                # Values like UserDict and UserList are normalized by
+                # _sorted_members, but the encoder cannot serialize them as
+                # they are, so fall through to the generic path below
+                pass
         try:
             # Serialized like in _differing_runs
             return self.dumps(_sorted_members(value))
@@ -1613,7 +1616,9 @@ def _json_copy(value, memo=None):
         # that self-referential documents terminate like copy.deepcopy
         copied = memo[value_id] = {}
         for key, item in value.items():
-            copied[key] = _json_copy(item, memo)
+            # copy.deepcopy copies the keys too, through the same memo, so
+            # that a key and a value that are the same object stay shared
+            copied[_json_copy(key, memo)] = _json_copy(item, memo)
         return copied
     if value_type is list:
         copied = memo[value_id] = []
