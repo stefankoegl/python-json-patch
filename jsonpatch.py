@@ -437,6 +437,23 @@ def _reorder(mapping, keys):
         mapping[key] = mapping.pop(key)
 
 
+def _plain_operation(operation, pointer_cls):
+    """Returns operation as a dict whose 'path' and 'from' are strings.
+
+    Both can be given as pointer objects instead. These are replaced by
+    their paths, so that the operation is JSON-serializable, and can be
+    compared to one that was given the paths. This is done in a copy; an
+    operation that is a dict already and has no pointer objects is returned
+    as it is.
+    """
+    paths = {member: operation[member].path for member in ('path', 'from')
+             if member in operation and
+             isinstance(operation[member], pointer_cls)}
+    if paths:
+        return dict(operation, **paths)
+    return operation if isinstance(operation, dict) else dict(operation)
+
+
 class PatchOperation:
     """A single operation inside a JSON Patch."""
 
@@ -491,13 +508,17 @@ class PatchOperation:
     def __hash__(self):
         # Other members can hold arrays or objects, which are unhashable.
         # Operations that compare equal still have equal 'op' and 'path'.
-        return hash((self.operation.get('op'), self.operation['path']))
+        operation = _plain_operation(self.operation, self.pointer_cls)
+        return hash((operation.get('op'), operation['path']))
 
     def __eq__(self, other):
         if not isinstance(other, PatchOperation):
             return False
         # e.g. tests for 1 and for true behave differently
-        return _json_equal(self.operation, other.operation)
+        # and paths are equal to pointer objects for them
+        return _json_equal(
+            _plain_operation(self.operation, self.pointer_cls),
+            _plain_operation(other.operation, other.pointer_cls))
 
     @property
     def path(self):
@@ -962,8 +983,7 @@ class JsonPatch:
             self._get_operation(op)
             # Keep validation errors tied to the original input, but expose
             # concrete, JSON-serializable operation dictionaries on success.
-            if not isinstance(op, dict):
-                self.patch[index] = dict(op)
+            self.patch[index] = _plain_operation(op, self.pointer_cls)
 
     def __str__(self):
         """str(self) -> self.to_string()"""
