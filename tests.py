@@ -426,6 +426,26 @@ class ApplyPatchTestCase(unittest.TestCase):
                           jsonpatch.apply_patch,
                           obj, [{'op': 'test', 'path': '/bar', 'value': 'bar'}])
 
+    def test_test_compares_unicode_strings_exactly(self):
+        composed = '\u00e9'
+        decomposed = 'e\u0301'
+        for actual, expected in (
+                (composed, decomposed),
+                ([composed], [decomposed]),
+                ({'name': composed}, {'name': decomposed})):
+            with self.subTest(actual=actual):
+                doc = {'value': actual, 'updated': False}
+                matching = [{'op': 'test', 'path': '/value', 'value': actual}]
+                self.assertEqual(jsonpatch.apply_patch(doc, matching), doc)
+
+                patch = [
+                    {'op': 'test', 'path': '/value', 'value': expected},
+                    {'op': 'replace', 'path': '/updated', 'value': True},
+                ]
+                with self.assertRaises(jsonpatch.JsonPatchTestFailed):
+                    jsonpatch.apply_patch(doc, patch, in_place=True)
+                self.assertEqual(doc, {'value': actual, 'updated': False})
+
     def test_test_numbers_by_value(self):
         obj = {'a': 1, 'b': [0.0], 'c': {'d': 2}}
         jsonpatch.apply_patch(obj, [{'op': 'test', 'path': '/a', 'value': 1.0},
