@@ -1468,6 +1468,38 @@ class OptimizationTests(unittest.TestCase):
         self.assertEqual({op['op'] for op in patch}, {'move'})
         self.assertEqual(patch.apply(src), dst)
 
+    def test_move_of_non_json_containers(self):
+        """ UserDict and UserList get the same move key as the plain dict
+        and list with the same members """
+        src = [collections.UserDict({'x': 1}), 'B',
+               collections.UserList([1, 2])]
+        dst = ['B', collections.UserList([1, 2]),
+               collections.UserDict({'x': 1})]
+        patch = jsonpatch.make_patch(src, dst)
+        self.assertEqual(patch.patch,
+                         [{'op': 'move', 'from': '/0', 'path': '/2'}])
+        self.assertEqual(patch.to_string(),
+                         '[{"op": "move", "from": "/0", "path": "/2"}]')
+        self.assertEqual(patch.apply(src), dst)
+
+    def test_dict_keys_are_copied_with_the_values(self):
+        """ The patch keeps its own copy of the keys, and a key that is also
+        a value stays the same object in it """
+        class Key(str):
+            pass
+        key = Key('k')
+        key.tag = ['original']
+        src = {'a': 1}
+        dst = {'a': 1, 'x': {key: key}}
+        patch = jsonpatch.make_patch(src, dst)
+        added = [op for op in patch.patch if op['op'] == 'add'][-1]['value']
+        copied_key, = added
+        self.assertIsNot(copied_key, key)
+        self.assertIs(added[copied_key], copied_key)
+        self.assertEqual(copied_key.tag, ['original'])
+        copied_key.tag.append('changed')
+        self.assertEqual(key.tag, ['original'])
+
     def test_success_if_replace_inside_dict(self):
         src = [{'a': 1, 'foo': {'b': 2, 'd': 5}}]
         dst = [{'a': 1, 'foo': {'b': 3, 'd': 6}}]
