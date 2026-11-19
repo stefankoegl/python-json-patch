@@ -34,19 +34,38 @@ def _input_files(*streams):
     return inputs
 
 
-def jsondiff_main():
+def _load(stream, loads=json.loads):
+    """ Parses the JSON document in stream; errors name the file """
     try:
-        diff_files()
+        return loads(stream.read())
+    except ValueError as ex:
+        # invalid JSON or, as a UnicodeDecodeError, invalid UTF-8
+        name = getattr(stream, 'name', '<input>')
+        raise ValueError('{0}: {1}'.format(name, ex)) from ex
+
+
+def _run(parser, program):
+    """ Runs a command line program. Errors in its input, and in reading
+    and writing files, are reported in one line, with exit status 2 """
+    try:
+        program()
     except KeyboardInterrupt:
         sys.exit(1)
+    except (jsonpatch.JsonPatchException, jsonpatch.JsonPointerException,
+            ValueError, OSError) as ex:
+        parser.exit(2, '{0}: error: {1}\n'.format(parser.prog, ex))
+
+
+def jsondiff_main():
+    _run(jsondiff_parser, diff_files)
 
 
 def diff_files():
     """ Diffs two JSON files and prints a patch """
     args = jsondiff_parser.parse_args()
     with _input_files(args.FILE1, args.FILE2):
-        doc1 = json.load(args.FILE1)
-        doc2 = json.load(args.FILE2)
+        doc1 = _load(args.FILE1)
+        doc2 = _load(args.FILE2)
     patch = jsonpatch.make_patch(doc1, doc2, generate_test_ops=args.test_ops)
     if patch.patch:
         print(json.dumps(patch.patch, indent=args.indent, ensure_ascii=not args.preserve_unicode))
@@ -74,10 +93,7 @@ jsonpatch_parser.add_argument('-u', '--preserve-unicode', action='store_true',
 
 
 def jsonpatch_main():
-    try:
-        patch_files()
-    except KeyboardInterrupt:
-        sys.exit(1)
+    _run(jsonpatch_parser, patch_files)
 
 
 def patch_files():
@@ -86,8 +102,9 @@ def patch_files():
     # The inputs are closed before anything is written, as Windows cannot
     # replace ORIGINAL while it is open.
     with _input_files(args.ORIGINAL, args.PATCH):
-        doc = json.load(args.ORIGINAL)
-        result = jsonpatch.apply_patch(doc, args.PATCH.read())
+        doc = _load(args.ORIGINAL)
+        patch = _load(args.PATCH, jsonpatch.JsonPatch.from_string)
+    result = patch.apply(doc)
 
     if args.in_place:
         dirname = os.path.abspath(os.path.dirname(args.ORIGINAL.name))

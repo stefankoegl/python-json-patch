@@ -7,6 +7,11 @@ The JSON patch package contains the commandline utilities ``jsondiff`` and
 Both utilities read JSON files as UTF-8. When ``jsonpatch`` modifies a file
 in-place, it also writes UTF-8.
 
+If a file cannot be read or written, is not valid JSON, or if the patch
+cannot be applied, both print a one-line error message to standard error and
+exit with status 2. ``jsondiff`` exits with status 1 if the files differ,
+like ``diff``, and with 0 if they are equal.
+
 ``jsondiff``
 ------------
 
