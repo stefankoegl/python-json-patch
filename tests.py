@@ -3644,6 +3644,14 @@ class CommandLineTests(ScriptRunner, unittest.TestCase):
         patch = json.loads(res.stdout)
         self.assertEqual(jsonpatch.apply_patch({'a': 1}, patch), {'a': 2})
 
+    def test_jsondiff_utf8_bom_from_stdin(self):
+        path = self.write('doc.json', {'a': 1})
+        for args in (('-', path), (path, '-')):
+            with self.subTest(args=args):
+                res = self.run_script('jsondiff', *args, stdin='\ufeff{"a": 1}')
+                self.assertEqual(res.returncode, 0, res.stderr)
+                self.assertEqual(res.stdout, '')
+
     def test_jsonpatch_utf8_bom_files(self):
         doc = os.path.join(self.dir, 'doc.json')
         patch = os.path.join(self.dir, 'patch.json')
@@ -3670,6 +3678,19 @@ class CommandLineTests(ScriptRunner, unittest.TestCase):
                               stdin='[{"op": "replace", "path": "/a", "value": 2}]')
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual(json.loads(res.stdout), {'a': 2})
+
+    def test_jsonpatch_utf8_bom_from_stdin(self):
+        original = {'a': 1}
+        operations = [{'op': 'replace', 'path': '/a', 'value': 2}]
+        doc = self.write('doc.json', original)
+        patch = self.write('patch.json', operations)
+        for args, data in ((('-', patch), original),
+                           ((doc,), operations), ((doc, '-'), operations)):
+            with self.subTest(args=args):
+                res = self.run_script('jsonpatch', *args,
+                                      stdin='\ufeff' + json.dumps(data))
+                self.assertEqual(res.returncode, 0, res.stderr)
+                self.assertEqual(json.loads(res.stdout), {'a': 2})
 
     def test_jsonpatch_rejects_invalid_patch_text_before_in_place_write(self):
         remove = '[{"op":"remove","path":"/keep"}]'

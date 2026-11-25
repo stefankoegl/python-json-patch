@@ -11,8 +11,8 @@ from contextlib import ExitStack
 
 jsondiff_parser = argparse.ArgumentParser(
     prog='jsondiff', description='Diff two JSON files')
-jsondiff_parser.add_argument('FILE1', type=argparse.FileType('r', encoding='utf-8-sig'))
-jsondiff_parser.add_argument('FILE2', type=argparse.FileType('r', encoding='utf-8-sig'))
+jsondiff_parser.add_argument('FILE1', type=argparse.FileType('r', encoding='utf-8'))
+jsondiff_parser.add_argument('FILE2', type=argparse.FileType('r', encoding='utf-8'))
 jsondiff_parser.add_argument('--indent', type=int, default=None,
                              help='Indent output by n spaces')
 jsondiff_parser.add_argument('-u', '--preserve-unicode', action='store_true',
@@ -37,7 +37,8 @@ def _input_files(*streams):
 def _load(stream, loads=json.loads):
     """ Parses the JSON document in stream; errors name the file """
     try:
-        return loads(stream.read())
+        # Strip the optional UTF-8 BOM from named files and stdin alike.
+        return loads(stream.read().removeprefix('\ufeff'))
     except ValueError as ex:
         # invalid JSON or, as a UnicodeDecodeError, invalid UTF-8
         name = getattr(stream, 'name', '<input>')
@@ -75,9 +76,9 @@ def diff_files():
 jsonpatch_parser = argparse.ArgumentParser(
     prog='jsonpatch',
     description='Apply a JSON patch on a JSON file')
-jsonpatch_parser.add_argument('ORIGINAL', type=argparse.FileType('r', encoding='utf-8-sig'),
+jsonpatch_parser.add_argument('ORIGINAL', type=argparse.FileType('r', encoding='utf-8'),
                               help='Original file')
-jsonpatch_parser.add_argument('PATCH', type=argparse.FileType('r', encoding='utf-8-sig'),
+jsonpatch_parser.add_argument('PATCH', type=argparse.FileType('r', encoding='utf-8'),
                               nargs='?', default=sys.stdin,
                               help='Patch file (read from stdin if omitted)')
 jsonpatch_parser.add_argument('--indent', type=int, default=None,
