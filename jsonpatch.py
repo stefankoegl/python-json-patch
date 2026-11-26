@@ -37,6 +37,7 @@ import collections
 import copy
 import functools
 import json
+import re
 from collections.abc import (Mapping, MutableMapping, MutableSequence,
                              Sequence)
 from difflib import SequenceMatcher
@@ -51,6 +52,10 @@ _ST_REMOVE = 1
 # Up to which product of their lengths DiffBuilder matches up all equal items
 # of two lists
 _EXACT_MATCH_LIMIT = 500 ** 2
+
+# The default JSON encoder can stringify number, bool and None keys. If
+# none of those spellings occurs as a member name, no walk is needed.
+_POSSIBLY_NON_STRING_MEMBER = re.compile(r'"(?:[-0-9][^"]*|true|false|null|NaN|Infinity)":')
 
 
 # The from_parts of pointer classes that don't override it, see path_join
@@ -1232,23 +1237,28 @@ class DiffBuilder:
         self.arrays = {}
         root[:] = [root, root, None]
 
-    def _move_key(self, value):
-        """ A key of value, which is equal for values that are equal in JSON,
-        so that e.g. [1] is not moved where [true] is added """
+    def _matching_key(self, value):
+        """ Compare values independently of the order of object members. """
         if self._canonical_dumps is not None:
             try:
                 # sort_keys gives the same string as _sorted_members for JSON
                 # documents, without building a sorted copy of every added or
                 # removed subtree
-                return self._canonical_dumps(value)
+                encoded = self._canonical_dumps(value)
             except (TypeError, ValueError, RecursionError):
                 # Values like UserDict and UserList are normalized by
                 # _sorted_members, but the encoder cannot serialize them as
                 # they are, so fall through to the generic path below
                 pass
+            else:
+                if _POSSIBLY_NON_STRING_MEMBER.search(encoded):
+                    return _preserve_member_names(value, encoded)
+                return encoded
+        return _preserve_member_names(value, self.dumps(_sorted_members(value)))
+
+    def _move_key(self, value):
         try:
-            # Serialized like in _differing_runs
-            return self.dumps(_sorted_members(value))
+            return self._matching_key(value)
         except (TypeError, ValueError, RecursionError):
             # Values that cannot be serialized, e.g. as they contain
             # themselves, are only moved where they are added unchanged
@@ -1476,8 +1486,8 @@ class DiffBuilder:
         try:
             # Serialized like in _compare_values, so e.g. 1 and True differ,
             # but independent of the order of object members
-            src_keys = [self.dumps(_sorted_members(item)) for item in src]
-            dst_keys = [self.dumps(_sorted_members(item)) for item in dst]
+            src_keys = [self._matching_key(item) for item in src]
+            dst_keys = [self._matching_key(item) for item in dst]
         except (TypeError, ValueError, RecursionError):
             # Items that cannot be serialized are compared by position
             return [(0, len(src), 0, len(dst))]
@@ -1551,7 +1561,8 @@ class DiffBuilder:
                 # To ensure we catch changes to JSON, we can't rely on a
                 # simple old == new, because it would not recognize the
                 # difference between 1 and True, among other things.
-                elif self.dumps(old) == self.dumps(new):
+                elif _preserve_member_names(old, self.dumps(old)) == \
+                        _preserve_member_names(new, self.dumps(new)):
                     continue
 
                 else:
@@ -1580,7 +1591,8 @@ class DiffBuilder:
         # and ignore those that don't. The performance of this could be
         # improved by doing more direct type checks, but we'd need to be
         # careful to accept type changes that don't matter when JSONified.
-        elif self.dumps(src) == self.dumps(dst):
+        elif _preserve_member_names(src, self.dumps(src)) == \
+                _preserve_member_names(dst, self.dumps(dst)):
             return
 
         else:
@@ -1707,6 +1719,30 @@ def _sorted_members(value):
     if isinstance(value, MutableSequence):
         return [_sorted_members(item) for item in value]
     return value
+
+
+def _preserve_member_names(value, encoded):
+    """ Keep object names that JSON serialization coerces to strings. """
+    if value is None or type(value) in (str, int, float, bool):
+        return encoded
+    names = frozenset(_non_string_key_paths(value))
+    return (encoded, names) if names else encoded
+
+
+def _non_string_key_paths(value, path=()):
+    if value is None or isinstance(value, (str, int, float, bytes)):
+        return
+    if isinstance(value, Mapping):
+        for key, item in value.items():
+            if isinstance(key, str):
+                member_path = path + (key,)
+            else:
+                member_path = path + ((type(key), key),)
+                yield member_path
+            yield from _non_string_key_paths(item, member_path)
+    elif isinstance(value, Sequence):
+        for index, item in enumerate(value):
+            yield from _non_string_key_paths(item, path + (index,))
 
 
 # The DiffBuilder works with parts, which are tuples of object keys (str) and

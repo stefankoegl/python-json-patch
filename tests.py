@@ -1077,6 +1077,9 @@ class MakePatchTestCase(unittest.TestCase):
             ({1: {'a': 1}}, {1: {'a': 2}}),
             ({1: [1, 2]}, {1: [1, 2, 3]}),
             ({'a': [{1: 'a'}]}, {'a': [{1: 'b'}]}),
+            ([{1: 'a'}], [{'1': 'a'}]),
+            ([{'1': 'a'}], [{1: 'a'}]),
+            ([{-1.5: 'a'}], [{'-1.5': 'a'}]),
             # moved from or to such a member
             ({'a': {1: [1, 2]}}, {'a': {}, 'b': [1, 2]}),
             ({'a': {}, 'b': [1, 2]}, {'a': {1: [1, 2]}}),
@@ -1093,6 +1096,20 @@ class MakePatchTestCase(unittest.TestCase):
         self.assertIn('object member 1:', str(caught.exception))
         with self.assertRaises(TypeError):
             jsonpatch.JsonPatchWithAppend.from_diff({1: 'a'}, {1: 'ab'})
+
+    def test_values_with_different_member_names_are_not_moved(self):
+        cases = [
+            ({1: 'a'}, {'1': 'a'}),
+            ([{None: 'a'}], [{'null': 'a'}]),
+            ({True: 'a'}, {'true': 'a'}),
+            ([{1: 'a'}, {'1': 'a'}], [{'1': 'a'}, {1: 'a'}]),
+        ]
+        for before, after in cases:
+            with self.subTest(before=before, after=after):
+                src, dst = {'old': before}, {'new': after}
+                patch = jsonpatch.make_patch(src, dst)
+                self.assertEqual(patch.apply(src), dst)
+                self.assertEqual([op['op'] for op in patch], ['remove', 'add'])
 
     def test_non_string_member_names_differ_from_strings(self):
         name = jsonpatch._member_name(1)
