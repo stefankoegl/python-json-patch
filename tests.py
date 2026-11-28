@@ -3740,6 +3740,16 @@ class CommandLineTests(ScriptRunner, unittest.TestCase):
         # the temporary file has been moved over the original
         self.assertEqual(sorted(os.listdir(self.dir)), ['doc.json', 'patch.json'])
 
+    def test_jsonpatch_in_place_rejects_standard_input_as_original(self):
+        patch = self.write('patch.json', [])
+        for stdin in ('{}', 'invalid JSON'):
+            with self.subTest(stdin=stdin):
+                res = self.run_script('jsonpatch', '--in-place', '-', patch,
+                                      stdin=stdin, cwd=self.dir)
+                self.assertEqual((res.returncode, res.stdout), (2, ''), res.stderr)
+                self.assertEqual(res.stderr, 'jsonpatch: error: --in-place requires ORIGINAL to be a file\n')
+                self.assertEqual(os.listdir(self.dir), ['patch.json'])
+
     def test_jsonpatch_in_place_utf8_without_utf8_mode(self):
         for atomic in (True, False):
             with self.subTest(atomic=atomic):

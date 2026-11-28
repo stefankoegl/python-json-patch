@@ -120,6 +120,8 @@ def patch_files():
     # The inputs are closed before anything is written, as Windows cannot
     # replace ORIGINAL while it is open.
     with _input_files(args.ORIGINAL, args.PATCH):
+        if args.in_place and args.ORIGINAL is sys.stdin:
+            raise ValueError('--in-place requires ORIGINAL to be a file')
         doc = _load(args.ORIGINAL)
         patch = _load(args.PATCH, jsonpatch.JsonPatch.from_string)
     result = patch.apply(doc)
